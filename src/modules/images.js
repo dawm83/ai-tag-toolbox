@@ -362,6 +362,14 @@ function createImages(options = {}) {
     if (!imageDir || !item?.bytes) return;
     try { fs.mkdirSync(imageDir, { recursive: true }); fs.writeFileSync(filePath(item.id), item.bytes); } catch { /* 保留内存图片 */ }
   }
+  function removePersistedBytes(item) {
+    if (item?.blobId && blobStore && typeof blobStore.removeBlob === 'function') {
+      try { Promise.resolve(blobStore.removeBlob(item.blobId)).catch(() => {}); } catch { /* optional persistence */ }
+    }
+    if (imageDir && item?.id) {
+      try { if (fs.existsSync(filePath(item.id))) fs.unlinkSync(filePath(item.id)); } catch { /* ignore stale file */ }
+    }
+  }
   function restorePersisted() {
     let rows = [];
     try { rows = indexStorage?.get?.('images_index', []) || []; } catch { rows = []; }
@@ -480,12 +488,13 @@ function createImages(options = {}) {
     const id = typeof value === 'string' ? value : value && value.id;
     if (!id) return false;
     collections.forEach(set => set.delete(id));
-    try { if (imageDir && fs.existsSync(filePath(id))) fs.unlinkSync(filePath(id)); } catch { /* ignore stale file */ }
+    const item = items.get(id);
+    removePersistedBytes(item || { id });
     const removed = items.delete(id); analysisCache.delete(id); if (removed) persistIndex(); return removed;
   }
 
   function clear() {
-    for (const id of items.keys()) { try { if (imageDir && fs.existsSync(filePath(id))) fs.unlinkSync(filePath(id)); } catch { /* ignore */ } }
+    for (const item of items.values()) removePersistedBytes(item);
     items.clear(); collections.forEach(set => set.clear()); analysisCache.clear(); persistIndex();
     return [];
   }
