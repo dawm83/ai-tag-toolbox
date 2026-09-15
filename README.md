@@ -61,9 +61,10 @@ V1.4.32 是基于 V1.4.3 的 Pre-release 测试版，包含 DeepSeek thinking �
 
 ## 开发与验证
 
-源码仓库不包含 `models/` 和 `node_modules/`。当前依赖清单尚未整理为完整独立安装流程，部分测试依赖开发机路径；直接使用应用请下载上方便携包。开发者需先准备 Electron、ONNX/Transformers 依赖及 jsdom 测试环境。
+源码仓库不包含 `models/` 和 `node_modules/`。开发者先运行 `npm ci` 安装检查所需依赖，再运行 `npm run check`；UI 测试使用项目本地的 jsdom，不依赖开发机绝对路径。直接使用应用请下载上方便携包；本地识图、翻译和 Electron 开发仍需准备对应的可选运行时与模型。
 
 ```text
+npm ci
 npm run check
 npm run dev
 ```
