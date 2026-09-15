@@ -37,6 +37,7 @@ function createFileAdapter(filePath) {
   let pending = null;
   let writeTimer = null;
   let flushing = false;
+  let writePromise = Promise.resolve();
 
   function read() {
     if (cache) return cache;
@@ -53,13 +54,14 @@ function createFileAdapter(filePath) {
   // The write is debounced so a burst of setItem calls coalesces into one
   // compact async write; the in-memory cache stays authoritative immediately.
   function flush() {
+    if (writeTimer) { clearTimeout(writeTimer); writeTimer = null; }
     writeTimer = null;
-    if (pending == null) return;
-    if (flushing) { scheduleWrite(); return; }
+    if (pending == null) return writePromise;
+    if (flushing) return writePromise.then(() => flush());
     flushing = true;
     const value = pending;
     pending = null;
-    Promise.resolve()
+    writePromise = Promise.resolve()
       .then(() => {
         fs.mkdirSync(path.dirname(filename), { recursive: true });
         const text = JSON.stringify(value);
@@ -70,6 +72,7 @@ function createFileAdapter(filePath) {
         flushing = false;
         if (pending != null) scheduleWrite();
       });
+    return writePromise;
   }
   function scheduleWrite() {
     if (writeTimer) return;
@@ -87,6 +90,7 @@ function createFileAdapter(filePath) {
     removeItem(key) { const root = { ...read() }; delete root[key]; return write(root); },
     key(index) { return Object.keys(read())[index] || null; },
     get length() { return Object.keys(read()).length; },
+    flush,
     filePath: filename
   };
 }
@@ -286,7 +290,8 @@ function createStorage(options = {}) {
     setJSON: root.set,
     image: { put: putBlob, get: getBlob, remove: removeBlob },
     images: { put: putBlob, get: getBlob, remove: removeBlob },
-    idb: { put: putBlob, get: getBlob, remove: removeBlob }
+    idb: { put: putBlob, get: getBlob, remove: removeBlob },
+    flush: () => typeof adapter.flush === 'function' ? adapter.flush() : Promise.resolve()
   };
 }
 

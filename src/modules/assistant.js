@@ -69,7 +69,24 @@ function createAssistant(options = {}) {
   let favorites = array(read('rewrite_favorites', [])).map(clone);
   function sessionById(sessionId = state.currentId) { return state.sessions.find(session => session.id === sessionId) || null; }
   function sessionBundle() { return { format: SESSION_FORMAT, version: SESSION_VERSION, currentId: state.currentId, sessions: clone(state.sessions) }; }
+  let persistTimer = null;
+  let persistQueued = false;
   function persist() { write('sessions', sessionBundle()); }
+  function schedulePersist() {
+    persistQueued = true;
+    if (persistTimer) return;
+    persistTimer = setTimeout(() => {
+      persistTimer = null;
+      if (!persistQueued) return;
+      persistQueued = false;
+      persist();
+    }, 120);
+  }
+  function flushPersist() {
+    if (persistTimer) { clearTimeout(persistTimer); persistTimer = null; }
+    if (persistQueued) { persistQueued = false; persist(); }
+    return typeof storage?.flush === 'function' ? storage.flush() : Promise.resolve();
+  }
   function normalizeSession(raw, usedSessions, usedMessages) {
     const unique = (value, prefix, used) => { let key = text(value, id(prefix)); while (used.has(key)) key = id(prefix); used.add(key); return key; };
     const sessionId = unique(raw.id, 'session', usedSessions);
@@ -250,7 +267,6 @@ function createAssistant(options = {}) {
     const live = session.messages.find(message => message.id === liveSnapshot.id);
     const controller = new AbortController();
     const job = { id: requestId, sessionId: session.id, session, live, controller, invalidated: false };
-    let lastDeltaPersistAt = 0;
     active = job; state.busy = true; state.status = 'running'; state.jobId = requestId; state.lastError = '';
     const callerAbort = () => cancel(requestId);
     input.signal?.addEventListener?.('abort', callerAbort, { once: true });
@@ -270,13 +286,13 @@ function createAssistant(options = {}) {
       }
       const output = event?.result?.data || event?.result;
       if (Array.isArray(output?.artifacts)) { for (const artifact of output.artifacts) if (!live.artifacts.some(item => item.imageId === artifact.imageId)) live.artifacts.push(clone(artifact)); live.imageIds = ids([...live.imageIds, ...live.artifacts.map(item => item.imageId)]); }
-      persist(); observe(input.onEvent, clone(event)); observe(input.onToolEvent, clone(event));
+      schedulePersist(); observe(input.onEvent, clone(event)); observe(input.onToolEvent, clone(event));
     };
     try {
       const result = await runtime.runPrimary({ requestId, sessionId: session.id, messageId: live.id, messages: [...previous, current], config: publicRequestConfig(config), signal: controller.signal,
-        onDelta: (delta, reasoning = '') => { if (!writable(job)) return; if (typeof delta === 'string') live.text += delta; if (typeof reasoning === 'string') live.reasoning += reasoning; const now = Date.now(); if (now - lastDeltaPersistAt >= 500) { lastDeltaPersistAt = now; persist(); } observe(input.onDelta, live.text, live.reasoning, clone(live)); },
+        onDelta: (delta, reasoning = '') => { if (!writable(job)) return; if (typeof delta === 'string') live.text += delta; if (typeof reasoning === 'string') live.reasoning += reasoning; schedulePersist(); observe(input.onDelta, live.text, live.reasoning, clone(live)); },
         onEvent,
-        onToolCall: traces => { if (!writable(job)) return; for (const trace of array(traces)) { const index = live.toolCalls.findIndex(row => row.id === trace.id); if (index < 0) live.toolCalls.push(clone(trace)); else live.toolCalls[index] = clone(trace); } persist(); }
+        onToolCall: traces => { if (!writable(job)) return; for (const trace of array(traces)) { const index = live.toolCalls.findIndex(row => row.id === trace.id); if (index < 0) live.toolCalls.push(clone(trace)); else live.toolCalls[index] = clone(trace); } schedulePersist(); }
       });
       if (!writable(job)) return { ...failure('CANCELLED', '请求已取消', requestId, session.id), data: cancelledPayload(job) };
       const publicPayload = object(result.data) ? result.data : object(result.partial) ? result.partial : {};
@@ -286,12 +302,12 @@ function createAssistant(options = {}) {
       live.status = result.ok ? 'done' : error.code === 'CANCELLED' ? 'cancelled' : error.code === 'TIMEOUT' ? 'timeout' : 'error';
       live.result = { ...clone(payload), ok: result.ok, error, usage: clone(result.usage) };
       if (!live.text && error) live.text = error.message;
-      session.updatedAt = Date.now(); state.lastError = error?.message || ''; state.status = result.ok ? 'idle' : live.status; persist(); observe(input.onDelta, live.text, live.reasoning, clone(live));
+      session.updatedAt = Date.now(); state.lastError = error?.message || ''; state.status = result.ok ? 'idle' : live.status; await flushPersist(); observe(input.onDelta, live.text, live.reasoning, clone(live));
       return { ...result, ...payload, ok: result.ok, error, data: clone(payload), text: live.text, status: live.status, requestId, sessionId: session.id };
     } catch (cause) {
       if (!writable(job)) return { ...failure('CANCELLED', '请求已取消', requestId, session.id), data: cancelledPayload(job) };
       const error = errorShape(cause); live.status = error.code === 'CANCELLED' ? 'cancelled' : 'error'; if (!live.text) live.text = error.message;
-      live.result = { ...cancelledPayload(job), ok: false, error }; state.lastError = error.message; state.status = live.status; persist();
+      live.result = { ...cancelledPayload(job), ok: false, error }; state.lastError = error.message; state.status = live.status; await flushPersist();
       return { ...failure(error.code, error.message, requestId, session.id), data: cancelledPayload(job) };
     } finally {
       input.signal?.removeEventListener?.('abort', callerAbort);
@@ -358,7 +374,7 @@ function createAssistant(options = {}) {
         live.artifacts = clone(array(generationState.artifacts));
         live.imageIds = ids(generationState.imageIds);
       }
-      persist(); observe(options.onEvent, clone(event));
+      schedulePersist(); observe(options.onEvent, clone(event));
     };
     try {
       const outcome = await runtime.callTool('generation.resume', { jobId, action: 'continue', baseCandidateId: text(candidateId), feedback: note }, { requestId, sessionId: session.id, messageId: live.id, signal: controller.signal, onEvent });
@@ -415,7 +431,7 @@ function createAssistant(options = {}) {
         live.artifacts = clone(array(generationState.artifacts));
         live.imageIds = ids(generationState.imageIds);
       }
-      persist(); observe(options.onEvent, clone(event));
+      schedulePersist(); observe(options.onEvent, clone(event));
     };
     try {
       const args = { jobId, characterSelection };
@@ -488,7 +504,8 @@ function createAssistant(options = {}) {
     clearCallRecords: () => runtime?.clearCallRecords?.(),
     getCallMonitorInfo: callMonitor.info,
     flushCallRecords: callMonitor.flush,
-    cancel, stop: cancel, destroy() { cancel(); destroyed = true; }
+    flushPersistence: flushPersist,
+    cancel, stop: cancel, destroy() { cancel(); void flushPersist(); destroyed = true; }
   };
   return Object.freeze(api);
 }

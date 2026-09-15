@@ -283,6 +283,7 @@ contextBridge.exposeInMainWorld('AppModules', {
     listCallRecords: assistant.listCallRecords,
     clearCallRecords: assistant.clearCallRecords,
     getCallMonitorInfo: assistant.getCallMonitorInfo,
+    flushPersistence: assistant.flushPersistence,
   } : null,
   runtime: runtime ? {
     runPrimary: runtime.runPrimary,
