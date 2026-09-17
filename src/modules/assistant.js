@@ -474,14 +474,17 @@ function createAssistant(options = {}) {
     found.session.messages.splice(index); persist(); return runPrimaryWithRuntime({ ...inputPatch, text: body, imageIds, sessionId: found.session.id }, config);
   }
   let capabilities = { tags: Boolean(tags?.search), vision: visionService.available?.() || { metadata: Boolean(images?.get), local: false, ai: false }, comfy: { enabled: false, connected: false, workflowReady: false, render: false, error: '尚未检查 ComfyUI' } };
+  let capabilityRevision = 0;
   async function refreshCapabilities() {
+    const revision = ++capabilityRevision;
     const result = await primaryTools?.call?.('comfy.status', {}, { caller: 'ui', sessionId: state.currentId });
+    if (revision !== capabilityRevision) return clone(capabilities);
     const comfyState = result?.data || {};
     capabilities = { tags: Boolean(tags?.search), vision: visionService.available?.() || { metadata: Boolean(images?.get), local: false, ai: false }, comfy: { enabled: comfyState.enabled === true, connected: comfyState.connected === true, workflowReady: comfyState.workflowReady === true, render: comfyState.render === true, error: text(comfyState.error) } };
     return clone(capabilities);
   }
-  function setSettings(value = {}) { const result = settings.setForm(value); ai.setConfig(settings.primaryProfile()); visionAi.setConfig(settings.visionProfile()); return result; }
-  function resetSettings(group) { settings.reset(group); return settings.getForm(); }
+  function setSettings(value = {}) { const result = settings.setForm(value); capabilityRevision += 1; ai.setConfig(settings.primaryProfile()); visionAi.setConfig(settings.visionProfile()); return result; }
+  function resetSettings(group) { settings.reset(group); capabilityRevision += 1; return settings.getForm(); }
   const api = {
     run: runPrimaryWithRuntime, runtime, primaryTools, generation, comfy, imageRepository, visionTempStore, visionService, parseReply,
     getSettings: settings.getForm, getCanonicalSettings: settings.snapshot, setSettings, updateSettings: setSettings, resetSettings, comfyProfiles,
