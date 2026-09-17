@@ -122,7 +122,6 @@
     const viewFactories = global.AppViews || {};
     const views = {
       translation: viewFactories.translation?.createTranslationView?.({ document: doc, runtime, translation: modules.translation, notify, copy: value => copy(value), localized, onTagSelected: id => { tags?.select?.(id, true); renderTags(); renderSelection(); } }),
-      conversation: viewFactories.conversation?.createConversationView?.({ document: doc, api: assistant, runtime, repository: imageRepository, images, notify, preferences, autoBind: false, bindControls: false }),
       settings: viewFactories.settings?.createSettingsView?.({ document: doc, api: assistant, runtime, comfy, notify, onChange: value => { views.comfy?.render?.(value); syncGenerationControls(); }, autoBind: false }),
       comfy: viewFactories.comfy?.createComfyView?.({ document: doc, comfy, assistant, notify, openExternal: url => global.open(url), onChange: value => { views.settings?.render?.(value); syncGenerationControls(); }, autoBind: false }),
       prompt: viewFactories.prompt?.createPromptView?.({ document: doc, prompts, notify, download, autoBind: false }),
@@ -4040,7 +4039,6 @@
         preferences.get("rewrite_theme", "light"),
       );
       applyTheme(theme);
-      views.conversation?.bind?.();
       views.settings?.bind?.();
       views.prompt?.bind?.();
       views.agentStatus?.bind?.();

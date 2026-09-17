@@ -105,7 +105,7 @@ function boot(options = {}) {
   };
   const modules = { assistant, characters: options.characters, runtime: { listCallRecords: assistant.listCallRecords, clearCallRecords: assistant.clearCallRecords, ...options.runtime }, prompts, tags, images: { get: id => images.get(id), preview: id => images.get(id) }, imageRepository: repository, preferences: { get: (_k, fallback) => fallback, set: () => {} }, translation: options.translation || { findReferences: () => [] }, comfy, locales: { 'zh-CN': {} }, version: '1.4.194' };
 
-  for (const file of ['views/conversation-view.js', 'views/settings-view.js', 'views/comfy-view.js', 'views/prompt-view.js', 'views/agent-status-view.js', 'views/call-monitor-view.js', 'modules/translation-alignment.js', 'views/translation-view.js', 'app-view.js']) window.eval(source(file));
+  for (const file of ['views/settings-view.js', 'views/comfy-view.js', 'views/prompt-view.js', 'views/agent-status-view.js', 'views/call-monitor-view.js', 'modules/translation-alignment.js', 'views/translation-view.js', 'app-view.js']) window.eval(source(file));
   const view = window.AppView.create(modules, window.document);
   view.start();
   return { dom, window, view, assistant, repository, gallery, downloadBlobs, continuationCalls, getRunCount: () => runCount, getCancelCount: () => cancelCount, getComfyProfile: () => comfyProfile && structuredClone(comfyProfile) };
