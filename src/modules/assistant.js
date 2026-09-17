@@ -66,7 +66,6 @@ function createAssistant(options = {}) {
   let destroyed = false;
   function read(key, fallback) { try { return storage?.get ? storage.get(key, fallback) : storage?.load?.(key, fallback) ?? fallback; } catch { return fallback; } }
   function write(key, value) { if (storage?.set) storage.set(key, clone(value)); else storage?.save?.(key, clone(value)); }
-  let favorites = array(read('rewrite_favorites', [])).map(clone);
   function sessionById(sessionId = state.currentId) { return state.sessions.find(session => session.id === sessionId) || null; }
   function sessionBundle() { return { format: SESSION_FORMAT, version: SESSION_VERSION, currentId: state.currentId, sessions: clone(state.sessions) }; }
   let persistTimer = null;
@@ -147,10 +146,10 @@ function createAssistant(options = {}) {
   }
   const comfy = options.comfy && typeof options.comfy.render === 'function' ? options.comfy : createComfy({ ...(options.comfyOptions || {}), profiles: comfyProfiles });
   const visionService = options.visionService || createVisionService({ images, visionTempStore, localVision: options.localVision || options.vision, visionAI: visionClient, parseMetadata: parsePngMetadata, getPrompt: key => prompts.getEffective?.(key) || prompts.get?.(key) || '' });
-  const primary = createPrimaryAgent({ client: ai, prompts, getSettings: settings.snapshot, charactersEnabled: Boolean(options.characters) });
+  const primary = createPrimaryAgent({ client: ai, prompts, getSettings: settings.snapshot, charactersEnabled: Boolean(options.characters), favoritesEnabled: Boolean(options.favorites) });
   const subagents = createFixedSubagents({ vision: visionService, translation: options.translation, ai, visionAI: visionClient, prompts, resolveImage, getSettings: settings.snapshot });
   runtime = createAgentRuntime({ primaryClient: primary, subagents, tools: () => primaryTools, getSettings: settings.snapshot, getPrimaryPrompt: primary.getPrompt, monitor: callMonitor });
-  primaryTools = createPrimaryTools({ tags, characters: options.characters, images, imageRepository, runtime, comfy, comfyProfiles, generation: () => generation, getSettings: settings.snapshot });
+  primaryTools = createPrimaryTools({ tags, favorites: options.favorites, characters: options.characters, images, imageRepository, runtime, comfy, comfyProfiles, generation: () => generation, getSettings: settings.snapshot });
   const internalTool = async (name, args, context) => {
     const outcome = await runtime.callTool(name, args, { parentRequestId: context.requestId, signal: context.signal, sessionId: context.sessionId, messageId: context.messageId, onEvent: context.onEvent });
     if (outcome?.ok === false) throw Object.assign(new Error(outcome.error?.message || '内部工具调用失败'), { code: outcome.error?.code || 'TOOL_FAILED', retryable: outcome.error?.retryable === true });
@@ -492,7 +491,7 @@ function createAssistant(options = {}) {
     listModels: config => ai.listModels({ ...settings.primaryProfile(), ...publicRequestConfig(config) }), listVisionModels: config => visionAi.listModels({ ...settings.visionProfile(), ...publicRequestConfig(config) }),
     testConnection: config => runtime.runPrimary({ requestId: id('connection'), messages: [{ role: 'user', content: 'Please reply OK.' }], config: { ...publicRequestConfig(config), stream: false } }),
     getCapabilities: () => clone(capabilities), refreshCapabilities,
-    newSession, currentSession: () => clone(currentSession()), sessions: () => clone(state.sessions), snapshot: () => ({ ...clone(state), settings: settings.getForm(), config: settings.primaryProfile(), visionConfig: visionConfig(), favorites: clone(favorites) }),
+    newSession, currentSession: () => clone(currentSession()), sessions: () => clone(state.sessions), snapshot: () => ({ ...clone(state), settings: settings.getForm(), config: settings.primaryProfile(), visionConfig: visionConfig() }),
     switchSession(sessionId) { if (!sessionById(sessionId)) return false; if (sessionId !== state.currentId) cancel(); state.currentId = sessionId; persist(); return true; },
     renameSession(sessionId, title) { const session = sessionById(sessionId); if (!session) return false; session.title = text(title, session.title); session.updatedAt = Date.now(); persist(); return clone(session); },
     deleteSession(sessionId = state.currentId, value = {}) { if (!sessionById(sessionId)) return false; if (active?.sessionId === sessionId) cancel(); const result = imageRepository.deleteSession(sessionId, { retainImages: value.retainImages === true }); if (!sessionById()) state.currentId = state.sessions[0]?.id || ''; if (!state.sessions.length) newSession(); else persist(); return result; },
@@ -501,7 +500,6 @@ function createAssistant(options = {}) {
     append, editMessage, deleteMessage, chooseCandidate, selectCandidate: chooseCandidate, selectGenerationFinal, continueGeneration, selectGenerationCharacter, rerunFromMessage, regenerateMessage: rerunFromMessage,
     exportSessions: () => JSON.stringify(sessionBundle(), null, 2),
     importSessions(value, replace = false) { const incoming = incomingBundle(value); if (!incoming) return false; cancel(); const usedSessions = new Set(replace ? [] : state.sessions.map(row => row.id)); const usedMessages = new Set(replace ? [] : state.sessions.flatMap(row => row.messages.map(message => message.id))); const normalized = incoming.sessions.map(row => normalizeSession(row, usedSessions, usedMessages)); state.sessions = replace ? normalized : [...state.sessions, ...normalized]; if (replace || !sessionById()) state.currentId = state.sessions[0]?.id || ''; for (const session of normalized) imageRepository.reconcileSessionMessages(session.id); imageRepository.reconcileSessions(); if (!state.sessions.length) newSession(); else persist(); return clone(state.sessions); },
-    listFavorites: () => clone(favorites), getFavorites: () => clone(favorites), setFavorites(value) { favorites = array(value).map(clone); write('rewrite_favorites', favorites); return clone(favorites); }, addFavorite(value) { const item = object(value) ? clone(value) : { name: text(value, '未命名收藏') }; item.id = text(item.id, id('favorite')); favorites.push(item); write('rewrite_favorites', favorites); return clone(item); }, removeFavorite(favoriteId) { const index = favorites.findIndex(row => row.id === favoriteId); if (index < 0) return false; favorites.splice(index, 1); write('rewrite_favorites', favorites); return true; },
     listCallRecords: () => runtime?.listCallRecords?.() || [],
     clearCallRecords: () => runtime?.clearCallRecords?.(),
     getCallMonitorInfo: callMonitor.info,
