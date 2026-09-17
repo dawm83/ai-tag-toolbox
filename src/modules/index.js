@@ -1,6 +1,8 @@
 'use strict';
 
 module.exports = {
+  ...require('./favorites'),
+  ...require('./favorites-transfer'),
   ...require('./tags'),
   ...require('./characters'),
   ...require('./images'),
