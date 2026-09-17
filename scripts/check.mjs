@@ -3,8 +3,39 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { parse } from 'acorn';
+import { Linter } from 'eslint';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const correctnessRules = [
+  'constructor-super', 'for-direction', 'getter-return', 'no-async-promise-executor',
+  'no-class-assign', 'no-compare-neg-zero', 'no-cond-assign', 'no-const-assign',
+  'no-dupe-args', 'no-dupe-class-members', 'no-dupe-else-if', 'no-dupe-keys',
+  'no-duplicate-case', 'no-func-assign', 'no-import-assign', 'no-obj-calls',
+  'no-unexpected-multiline', 'no-unreachable', 'no-unsafe-finally', 'no-unsafe-negation', 'valid-typeof'
+];
+function sourceFiles(dir) {
+  return fs.readdirSync(path.join(root, dir), { withFileTypes: true }).flatMap(entry => {
+    const name = path.join(dir, entry.name);
+    return entry.isDirectory() ? sourceFiles(name) : /\.(?:js|cjs|mjs)$/.test(name) ? [name] : [];
+  });
+}
+const linter = new Linter();
+const checkedFiles = ['main.js', 'preload.js', ...['src', 'scripts', 'tests'].flatMap(sourceFiles)];
+const issues = [];
+for (const file of checkedFiles) {
+  const source = fs.readFileSync(path.join(root, file), 'utf8');
+  const sourceType = file.endsWith('.mjs') ? 'module' : 'script';
+  try { parse(source, { ecmaVersion: 'latest', sourceType }); }
+  catch (error) { issues.push(`${file}: ${error.message}`); continue; }
+  const messages = linter.verify(source, {
+    languageOptions: { ecmaVersion: 'latest', sourceType },
+    rules: Object.fromEntries(correctnessRules.map(rule => [rule, 'error']))
+  });
+  issues.push(...messages.map(message => `${file}:${message.line}:${message.column} ${message.ruleId || 'syntax'} ${message.message}`));
+}
+assert.equal(issues.length, 0, `Source checks failed:\n${issues.join('\n')}`);
+console.log(`source checks ok: ${checkedFiles.length} files, syntax + ${correctnessRules.length} correctness rules`);
 const require = createRequire(import.meta.url);
 const modules = require(path.join(root, 'src', 'modules'));
 
