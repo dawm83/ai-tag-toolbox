@@ -132,6 +132,7 @@ function createSettings(options = {}) {
     primaryProfile: () => clone(current.primaryApi),
     visionProfile: () => clone(current.visionApi.inheritPrimary ? current.primaryApi : apiProfile(current.visionApi, DEFAULT_SETTINGS.visionApi)),
     reset(group) {
+      if (group !== undefined && !GROUPS.includes(group)) return settingsForm(current);
       if (GROUPS.includes(group)) current[group] = clone(DEFAULT_SETTINGS[group]);
       else current = normaliseSettings();
       persist(); return settingsForm(current);
