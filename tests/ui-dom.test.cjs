@@ -92,7 +92,7 @@ function boot(options = {}) {
     importBundle: () => ({ sets: [promptSet], extensions: [extension] }),
     exportExtensions: () => ({ format: 'ai-tag-prompt-extensions', version: 1, extensions: [extension] }), importExtensions: () => ({ ok: true, count: 1 })
   };
-  const tags = {
+  const tags = options.tags || {
     stateSnapshot: () => ({ categories: [], categoryCounts: {}, selected: [], category: 'all', revision: 0 }), selected: () => [], page: () => ({ items: [], total: 0 }),
     restore: () => {}, setSearchPrecision: () => {}, setAdult: () => {}, setQuery: () => {}, size: () => 0, customTags: () => [], subcategories: () => [], getCategories: () => []
   };
@@ -103,9 +103,10 @@ function boot(options = {}) {
     save: value => { comfyProfile = structuredClone(value); return structuredClone(comfyProfile); },
     setActive: () => structuredClone(comfyProfile), remove: () => false
   };
-  const modules = { assistant, characters: options.characters, runtime: { listCallRecords: assistant.listCallRecords, clearCallRecords: assistant.clearCallRecords, ...options.runtime }, prompts, tags, images: { get: id => images.get(id), preview: id => images.get(id) }, imageRepository: repository, preferences: { get: (_k, fallback) => fallback, set: () => {} }, translation: options.translation || { findReferences: () => [] }, comfy, locales: { 'zh-CN': {} }, version: '1.4.194' };
+  const modules = { assistant, favorites: options.favorites, joinFavoriteBlocks: options.joinFavoriteBlocks, characters: options.characters, runtime: { listCallRecords: assistant.listCallRecords, clearCallRecords: assistant.clearCallRecords, ...options.runtime }, prompts, tags, images: { get: id => images.get(id), preview: id => images.get(id) }, imageRepository: repository, preferences: { get: (_k, fallback) => fallback, set: () => {} }, translation: options.translation || { findReferences: () => [] }, comfy, locales: options.locales || { 'zh-CN': {} }, version: '1.4.33' };
 
-  for (const file of ['views/settings-view.js', 'views/comfy-view.js', 'views/prompt-view.js', 'views/agent-status-view.js', 'views/call-monitor-view.js', 'modules/translation-alignment.js', 'views/translation-view.js', 'app-view.js']) window.eval(source(file));
+  for (const file of ['views/settings-view.js', 'views/comfy-view.js', 'views/prompt-view.js', 'views/agent-status-view.js', 'views/call-monitor-view.js', 'modules/translation-alignment.js', 'views/translation-view.js', 'views/favorites-view.js', 'app-view.js']) window.eval(source(file));
+  if (options.favoritesView) window.AppViews.favorites = { createFavoritesView: () => options.favoritesView };
   const view = window.AppView.create(modules, window.document);
   view.start();
   return { dom, window, view, assistant, repository, gallery, downloadBlobs, continuationCalls, getRunCount: () => runCount, getCancelCount: () => cancelCount, getComfyProfile: () => comfyProfile && structuredClone(comfyProfile) };
@@ -502,6 +503,113 @@ test('API edits and test requests preserve zero temperatures', async t => {
   assert.ok(configs.every(config => config.temperature === 0));
 });
 
+test('favorites route preserves draft on rejected leave and includes favorite snapshots in the bottom bar', async t => {
+  let allowed = false;
+  let snapshots = [{ entryId: 'f1', kind: 'bundle', title: 'light', rawText: ' soft lighting, (blue hair:1.2) ' }];
+  const favorites = { selected: () => snapshots, setSelected: () => { snapshots = []; }, clearSelected: () => { snapshots = []; }, search: () => ({ items: [] }), subscribe: () => () => {} };
+  const app = boot({ favorites, favoritesView: { bind() {}, enter() {}, render() {}, leave: async () => allowed } });
+  t.after(() => app.dom.window.close());
+  const doc = app.window.document;
+  doc.querySelector('#favBtn').click();
+  assert.equal(doc.querySelector('#favoritesView').hidden, false);
+  assert.ok(doc.querySelector('[data-remove-favorite="f1"]'));
+  await app.view.route('tags');
+  assert.equal(doc.querySelector('#favoritesView').hidden, false);
+  allowed = true;
+  await app.view.route('tags');
+  assert.equal(doc.querySelector('#favoritesView').hidden, true);
+  doc.querySelector('[data-remove-favorite="f1"]').click();
+  assert.equal(snapshots.length, 0);
+});
+
+test('real favorites page creates exact content and keeps its selected snapshot independent of edits', async t => {
+  const { createFavorites } = require('../src/modules/favorites');
+  const { createStorage } = require('../src/modules/storage');
+  const { joinFavoriteBlocks } = require('../src/modules/favorites-transfer');
+  const storage = createStorage();
+  const favorites = createFavorites({ storage });
+  const app = boot({ favorites, joinFavoriteBlocks });
+  t.after(() => { app.view.views.favorites.destroy(); app.dom.window.close(); });
+  const doc = app.window.document;
+  const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+  const copied = [];
+  app.window.navigator.clipboard.writeText = async value => copied.push(value);
+  app.window.prompt = () => { throw new Error('Electron does not implement prompt'); };
+  doc.querySelector('#favBtn').click();
+  doc.querySelector('[data-favorite-action="new-series"]').click();
+  await settle();
+  doc.querySelector('[data-favorite-dialog-input]').value = 'Lighting';
+  doc.querySelector('[data-favorite-action="dialog-confirm"]').click();
+  await settle();
+  assert.equal(favorites.series()[0].name, 'Lighting');
+  doc.querySelector('[data-favorite-action="new-bundle"]').click();
+  await settle();
+  const original = ' soft lighting, (blue_hair:1.2),\\(detail\\) \n';
+  for (const [field, value] of Object.entries({ title: 'Portrait', rawText: original })) {
+    const input = doc.querySelector(`[data-favorite-field="${field}"]`);
+    input.value = value;
+    input.dispatchEvent(new app.window.Event('input', { bubbles: true }));
+  }
+  doc.querySelector('[data-favorite-action="editor-close"]').click();
+  await settle();
+  const entry = favorites.list().items[0];
+  assert.equal(entry.rawText, original);
+  assert.equal(entry.globalSearchable, true);
+  doc.querySelector(`[data-favorite-select="${entry.id}"]`).click();
+  await settle();
+  assert.deepEqual(copied, [original]);
+  assert.equal(doc.querySelector('#preview').textContent, original);
+  const detail = doc.querySelector('.favorite-selection-details');
+  assert.ok(detail);
+  detail.open = true;
+  assert.equal(detail.querySelector('pre').textContent, original);
+  assert.ok(detail.querySelector('use').getAttribute('href').endsWith('#layers'));
+  favorites.saveEntry({ id: entry.id, rawText: 'new value' });
+  assert.equal(doc.querySelector('#preview').textContent, original);
+  doc.querySelector('#copyAll').click();
+  await settle();
+  assert.equal(copied.at(-1), original);
+  assert.equal(await app.view.route('tags'), true);
+  doc.querySelector('#favBtn').click();
+  doc.querySelector(`[data-favorite-copy="${entry.id}"]`).click();
+  await settle();
+  assert.deepEqual(copied, [original, original, 'new value']);
+  assert.equal(app.assistant.getSettings().comfyW, 768);
+  doc.querySelector(`[data-remove-favorite="${entry.id}"]`).click();
+  assert.equal(favorites.selected().length, 0);
+  assert.equal(favorites.list().total, 1);
+  assert.equal(await favorites.flush(), true);
+  assert.equal(createFavorites({ storage }).getEntry(entry.id).rawText, 'new value');
+});
+
+test('global favorite results and English favorites labels use the real page and store', async t => {
+  const { createFavorites } = require('../src/modules/favorites');
+  const favorites = createFavorites();
+  const seriesId = favorites.saveSeries({ name: 'Lighting' }).data.id;
+  favorites.saveEntry({ seriesId, kind: 'bundle', title: 'Light group', rawText: 'soft lighting' });
+  favorites.saveEntry({ seriesId, rawText: 'private lighting', globalSearchable: false });
+  const tags = { stateSnapshot: () => ({ categories: [], categoryCounts: {}, selected: [], query: 'lighting', adult: false }), selected: () => [], page: () => ({ items: [], total: 0 }), restore() {}, subcategories: () => [] };
+  const locales = { 'en-US': require('../locales/en-US.json') };
+  const app = boot({ favorites, tags, locales });
+  t.after(() => { app.view.views.favorites.destroy(); app.dom.window.close(); });
+  assert.equal(app.window.document.querySelectorAll('#favoriteSearchResults .favorite-global-item').length, 1);
+  const doc = app.window.document;
+  const result = doc.querySelector('#favoriteSearchResults .chip');
+  result.click();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  doc.querySelector('[data-remove-favorite]').click();
+  assert.equal(doc.querySelector('#favoriteSearchResults .chip').getAttribute('aria-pressed'), 'false');
+  doc.querySelector('#favoriteSearchResults .chip').click();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(favorites.selected().length, 1);
+  doc.querySelector('#clearSel').click();
+  assert.equal(doc.querySelector('#favoriteSearchResults .chip').getAttribute('aria-pressed'), 'false');
+  app.window.document.querySelector('#localeBtn').click();
+  app.window.document.querySelector('[data-locale="en-US"]').click();
+  await app.view.route('favorites');
+  assert.equal(app.window.document.querySelector('[data-favorite-search]').placeholder, locales['en-US'].ui.favorites.searchPlaceholder);
+});
+
 test('gallery name copying and bulk actions share one selection state', async t => {
   const app = boot(); t.after(() => app.dom.window.close());
   const doc = app.window.document;
@@ -843,7 +951,7 @@ test('deleting a conversation defaults to removing images unless gallery retenti
   let deleted;
   const app = boot({ deleteSession: (sessionId, value) => { deleted = { sessionId, value }; } });
   app.window.document.querySelector('#talkManage').click();
-  app.window.document.querySelector('#mgrChatList .del, #mgrGenList .del, .fav .del')?.click();
+  app.window.document.querySelector('#mgrChatList .del, #mgrGenList .del')?.click();
   assert.equal(app.window.document.querySelector('#cfmRetainImages').checked, false);
   app.window.document.querySelector('#cfmYes').click();
   assert.equal(deleted.sessionId, 's1');

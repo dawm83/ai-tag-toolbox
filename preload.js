@@ -7,6 +7,7 @@ const { contextBridge } = require('electron');
 // 只在本地 preload 中构造业务模块；页面不接触 Node、文件系统或旧版全局脚本。
 // 这个桥很薄，后续模块成熟后可以直接替换成浏览器端 ESM 实现。
 let tags = null;
+let favorites = null;
 let characters = null;
 let images = null;
 let translation = null;
@@ -36,6 +37,7 @@ try {
   fs.mkdirSync(userDataDir, { recursive: true });
   storage = modules.createStorage ? modules.createStorage({ prefix: 'ai-tag-toolbox-rewrite', filePath: storagePath }) : null;
   tags = modules.createTags({ sources: modules.loadTagFiles({ assetDir }), storage });
+  favorites = modules.createFavorites?.({ storage, tags }) || null;
   characters = modules.createCharacters({ tags, storage, dataDir: path.join(assetDir, '数据资产', '角色') });
   const modelCandidates = [
     path.join(path.dirname(process.execPath), 'models'),
@@ -81,6 +83,7 @@ try {
   };
   assistant = modules.createAssistant({
     tags,
+    favorites,
     characters,
     images,
     vision,
@@ -200,6 +203,21 @@ function resolveTempForRenderer(value) {
 
 contextBridge.exposeInMainWorld('AppModules', {
   tags,
+  favorites: favorites ? Object.fromEntries([
+    'snapshot', 'series', 'sections', 'getEntry', 'list', 'saveSeries', 'saveSection', 'saveEntry',
+    'applyBatch', 'duplicateEntries', 'deleteEntries', 'deleteSection', 'deleteSeries', 'reorder',
+    'setSeriesColors', 'search', 'copyText', 'markCopied', 'setSelected', 'selected', 'clearSelected',
+    'undo', 'redo', 'historyState', 'subscribe', 'flush', 'exportBundle', 'previewImport', 'importBundle',
+    'parseFavoritePaste', 'previewPaste', 'importPaste', 'validateFavoriteBundle', 'favoriteMemberCount'
+  ].filter(name => typeof favorites[name] === 'function').map(name => [name, favorites[name]])) : null,
+  joinFavoriteBlocks: modulesRef?.joinFavoriteBlocks,
+  async prepareClose() {
+    assistant?.cancel?.();
+    const favoritesSaved = await favorites?.flush?.();
+    const sessionsSaved = await assistant?.flushPersistence?.();
+    const settingsSaved = await storage?.flush?.();
+    return favoritesSaved !== false && sessionsSaved !== false && settingsSaved !== false;
+  },
   characters,
   images: safeImageStore,
   imageStore: safeImageStore,

@@ -16,7 +16,11 @@
     modules,
     state: app,
     route(value) { app.route = value; view.route?.(value); },
-    views: view.views || {}
+    views: view.views || {},
+    async flushBeforeClose() {
+      if (await view.views?.favorites?.flushEdits?.() === false) return false;
+      return typeof modules.prepareClose === 'function' ? modules.prepareClose() : modules.assistant?.flushPersistence?.();
+    }
   };
   view.start?.();
 })(typeof globalThis !== 'undefined' ? globalThis : window);

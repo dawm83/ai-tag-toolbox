@@ -14,6 +14,7 @@
     />
     <link rel="stylesheet" href="app.css" />
     <link rel="stylesheet" href="characters.css" />
+    <link rel="stylesheet" href="favorites.css" />
   </head>
   <body>
     <header>
@@ -134,7 +135,7 @@
         ></button>
       <button class="hbtn btn btn-nav btn-secondary nav-action nav-toggle" id="visionBtn" data-nav-action="vision" data-nav-tone="vision" data-i18n="ui.header.vision" aria-controls="tagPane" aria-expanded="false"></button>
       <button class="hbtn btn btn-nav btn-secondary nav-action nav-toggle" id="galleryBtn" data-nav-action="gallery" data-nav-tone="gallery" aria-pressed="false"></button>
-      <button class="hbtn btn btn-nav btn-secondary nav-action nav-toggle" id="favBtn" data-nav-action="favorites" data-nav-tone="favorites" data-i18n="ui.header.favorites" aria-controls="drawer" aria-expanded="false"></button>
+      <button class="hbtn btn btn-nav btn-secondary nav-action nav-toggle" id="favBtn" data-nav-action="favorites" data-nav-tone="favorites" data-i18n="ui.header.favorites" aria-controls="favoritesView" aria-pressed="false"></button>
       </div>
     </header>
 
@@ -171,7 +172,7 @@
             <button class="abtn ghost btn btn-ghost" id="clearQ" style="display: none">✕ 清除搜索</button>
           </div>
           <div id="subcatNav" class="subcat-nav" role="tablist" aria-label="子分类" hidden></div>
-          <div class="content" id="content"><div id="chips"></div></div>
+          <div class="content" id="content"><div id="chips"></div><section id="favoriteSearchResults" class="favorite-global-results" hidden></section></div>
         </div>
         <section id="charactersView" class="characters-view" aria-label="角色库" hidden>
           <div class="characters-toolbar">
@@ -270,6 +271,7 @@
           <input id="galleryFile" type="file" accept="image/*" multiple hidden />
           <div id="galleryGrid" class="gallery-grid"></div>
         </section>
+        <section id="favoritesView" class="favorites-view" aria-label="快捷收藏" hidden></section>
       </main>
       <div class="tag-vision-slot" id="tagVisionSlot">
         <aside class="tkpane" id="tagPane" data-image-context="vision" tabindex="0" aria-label="单图识图区域">
@@ -310,17 +312,6 @@
     </div>
 
     <div class="scrim" id="scrim"></div>
-
-    <div class="drawer" id="drawer">
-      <h3>⭐ 收藏组合 <button class="hbtn btn btn-icon" id="drawerClose">✕</button></h3>
-      <div class="body">
-        <div class="favform">
-          <input id="favName" placeholder="给当前已选组合起个名字…" />
-          <button class="abtn pri btn btn-primary" id="favSave">保存</button>
-        </div>
-        <div id="favList"></div>
-      </div>
-    </div>
 
     <div class="modal" id="helpModal">
       <div class="box">
@@ -783,6 +774,7 @@
     <div class="toast" id="toast"></div>
 
     <script src="views/settings-view.js"></script>
+    <script src="views/favorites-view.js"></script>
     <script src="views/comfy-view.js"></script>
     <script src="views/prompt-view.js"></script>
     <script src="views/agent-status-view.js"></script>

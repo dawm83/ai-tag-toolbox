@@ -199,22 +199,6 @@ body.vision-open #scrim{
   left:var(--vision-scrim-left,420px);
 }
 body.vision-open #sidebar{z-index:45}
-.drawer{position:fixed;top:0;right:0;bottom:0;width:min(390px,94vw);background:var(--card);border-left:1px solid var(--border);z-index:50;transform:translateX(105%);transition:transform .2s;display:flex;flex-direction:column;box-shadow:-6px 0 20px rgba(0,0,0,.14)}
-.drawer.show{transform:none}
-.drawer h3{padding:15px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;font-size:15px}
-.drawer .body{flex:1;overflow-y:auto;padding:16px}
-.favform{display:flex;gap:8px;margin-bottom:16px}
-.favform input{flex:1;padding:9px 11px;border-radius:9px;border:1px solid var(--border2);background:var(--bg);color:var(--text);outline:none}
-.favform input:focus{border-color:var(--pri)}
-.fav{padding:12px;border:1px solid var(--border);border-radius:10px;margin-bottom:9px;background:var(--card);box-shadow:var(--shadow)}
-.fav .fname{font-weight:600;font-size:14px;display:flex;align-items:center;gap:8px;cursor:pointer}
-.fav .fname:hover{color:var(--pri)}
-.fav .fmeta{color:var(--muted);font-size:12px;margin:3px 0 7px}
-.fav .fprev{color:var(--muted);font-size:12px;word-break:break-all}
-.fav .fact{display:flex;gap:7px;margin-top:10px}
-.fbtn{font-size:12px;padding:5px 11px;border-radius:8px;border:1px solid var(--border2);background:var(--bg);transition:all .15s}
-.fbtn:hover{border-color:var(--pri);color:var(--pri)}
-.fbtn.del:hover{border-color:var(--neg);color:var(--neg)}
 .modal{position:fixed;inset:0;z-index:60;display:none;align-items:center;justify-content:center}
 .modal.show{display:flex}
 .modal .box{background:var(--card);border:1px solid var(--border);border-radius:14px;max-width:600px;width:92vw;max-height:84vh;overflow-y:auto;padding:22px}

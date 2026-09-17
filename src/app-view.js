@@ -12,6 +12,7 @@
     const doc = documentRef;
     const tags = modules.tags;
     const characters = modules.characters || null;
+    const favorites = modules.favorites || null;
     const images = modules.images;
     const imageStore = modules.imageStore || null;
     const assistant = modules.assistant;
@@ -24,7 +25,6 @@
     const ui = {
       route: "tags",
       aiTab: "talk",
-      favoritesOpen: false,
       visionResult: null,
       visionOpen: false,
       visionDescription: "",
@@ -121,6 +121,7 @@
     }
     const viewFactories = global.AppViews || {};
     const views = {
+      favorites: favorites ? viewFactories.favorites?.createFavoritesView?.({ document: doc, favorites, preferences, copy: value => copyExact(value), notify, localize: (key, fallback) => localized(`ui.${key}`, fallback), onSelectionChange: () => renderSelection(), getIncludeAdult: () => tagSnapshot().adult, parsePaste: (...args) => favorites.parseFavoritePaste?.(...args) }) : null,
       translation: viewFactories.translation?.createTranslationView?.({ document: doc, runtime, translation: modules.translation, notify, copy: value => copy(value), localized, onTagSelected: id => { tags?.select?.(id, true); renderTags(); renderSelection(); } }),
       settings: viewFactories.settings?.createSettingsView?.({ document: doc, api: assistant, runtime, comfy, notify, onChange: value => { views.comfy?.render?.(value); syncGenerationControls(); }, autoBind: false }),
       comfy: viewFactories.comfy?.createComfyView?.({ document: doc, comfy, assistant, notify, openExternal: url => global.open(url), onChange: value => { views.settings?.render?.(value); syncGenerationControls(); }, autoBind: false }),
@@ -145,6 +146,13 @@
         return false;
       }
     };
+    async function copyExact(value) {
+      try {
+        if (!doc.defaultView?.navigator?.clipboard?.writeText) return false;
+        await doc.defaultView.navigator.clipboard.writeText(String(value ?? ""));
+        return true;
+      } catch { return false; }
+    }
     function showChipToast(target, message = "已复制") {
       if (!target) return;
       const toast = doc.createElement("span");
@@ -195,7 +203,7 @@
       translation: { selector: "#translateBtn", idleKey: "ui.header.translation", activeKey: "ui.header.backHome", idle: ["🌐 翻译", "🌐 Translate"], active: ["← 返回主页", "← Back home"], run: () => route(ui.route === "translation" ? "tags" : "translation") },
       vision: { selector: "#visionBtn", idleKey: "ui.header.vision", activeKey: "ui.header.visionClose", idle: ["🔍 识图", "🔍 Vision"], active: ["✕ 关闭识图", "✕ Close vision"], run: () => setVisionOpen(!ui.visionOpen) },
       gallery: { selector: "#galleryBtn", idleKey: "ui.header.gallery", activeKey: "ui.header.backHome", idle: ["🖼 图片库", "🖼 Gallery"], active: ["← 返回主页面", "← Back home"], run: () => route(ui.route === "gallery" ? "tags" : "gallery") },
-      favorites: { selector: "#favBtn", idleKey: "ui.header.favorites", activeKey: "ui.header.favoritesClose", idle: ["⭐ 收藏组合", "⭐ Favorites"], active: ["✕ 关闭收藏组合", "✕ Close favorites"], run: () => toggleFavoriteDrawer() },
+      favorites: { selector: "#favBtn", idleKey: "ui.header.favorites", activeKey: "ui.header.backHome", idle: ["⭐ 快捷收藏", "⭐ Favorites"], active: ["← 返回主页", "← Back home"], run: () => route(ui.route === "favorites" ? "tags" : "favorites") },
       adult: { selector: "#nsfwBtn", idleKey: "ui.header.adult", activeKey: "ui.header.adultClose", idle: ["○ 成人标签：关", "○ Adult tags: off"], active: ["● 成人标签：开", "● Adult tags: on"], run: () => toggleAdultTags() },
       sponsor: { selector: "#sponsorBtn", idleKey: "ui.header.sponsor", idle: ["❤️ 赞助作者", "❤️ Sponsor"], run: () => $("#sponsorModal")?.classList.add("show") },
       theme: { selector: "#themeBtn", idleKey: "ui.header.style", idle: ["🎨 样式", "🎨 Style"], run: event => toggleThemeMenu(event) },
@@ -213,7 +221,7 @@
       else button.removeAttribute("aria-pressed");
       button.dataset.navState = useActive ? "active" : "idle";
       button.textContent = localized(useActive ? config.activeKey : config.idleKey, fallback);
-      if (name === "vision" || name === "favorites") button.setAttribute("aria-expanded", useActive ? "true" : "false");
+      if (name === "vision") button.setAttribute("aria-expanded", useActive ? "true" : "false");
       if (name === "vision" || name === "favorites") button.title = button.textContent;
     }
     function syncNavigationStates() {
@@ -221,7 +229,7 @@
       syncNavAction("translation", ui.route === "translation");
       syncNavAction("vision", ui.visionOpen);
       syncNavAction("gallery", ui.route === "gallery");
-      syncNavAction("favorites", ui.favoritesOpen);
+      syncNavAction("favorites", ui.route === "favorites");
       syncNavAction("adult", tagSnapshot().adult);
       syncNavAction("sponsor", false);
       syncNavAction("theme", false);
@@ -293,6 +301,11 @@
       selected().forEach(item => append(item?.category === "character_names" ? escapeQualifierParentheses(item?.en || item?.id) : item?.en || item?.id));
       selectedCharacters().flatMap(item => item?.tags || []).forEach(value => append(value, true));
       return values;
+    }
+    function selectedFavorites() { return favorites?.selected?.({ includeAdult: tagSnapshot().adult }) || []; }
+    function combinedSelectionText() {
+      const blocks = [...combinedSelectionValues(), ...selectedFavorites().map(item => item.rawText)];
+      return modules.joinFavoriteBlocks ? modules.joinFavoriteBlocks(blocks) : blocks.join(", ");
     }
     function renderCharacters(options = {}) {
       const query = options.query == null ? str($("#q")?.value) : str(options.query);
@@ -484,11 +497,51 @@
       });
       host.hidden = false;
     }
+    function renderFavoriteMatches() {
+      const host = $("#favoriteSearchResults");
+      if (!host) return;
+      const query = tagSnapshot().query;
+      host.replaceChildren();
+      const result = query && favorites?.search?.(query, { scope: "global", includeAdult: tagSnapshot().adult, limit: 16 });
+      host.hidden = !result?.items?.length;
+      if (host.hidden) return;
+      const heading = doc.createElement("h3");
+      heading.textContent = `${localized("ui.favorites.searchMatches", "我的收藏")} (${result.total ?? result.items.length})`;
+      const rows = doc.createElement("div"); rows.className = "chips";
+      const selected = new Set(selectedFavorites().map(item => item.entryId));
+      result.items.forEach(hit => {
+        const row = doc.createElement("div"); row.className = "favorite-global-item";
+        const button = doc.createElement("button"); button.type = "button";
+        button.dataset.favoriteGlobalEntry = hit.entryId;
+        button.className = `chip btn btn-chip${selected.has(hit.entryId) ? " sel" : ""}`;
+        button.style.setProperty("--c", hit.color || "var(--pri)");
+        button.setAttribute("aria-pressed", String(selected.has(hit.entryId)));
+        const title = doc.createElement("span"); title.className = "en";
+        title.textContent = hit.title || hit.rawText;
+        const detail = doc.createElement("span"); detail.className = "zh";
+        detail.textContent = [hit.kind === "bundle" ? localized("ui.favorites.bundle", "标签组") : localized("ui.favorites.tag", "单标签"), hit.seriesName, hit.sectionName].filter(Boolean).join(" · ");
+        button.append(title, detail);
+        button.onclick = async () => {
+          const chosen = favorites.setSelected(hit.entryId, !selectedFavorites().some(item => item.entryId === hit.entryId));
+          if (chosen?.ok === false) { notify(chosen.error?.message || localized("ui.favorites.selectFailed", "选择失败")); return; }
+          renderSelection();
+          if (await copyExact(hit.rawText)) favorites.markCopied?.([hit.entryId]);
+          else notify(localized("ui.favorites.copyFailed", "复制失败"));
+        };
+        const locate = doc.createElement("button"); locate.type = "button"; locate.className = "btn btn-icon";
+        locate.title = localized("ui.favorites.locate", "定位原处"); locate.setAttribute("aria-label", locate.title);
+        locate.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><use href="../assets/icons/favorites.svg#locate-fixed"></use></svg>';
+        locate.onclick = async () => { if (await route("favorites") !== false) views.favorites?.focusEntry?.(hit.entryId); };
+        row.append(button, locate); rows.appendChild(row);
+      });
+      host.append(heading, rows);
+    }
     function renderTags() {
       const host = $("#chips");
       if (!host) return;
       const snap = tagSnapshot();
       const page = tagRows();
+      renderFavoriteMatches();
       const rows = page.items || [];
       renderSubcategoryNav(snap);
       const clearSearch = $("#clearQ");
@@ -557,11 +610,13 @@
     function renderSelection() {
       const rows = selected();
       const characterRows = selectedCharacters();
+      const favoriteRows = selectedFavorites();
       const host = $("#selbox");
-      put("#selCount", rows.length + characterRows.length);
+      put("#selCount", rows.length + characterRows.length + favoriteRows.length);
       if (!host) return;
+      const expandedFavorites = new Set($$(".favorite-selection-details[open]", host).map(node => node.dataset.favoriteSnapshot));
       host.replaceChildren();
-      if (!rows.length && !characterRows.length)
+      if (!rows.length && !characterRows.length && !favoriteRows.length)
         host.innerHTML =
           '<span class="emptyhint">点击上方标签即可选中，支持多选</span>';
       rows.forEach((item) => {
@@ -588,64 +643,44 @@
         chip.append(words, remove);
         host.appendChild(chip);
       });
-      put("#preview", combinedSelectionValues().join(", "));
+      favoriteRows.forEach(item => {
+        const chip = doc.createElement("span"); chip.className = "schip favorite-selection";
+        const details = doc.createElement("details"); details.className = "favorite-selection-details";
+        details.dataset.favoriteSnapshot = item.entryId; details.open = expandedFavorites.has(item.entryId);
+        const summary = doc.createElement("summary");
+        const icon = doc.createElementNS("http://www.w3.org/2000/svg", "svg"); icon.classList.add("favorite-icon"); icon.setAttribute("aria-hidden", "true");
+        const use = doc.createElementNS("http://www.w3.org/2000/svg", "use");
+        use.setAttribute("href", `../assets/icons/favorites.svg#${item.kind === "bundle" ? "layers" : "tag"}`); icon.append(use);
+        const title = doc.createElement("span"); title.textContent = item.title || item.rawText; title.title = item.rawText;
+        const raw = doc.createElement("pre"); raw.textContent = item.rawText;
+        summary.append(icon, title); details.append(summary, raw);
+        const remove = doc.createElement("button"); remove.type = "button"; remove.className = "btn btn-icon btn-danger";
+        remove.dataset.removeFavorite = item.entryId; remove.textContent = "✕";
+        remove.setAttribute("aria-label", localized("ui.favorites.removeSelection", "从当前组合移除"));
+        chip.append(details, remove); host.appendChild(chip);
+      });
+      const preview = $("#preview"); if (preview) preview.textContent = combinedSelectionText();
+      const selectedIds = new Set(favoriteRows.map(item => item.entryId));
+      $$("[data-favorite-global-entry]").forEach(button => {
+        const selected = selectedIds.has(button.dataset.favoriteGlobalEntry);
+        button.classList.toggle("sel", selected); button.setAttribute("aria-pressed", String(selected));
+      });
+      views.favorites?.syncSelection?.();
     }
     function syncSelectedClasses() {
       const chosen = new Set(selectedIds());
       $$("#chips [data-en]").forEach((button) => button.classList.toggle("sel", chosen.has(button.dataset.en)));
     }
-    function renderFavorites() {
-      const host = $("#favList");
-      if (!host) return;
-      host.replaceChildren();
-      (assistant?.listFavorites?.() || []).forEach((item) => {
-        const row = doc.createElement("div");
-        row.className = "fav";
-        row.innerHTML = `<b>${item.name || "未命名收藏"}</b><div class="row"><button class="abtn btn btn-secondary load">载入</button><button class="abtn btn btn-secondary add">追加</button><button class="abtn ghost btn btn-danger del">删除</button></div>`;
-        row.querySelector(".load").onclick = () => {
-          tags?.clearSelection?.();
-          (item.tags || []).forEach((id) => tags?.select?.(id, true));
-          syncSelectedClasses();
-          renderSelection();
-          closeDrawer();
-        };
-        row.querySelector(".add").onclick = () => {
-          (item.tags || []).forEach((id) => tags?.select?.(id, true));
-          syncSelectedClasses();
-          renderSelection();
-        };
-        row.querySelector(".del").onclick = () => confirm(`确定删除收藏组合「${item.name || "未命名收藏"}」吗？`, () => { assistant?.removeFavorite?.(item.id); renderFavorites(); });
-        host.appendChild(row);
-      });
-    }
-    function openDrawer() {
-      if (ui.visionOpen) setVisionOpen(false);
-      ui.favoritesOpen = true;
-      $("#drawer")?.classList.add("show");
-      syncNavAction("favorites", true);
-      syncScrim();
-      renderFavorites();
-    }
-    function closeDrawer() {
-      ui.favoritesOpen = false;
-      $("#drawer")?.classList.remove("show");
-      syncNavAction("favorites", false);
-      syncScrim();
-    }
-    function toggleFavoriteDrawer() {
-      if (ui.favoritesOpen) closeDrawer();
-      else openDrawer();
-    }
     function toggleAdultTags() {
       tags?.setAdult?.(!tagSnapshot().adult);
       renderCategories();
       if (ui.route === "characters") renderCharacters();
+      else if (ui.route === "favorites") views.favorites?.render?.();
       else renderTags();
       renderSelection();
     }
     function syncScrim() {
-      const drawerOpen = $("#drawer")?.classList.contains("show");
-      $("#scrim")?.classList.toggle("show", Boolean(drawerOpen || ui.visionOpen));
+      $("#scrim")?.classList.toggle("show", ui.visionOpen);
       doc.body.classList.toggle("vision-open", ui.visionOpen);
       if (ui.visionOpen) syncVisionPaneOffset();
     }
@@ -690,7 +725,6 @@
         renderConversationRepository();
       }
       syncVisionPaneOffset();
-      if (ui.visionOpen && ui.favoritesOpen) closeDrawer();
       const pane = $("#tagPane");
       pane?.classList.toggle("vision-open", ui.visionOpen);
       syncNavAction("vision", ui.visionOpen);
@@ -3225,7 +3259,18 @@
       tagSlot.classList.toggle("active", ui.route === "tags");
       setVisionOpen(ui.visionOpen);
     }
-    function route(route) {
+    let routeRequestId = 0;
+    function route(next) {
+      const requestId = ++routeRequestId;
+      if (ui.route === "favorites" && next !== "favorites") {
+        return Promise.resolve(views.favorites?.leave?.()).then(saved => {
+          if (saved === false || requestId !== routeRequestId) return false;
+          applyRoute(next); return true;
+        });
+      }
+      applyRoute(next); return true;
+    }
+    function applyRoute(route) {
       if (ui.route === "ai" && ui.aiTab === "api" && route !== "ai") flushSettingsSave();
       if (ui.route === "ai" && ui.aiTab === "comfy" && route !== "ai") views.comfy?.flush?.();
       if (ui.route === "translation" && route !== "translation") views.translation?.leave?.();
@@ -3259,10 +3304,12 @@
       }
       const galleryView = $("#galleryView");
       if (galleryView) { galleryView.hidden = route !== "gallery"; galleryView.style.display = route === "gallery" ? "" : "none"; }
+      const favoriteView = $("#favoritesView");
+      if (favoriteView) { favoriteView.hidden = route !== "favorites"; favoriteView.style.display = route === "favorites" ? "" : "none"; }
       show(".main", !ai);
       show("#aiView", ai);
       show("#aiCfgBtns", ai);
-      show("#sidebar", route !== "translation" && route !== "gallery");
+      show("#sidebar", !["translation", "gallery", "favorites"].includes(route));
       show("#catList", route === "tags" || route === "characters");
       show("#addTagBtn", route === "tags");
       show("#sideAi", ai);
@@ -3270,7 +3317,7 @@
       show(".bar", route !== "gallery");
       const search = $("#searchWrap");
       if (search) {
-        const searchHidden = ai || route === "gallery";
+        const searchHidden = ai || route === "gallery" || route === "favorites";
         search.style.display = searchHidden ? "none" : "";
         search.style.visibility = searchHidden ? "hidden" : "";
         search.style.pointerEvents = searchHidden ? "none" : "";
@@ -3288,6 +3335,7 @@
       doc.body.classList.toggle("aiview", ai);
       doc.body.classList.toggle("translation-mode", route === "translation");
       doc.body.classList.toggle("characters-mode", route === "characters");
+      doc.body.classList.toggle("favorites-mode", route === "favorites");
       syncNavigationStates();
       ensureVisionPanePlacement();
       if (ai) {
@@ -3297,6 +3345,7 @@
         showAi(ui.aiTab);
       }
       if (route === "gallery") renderGallery();
+      if (route === "favorites") views.favorites?.enter?.();
       if (route === "characters") {
         renderCategories();
         renderCharacters();
@@ -3351,6 +3400,8 @@
       renderCategories();
       if (ui.route === "characters") renderCharacters();
       else renderTags();
+      views.favorites?.refreshLocale?.();
+      renderSelection();
       renderCustomCategories();
       renderTalkVisionPanel();
       setVisionOpen(ui.visionOpen);
@@ -3505,6 +3556,11 @@
         renderSelection();
       });
       $("#selbox")?.addEventListener("click", (event) => {
+        const favoriteButton = event.target.closest("[data-remove-favorite]");
+        if (favoriteButton) {
+          favorites?.setSelected?.(favoriteButton.dataset.removeFavorite, false);
+          renderSelection(); return;
+        }
         const characterButton = event.target.closest("[data-remove-character]");
         if (characterButton) {
           characters?.removeSelection?.(characterButton.dataset.removeCharacter);
@@ -3521,11 +3577,12 @@
       $("#clearSel")?.addEventListener("click", () => {
         tags?.clearSelection?.();
         characters?.clearSelection?.();
+        favorites?.clearSelected?.();
         syncSelectedClasses();
         renderSelection();
       });
       $("#copyAll")?.addEventListener("click", async () => {
-        if (await copy(combinedSelectionValues().join(", ")))
+        if (await copyExact(combinedSelectionText()))
           notify("Prompt 已复制");
         else notify("复制失败，请检查剪贴板权限");
       });
@@ -3536,20 +3593,14 @@
         else renderTags();
         renderSelection();
       });
-      $("#saveFav")?.addEventListener("click", openDrawer);
-      $("#drawerClose")?.addEventListener("click", closeDrawer);
-      $("#scrim")?.addEventListener("click", () => {
-        closeDrawer();
-        setVisionOpen(false);
+      $("#saveFav")?.addEventListener("click", async () => {
+        const rawText = combinedSelectionText();
+        if (!rawText.trim()) return notify(localized("ui.favorites.selectFirst", "请先选择 Tag 或标签组"));
+        if (await route("favorites") === false) return;
+        views.favorites?.openCreate?.({ kind: "bundle", rawText });
       });
-      $("#favSave")?.addEventListener("click", () => {
-        const ids = selectedIds();
-        if (!ids.length) return notify("请先选择 Tag");
-        assistant?.addFavorite?.({
-          name: str($("#favName")?.value, "未命名收藏"),
-          tags: ids,
-        });
-        renderFavorites();
+      $("#scrim")?.addEventListener("click", () => {
+        setVisionOpen(false);
       });
       $("#addTagBtn")?.addEventListener("click", () => {
         renderCustomCategories();
@@ -4017,7 +4068,6 @@
           $("#q")?.focus();
         }
         if (event.key === "Escape") {
-          closeDrawer();
           setVisionOpen(false);
           $("#themePop")?.setAttribute("hidden", "");
           $("#localePop")?.setAttribute("hidden", "");
@@ -4043,6 +4093,10 @@
       );
       applyTheme(theme);
       views.settings?.bind?.();
+      views.favorites?.bind?.();
+      favorites?.subscribe?.(() => {
+        if (ui.route === "tags") renderFavoriteMatches();
+      });
       views.prompt?.bind?.();
       views.agentStatus?.bind?.();
       views.callMonitor?.bind?.();

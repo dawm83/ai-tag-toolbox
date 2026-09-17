@@ -60,7 +60,7 @@ function createWindow() {
     event.preventDefault();
     if (savingBeforeClose) return;
     savingBeforeClose = true;
-    win.webContents.executeJavaScript('window.AppModules?.assistant?.cancel?.(); window.AppModules?.assistant?.flushPersistence?.()')
+    win.webContents.executeJavaScript('window.App?.flushBeforeClose ? window.App.flushBeforeClose() : window.AppModules?.prepareClose?.()')
       .catch(() => { /* A failed renderer cannot service a final save. */ })
       .then(saved => {
         if (saved === false) { savingBeforeClose = false; return; }
