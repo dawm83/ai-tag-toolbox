@@ -7,6 +7,16 @@ const { createImages } = require('../src/modules/images');
 
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
+for (const action of ['remove', 'clear']) test(`${action} immediately after add leaves no late blob`, async () => {
+  const storage = createStorage();
+  const images = createImages({ storage });
+  const item = images.add({ bytes: Buffer.from([1, 2, 3]), filename: 'immediate.bin' });
+  if (action === 'remove') images.remove(item.id); else images.clear();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(images.get(item.id), null);
+  assert.equal(await storage.getBlob(item.blobId), null);
+});
+
 test('removing an image releases its persisted blob', async () => {
   const storage = createStorage({ prefix: `image-lifecycle-${Date.now()}-${Math.random()}` });
   const images = createImages({ storage });

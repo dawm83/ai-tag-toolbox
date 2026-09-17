@@ -253,8 +253,8 @@ function createStorage(options = {}) {
     });
   }
   async function removeBlob(key) {
-    blobMemory.delete(key);
     const db = await openDb();
+    blobMemory.delete(key);
     if (!db) return true;
     return await new Promise(resolve => {
       try {
