@@ -19,6 +19,15 @@
 
 ## 基线证据
 
+### 执行进度（2026-09-17 续接）
+
+- Task 1 已提交 `6015cee`，本地依赖检查 184 项通过。
+- Task 2 已提交 `afbc9c3`，常规删除测试通过；续接发现立即删除与异步写入竞态，补充验证中。
+- Task 3 已提交 `492dc1b`，188 项检查通过；续接复查发现普通关窗与错误终态落盘缺口，尚未验收。
+- Tasks 4-10 尚未开始；实施前重新核对 V1.4.32 行为，旧审查中的判断不作为已证实缺陷。
+- 版本保持 V1.4.32；未推送、未发布、未同步桌面。
+- A0 receipt: route `code-quality-workflow`, snapshot `2026-08-18`, loaded `ST-A0`；目标为已批准维护计划，红线为持久格式/核心协议/新框架，门槛为聚焦行为测试、`npm run check` 与用户人工验收。
+
 - 目录：`F:/codex/AI绘画Tag工具箱/ai-tag-release-v143`。
 - 当前提交：`2186c68`，版本 V1.4.32。
 - 当前 `npm run check)：业务测试通过；`tests/characters-view.test.cjs`、`tests/ui-dom.test.cjs` 因硬编码绝对 jsdom 路径失败。
@@ -188,4 +197,3 @@
 - React/Svelte 或新的状态管理框架。
 - Comfy 工作流解析器重写。
 - 新的安全、权限或远程服务层。
-

@@ -56,3 +56,67 @@ test('assistant coalesces burst events into bounded persistence writes', async (
   assert.ok(adapter.writes() - before <= 4, `persistence writes: ${adapter.writes() - before}`);
   await storage.flush();
 });
+
+test('a late provider failure persists the terminal state after the stream timer drains', async () => {
+  const storage = modules.createStorage();
+  let rejectReply;
+  const streamed = new Promise(resolve => storage.subscribe(event => {
+    if (event.value?.sessions?.[0]?.messages?.at(-1)?.text === 'partial') resolve();
+  }));
+  const assistant = modules.createAssistant({
+    storage,
+    primaryApi: { base: 'https://example.test/v1', model: 'test-model' },
+    primaryGateway: { stream: async (_messages, options) => {
+      options.onDelta('partial');
+      return new Promise((_resolve, reject) => { rejectReply = reject; });
+    } }
+  });
+  const reply = assistant.run({ text: 'failure' });
+  await streamed;
+  rejectReply(new Error('provider failed'));
+  assert.equal((await reply).ok, false);
+  assert.equal(storage.get('sessions').sessions[0].messages.at(-1).status, 'error');
+  assert.equal(storage.get('sessions').sessions[0].messages.at(-1).result.ok, false);
+});
+
+test('completion cannot be cancelled while its terminal snapshot is being flushed', async () => {
+  const storage = modules.createStorage();
+  let finish;
+  let entered;
+  const flushing = new Promise(resolve => { entered = resolve; });
+  const disk = new Promise(resolve => { finish = resolve; });
+  storage.flush = () => { entered(); return disk; };
+  const assistant = modules.createAssistant({
+    storage, primaryApi: { base: 'https://example.test/v1', model: 'test-model' },
+    primaryGateway: { complete: async () => ({ text: 'done' }) }
+  });
+  const reply = assistant.run({ text: 'save', requestId: 'save-terminal' });
+  await flushing;
+  assert.equal(assistant.cancel('save-terminal'), false);
+  finish();
+  const result = await reply;
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 'done');
+  assert.equal(storage.get('sessions').sessions[0].messages.at(-1).status, 'done');
+});
+
+test('a cancelled run waits for its cancelled snapshot to reach storage', async () => {
+  const storage = modules.createStorage();
+  let finish;
+  let started;
+  const ready = new Promise(resolve => { started = resolve; });
+  storage.flush = () => new Promise(resolve => { finish = resolve; });
+  const assistant = modules.createAssistant({
+    storage, primaryApi: { base: 'https://example.test/v1', model: 'test-model' },
+    primaryGateway: { complete: () => { started(); return new Promise(() => {}); } }
+  });
+  let settled = false;
+  const reply = assistant.run({ text: 'cancel', requestId: 'cancel-flush' }).then(result => { settled = true; return result; });
+  await ready;
+  assert.equal(assistant.cancel('cancel-flush'), true);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(settled, false);
+  assert.equal(storage.get('sessions').sessions[0].messages.at(-1).status, 'cancelled');
+  finish();
+  assert.equal((await reply).error.code, 'CANCELLED');
+});

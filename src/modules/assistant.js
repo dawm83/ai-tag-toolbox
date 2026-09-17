@@ -70,21 +70,16 @@ function createAssistant(options = {}) {
   function sessionById(sessionId = state.currentId) { return state.sessions.find(session => session.id === sessionId) || null; }
   function sessionBundle() { return { format: SESSION_FORMAT, version: SESSION_VERSION, currentId: state.currentId, sessions: clone(state.sessions) }; }
   let persistTimer = null;
-  let persistQueued = false;
-  function persist() { write('sessions', sessionBundle()); }
+  function persist() {
+    clearTimeout(persistTimer); persistTimer = null;
+    write('sessions', sessionBundle());
+  }
   function schedulePersist() {
-    persistQueued = true;
     if (persistTimer) return;
-    persistTimer = setTimeout(() => {
-      persistTimer = null;
-      if (!persistQueued) return;
-      persistQueued = false;
-      persist();
-    }, 120);
+    persistTimer = setTimeout(persist, 250);
   }
   function flushPersist() {
-    if (persistTimer) { clearTimeout(persistTimer); persistTimer = null; }
-    if (persistQueued) { persistQueued = false; persist(); }
+    persist();
     return typeof storage?.flush === 'function' ? storage.flush() : Promise.resolve();
   }
   function normalizeSession(raw, usedSessions, usedMessages) {
@@ -218,6 +213,7 @@ function createAssistant(options = {}) {
   }
   function cancel(requestId) {
     if (!active || (requestId && active.id !== requestId)) return false;
+    if (active.live.status !== 'streaming') return false;
     const job = active;
     job.live.status = 'cancelled';
     job.live.result = { ok: false, error: { code: 'CANCELLED', message: '请求已取消' }, ...cancelledPayload(job) };
@@ -311,6 +307,7 @@ function createAssistant(options = {}) {
       return { ...failure(error.code, error.message, requestId, session.id), data: cancelledPayload(job) };
     } finally {
       input.signal?.removeEventListener?.('abort', callerAbort);
+      await storage?.flush?.();
       if (active === job) { active = null; state.busy = false; state.jobId = ''; }
     }
   }
@@ -389,6 +386,7 @@ function createAssistant(options = {}) {
       session.updatedAt = Date.now(); state.status = outcome.ok ? 'idle' : live.status; state.lastError = error?.message || ''; persist();
       return { ...outcome, ...payload, data: clone(payload), text: live.text, status: live.status, requestId, sessionId: session.id, userMessageId: user?.id };
     } finally {
+      await storage?.flush?.();
       if (active === job) { active = null; state.busy = false; state.jobId = ''; }
     }
   }
@@ -463,6 +461,7 @@ function createAssistant(options = {}) {
       state.status = 'error'; state.lastError = error.message; persist();
       return failure(error.code, error.message, requestId, session.id);
     } finally {
+      await storage?.flush?.();
       if (active === job) { active = null; state.busy = false; state.jobId = ''; }
     }
   }

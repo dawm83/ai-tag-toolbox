@@ -53,26 +53,26 @@ function createWindow() {
   win.webContents.on('will-navigate', (event, url) => {
     if (url !== win.webContents.getURL() && isSponsorUrl(url) && openExternalUrl(url)) event.preventDefault();
   });
+  let closeReady = false;
+  let savingBeforeClose = false;
+  win.on('close', event => {
+    if (closeReady || win.webContents.isDestroyed()) return;
+    event.preventDefault();
+    if (savingBeforeClose) return;
+    savingBeforeClose = true;
+    win.webContents.executeJavaScript('window.AppModules?.assistant?.cancel?.(); window.AppModules?.assistant?.flushPersistence?.()')
+      .catch(() => { /* A failed renderer cannot service a final save. */ })
+      .finally(() => { closeReady = true; if (!win.isDestroyed()) win.close(); });
+  });
   win.loadFile(path.join(__dirname, 'src', 'index.html'));
   return win;
 }
 
-let quitting = false;
 app.whenReady().then(() => {
   createWindow();
   app.on('activate', () => {
     if (!BrowserWindow.getAllWindows().length) createWindow();
   });
-});
-
-app.on('before-quit', event => {
-  if (quitting) return;
-  quitting = true;
-  event.preventDefault();
-  const flushes = BrowserWindow.getAllWindows().map(win => win.webContents
-    .executeJavaScript('window.AppModules?.assistant?.flushPersistence?.()')
-    .catch(() => undefined));
-  Promise.all(flushes).finally(() => app.quit());
 });
 
 app.on('window-all-closed', () => {

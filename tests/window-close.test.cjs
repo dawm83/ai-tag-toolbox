@@ -1,0 +1,66 @@
+'use strict';
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+const { EventEmitter } = require('node:events');
+
+async function boot(flush) {
+  const app = new EventEmitter();
+  const windows = [];
+  let exited = false;
+  const event = () => ({ defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } });
+  app.whenReady = () => Promise.resolve();
+  app.quit = () => {
+    const attempt = event(); app.emit('before-quit', attempt);
+    if (attempt.defaultPrevented) return;
+    for (const win of [...windows]) win.close();
+    if (!windows.length) exited = true;
+  };
+  class BrowserWindow extends EventEmitter {
+    static getAllWindows() { return [...windows]; }
+    constructor() {
+      super(); windows.push(this);
+      this.webContents = new EventEmitter();
+      this.webContents.setWindowOpenHandler = () => {};
+      this.webContents.executeJavaScript = flush;
+      this.webContents.isDestroyed = () => !windows.includes(this);
+    }
+    setMenuBarVisibility() {}
+    loadFile() {}
+    isDestroyed() { return !windows.includes(this); }
+    close() {
+      const attempt = event(); this.emit('close', attempt);
+      if (attempt.defaultPrevented) return;
+      const index = windows.indexOf(this);
+      if (index < 0) return;
+      windows.splice(index, 1); this.emit('closed');
+      if (!windows.length) app.emit('window-all-closed');
+    }
+  }
+  const root = path.resolve(__dirname, '..');
+  vm.runInNewContext(fs.readFileSync(path.join(root, 'main.js'), 'utf8'), {
+    require: name => name === 'electron' ? { app, BrowserWindow, shell: {} } : require(name),
+    __dirname: root, process: { platform: 'win32' }, URL, console
+  });
+  await Promise.resolve();
+  return { app, windows, win: windows[0], exited: () => exited };
+}
+
+for (const action of ['close', 'quit']) test(`${action} waits for persistence before destroying the last window`, async () => {
+  let finish;
+  let calls = 0;
+  const saving = new Promise(resolve => { finish = resolve; });
+  const host = await boot(() => { calls += 1; return saving; });
+  if (action === 'close') host.win.close(); else host.app.quit();
+  assert.equal(host.win.isDestroyed(), false);
+  assert.equal(calls, 1);
+  host.win.close();
+  assert.equal(calls, 1, 'repeated close must share the in-flight save');
+  finish();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(host.win.isDestroyed(), true);
+  assert.equal(host.exited(), true);
+});
