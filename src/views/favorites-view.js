@@ -176,6 +176,7 @@
         actionTextButton('unpin-selected', label('favorites.unpin', '取消置顶')),
         actionTextButton('searchable-on', label('favorites.searchableOn', '允许全局查询')),
         actionTextButton('searchable-off', label('favorites.searchableOff', '关闭全局查询')),
+        actionTextButton('copy-selected', label('favorites.copySelected', '复制原文')),
         move,
         actionTextButton('duplicate-selected', label('favorites.duplicate', '复制到目标')),
         actionTextButton('delete-selected', label('favorites.delete', '删除'), 'danger'),
@@ -730,9 +731,10 @@
       setSaveStatus('editing', label('favorites.editing', '编辑中'));
       host.querySelector('[data-favorite-field="rawText"]')?.focus();
     }
-    function readDraftFromFields() {
+    function readDraftFromFields(changedField = null) {
       if (!state.editor) return;
-      host.querySelectorAll('[data-favorite-field]').forEach(field => {
+      const fields = changedField ? [changedField] : host.querySelectorAll('[data-favorite-field]');
+      fields.forEach(field => {
         const key = field.dataset.favoriteField;
         if (field.type === 'checkbox') state.editor.draft[key] = field.checked;
         else if (key === 'aliases') state.editor.draft.aliases = field.value.split(/[,，\n]/).map(value => value.trim()).filter(Boolean);
@@ -800,7 +802,7 @@
     async function saveInlineField(field) {
       const id = field.dataset.entryId; const key = field.dataset.favoriteInlineField;
       if (!id || !['title', 'zh'].includes(key)) return false;
-      if (state.editor && state.editor.id !== id && !await flushEdits()) return false;
+      if (state.editor && !await finishEditorBeforeMutation()) return false;
       const current = safeCall('getEntry', id);
       if (current?.kind === 'bundle' && key === 'title' && !string(field.value).trim()) { notify(label('favorites.bundleTitleRequired', '标签组名称不能为空')); field.value = string(current.title); return false; }
       const result = safeCall('saveEntry', { id, [key]: field.value }, { historyKey: `favorite-inline-${id}-${key}` });
@@ -856,8 +858,10 @@
     function cssEscape(value) { return win?.CSS?.escape ? win.CSS.escape(value) : String(value).replace(/[^a-zA-Z0-9_-]/g, '\\$&'); }
 
     function focusEntry(entryId) {
-      if (state.query) state.searchContext = { query: state.query, scope: state.scope, kind: state.kind, seriesId: state.seriesId, sectionId: state.sectionId, scrollTop: host.querySelector('[data-favorite-scroll]')?.scrollTop || 0, collapsedSections: [...state.prefs.collapsedSections] };
-      state.query = ''; const search = host.querySelector('[data-favorite-search]'); if (search) search.value = '';
+      if (state.query) state.searchContext = { query: state.query, scope: state.scope, kind: state.kind, seriesId: state.seriesId, sectionId: state.sectionId, recent: state.recent, scrollTop: host.querySelector('[data-favorite-scroll]')?.scrollTop || 0, collapsedSections: [...state.prefs.collapsedSections] };
+      state.query = ''; state.seriesId = ''; state.sectionId = ''; state.kind = 'all'; state.recent = false;
+      const search = host.querySelector('[data-favorite-search]'); const kind = host.querySelector('[data-favorite-kind]'); const series = host.querySelector('[data-favorite-series-filter]'); const recent = host.querySelector('[data-favorite-recent]');
+      if (search) search.value = ''; if (kind) kind.value = 'all'; if (series) series.value = ''; if (recent) recent.classList.remove('is-active'); renderFilters();
       const entry = safeCall('getEntry', entryId);
       if (entry?.sectionId && state.prefs.collapsedSections.includes(entry.sectionId)) savePreferences({ collapsedSections: state.prefs.collapsedSections.filter(id => id !== entry.sectionId) });
       renderShelf(); renderAnchors(); const shelf = host.querySelector('[data-favorite-shelf]'); const results = host.querySelector('[data-favorite-search-results]'); shelf.hidden = false; results.hidden = true;
@@ -872,8 +876,10 @@
     function returnSearch() {
       if (!state.searchContext) return;
       Object.assign(state, state.searchContext); state.searchContext = null; const search = host.querySelector('[data-favorite-search]'); if (search) search.value = state.query;
+      savePreferences({ collapsedSections: [...(state.collapsedSections || state.prefs.collapsedSections)] }); renderFilters();
       const scope = host.querySelector('[data-favorite-scope]'); const kind = host.querySelector('[data-favorite-kind]'); const series = host.querySelector('[data-favorite-series-filter]'); const section = host.querySelector('[data-favorite-section-filter]');
       if (scope) scope.value = state.scope; if (kind) kind.value = state.kind; if (series) series.value = state.seriesId; if (section) section.value = state.sectionId;
+      host.querySelector('[data-favorite-recent]')?.classList.toggle('is-active', state.recent);
       renderSearch(); renderAnchors(); const scroll = host.querySelector('[data-favorite-scroll]'); if (scroll) scroll.scrollTop = state.scrollTop || 0;
     }
     function setZoom(value) { const zoom = Math.round(number(value, state.prefs.zoom, 75, 150)); savePreferences({ zoom }); return zoom; }
@@ -887,18 +893,37 @@
       }
       if (action === 'all-results') { (await collectAllSearchIds()).forEach(id => state.bulk.add(id)); updateBulkbar(); return; }
       if (action === 'clear-bulk') { state.bulk.clear(); updateBulkbar(); return; }
+      if (action === 'copy-selected') {
+        if (!await flushEdits()) return;
+        const ordered = await orderedBulkIds(ids); const value = safeCall('copyText', ordered); if (!value) return;
+        let copied = false; try { copied = Boolean(await copy(value)); } catch { copied = false; }
+        if (copied) safeCall('markCopied', ordered); else notify(label('favorites.copyFailed', '复制失败，请检查剪贴板权限')); return;
+      }
+      if (action === 'delete-selected') {
+        const message = label('favorites.confirmDeleteEntries', `确定删除 ${ids.length} 条收藏吗？`).replace('{count}', String(ids.length));
+        const approved = typeof win?.confirm !== 'function' || win.confirm(message);
+        if (!approved || !await finishEditorBeforeMutation()) return;
+        result = safeCall('deleteEntries', ids);
+      } else {
+        if (!await finishEditorBeforeMutation()) return;
+      }
       if (action === 'pin-selected') result = safeCall('applyBatch', { ids, patch: { pinned: true } });
       if (action === 'unpin-selected') result = safeCall('applyBatch', { ids, patch: { pinned: false } });
       if (action === 'searchable-on') result = safeCall('applyBatch', { ids, patch: { globalSearchable: true } });
       if (action === 'searchable-off') result = safeCall('applyBatch', { ids, patch: { globalSearchable: false } });
       if (action === 'duplicate-selected') { const seriesId = host.querySelector('[data-favorite-bulk-move]')?.value; result = safeCall('duplicateEntries', { ids, seriesId: seriesId || undefined, sectionId: null }); }
       if (action === 'move-selected') { const seriesId = host.querySelector('[data-favorite-bulk-move]')?.value; if (seriesId) result = safeCall('applyBatch', { ids, patch: { seriesId, sectionId: null } }); }
-      if (action === 'delete-selected') {
-        const message = label('favorites.confirmDeleteEntries', `确定删除 ${ids.length} 条收藏吗？`).replace('{count}', String(ids.length));
-        const approved = typeof win?.confirm !== 'function' || win.confirm(message);
-        if (approved) result = safeCall('deleteEntries', ids);
-      }
       if (result?.ok) { state.bulk.clear(); render(); } else if (result) notify(result.error?.message || label('favorites.operationFailed', '操作失败'));
+    }
+    async function orderedBulkIds(ids) {
+      const chosen = new Set(ids); const order = [];
+      if (state.query) return (await collectAllSearchIds()).filter(id => chosen.has(id));
+      let offset = 0, hasMore = true;
+      while (hasMore) {
+        const result = safeCall('list', { includeAdult: true, offset, limit: 500, view: 'shelf' }); const rows = Array.isArray(result?.items) ? result.items : [];
+        order.push(...rows.map(row => row.id).filter(id => chosen.has(id))); offset += rows.length; hasMore = Boolean(result?.hasMore) && rows.length > 0;
+      }
+      return order;
     }
     async function collectAllSearchIds() {
       if (!state.query) return [];
@@ -910,13 +935,15 @@
       }
       return unique(ids);
     }
-    function reorderEntry(id, direction) {
+    async function reorderEntry(id, direction) {
+      if (!await finishEditorBeforeMutation()) return false;
       const entry = safeCall('getEntry', id); if (!entry) return;
       const parent = entry.sectionId || entry.seriesId; const rows = readEntries(entry.seriesId, entry.sectionId || null, 10000, true).items; const ids = rows.map(row => row.id); const index = ids.indexOf(id); const next = index + direction;
       if (index < 0 || next < 0 || next >= ids.length) return;
       [ids[index], ids[next]] = [ids[next], ids[index]]; const result = safeCall('reorder', { kind: 'entry', parentId: parent, ids }); if (result?.ok) render();
     }
-    function reorderStructure(kind, id, direction, parentId = null) {
+    async function reorderStructure(kind, id, direction, parentId = null) {
+      if (!await finishEditorBeforeMutation()) return false;
       const rows = kind === 'series' ? seriesRows() : sectionRows(parentId); const ids = rows.map(row => row.id); const index = ids.indexOf(id); const next = index + direction;
       if (index < 0 || next < 0 || next >= ids.length) return false;
       [ids[index], ids[next]] = [ids[next], ids[index]]; const result = safeCall('reorder', { kind, parentId, ids }); if (result?.ok) render(); return Boolean(result?.ok);
@@ -936,18 +963,30 @@
       const previous = section.value; section.replaceChildren(optionNode('', label('favorites.seriesRoot', '系列根部')));
       sectionRows(seriesId).forEach(row => section.append(optionNode(row.id, string(row.name, row.id)))); if ([...section.options].some(item => item.value === previous)) section.value = previous;
     }
+    function importSignature() {
+      return JSON.stringify({
+        text: host.querySelector('[data-favorite-import-text]')?.value || '', format: host.querySelector('[data-favorite-import-format]')?.value || 'lines',
+        mode: host.querySelector('[data-favorite-import-mode]')?.value || 'append', kind: host.querySelector('[data-favorite-import-kind]')?.value || 'tag',
+        seriesId: host.querySelector('[data-favorite-import-series]')?.value || '', sectionId: host.querySelector('[data-favorite-import-section]')?.value || ''
+      });
+    }
+    function invalidateImportPreview(clearMessage = true) {
+      state.importCandidate = null; const node = host.querySelector('[data-favorite-import-preview]');
+      if (node) { node.dataset.valid = 'false'; if (clearMessage) node.textContent = ''; }
+    }
     async function previewImport() {
+      invalidateImportPreview(false);
       if (!await flushEdits()) return false;
       const textValue = host.querySelector('[data-favorite-import-text]')?.value || ''; const format = host.querySelector('[data-favorite-import-format]')?.value || 'lines'; const mode = host.querySelector('[data-favorite-import-mode]')?.value || 'append'; const seriesId = host.querySelector('[data-favorite-import-series]')?.value || seriesRows()[0]?.id; const sectionId = host.querySelector('[data-favorite-import-section]')?.value || null; const kind = host.querySelector('[data-favorite-import-kind]')?.value || 'tag';
       let preview;
       if (format === 'json') {
         let bundle; try { bundle = JSON.parse(textValue); } catch (error) { return showImportPreview(error.message, null); }
-        preview = safeCall('previewImport', bundle, { mode }); state.importCandidate = preview?.ok ? { type: 'json', bundle, options: { mode } } : null;
+        preview = safeCall('previewImport', bundle, { mode }); state.importCandidate = preview?.ok ? { type: 'json', bundle, options: { mode }, signature: importSignature() } : null;
       } else {
         const pasteOptions = { format, kind, seriesId, sectionId };
         preview = safeCall('previewPaste', textValue, pasteOptions);
         if (preview == null && parsePaste) preview = parsePaste(textValue, pasteOptions);
-        state.importCandidate = preview?.ok ? { type: 'paste', text: textValue, options: pasteOptions } : null;
+        state.importCandidate = preview?.ok ? { type: 'paste', text: textValue, options: pasteOptions, signature: importSignature() } : null;
       }
       const count = preview?.data?.entries?.length ?? preview?.data?.ids?.length ?? preview?.data?.valid ?? preview?.data?.incoming?.entries ?? 0;
       let message = `${label('favorites.validEntries', '有效条目')}：${count}`;
@@ -960,11 +999,12 @@
     function showImportPreview(message, preview) { const node = host.querySelector('[data-favorite-import-preview]'); if (node) { node.textContent = string(message); node.dataset.valid = String(Boolean(preview?.ok)); } }
     async function confirmImport() {
       if (!await flushEdits()) return false;
-      if (!state.importCandidate && !(await previewImport())?.ok) return false;
-      const candidate = state.importCandidate; if (!candidate) return;
+      const candidate = state.importCandidate;
+      if (!candidate || candidate.signature !== importSignature()) { invalidateImportPreview(false); showImportPreview(label('favorites.previewRequired', '内容已变化，请重新预览'), null); return false; }
       if (candidate.type === 'json' && candidate.options.mode === 'replace') {
         const approved = typeof win?.confirm !== 'function' || win.confirm(label('favorites.confirmReplaceImport', '替换会覆盖现有收藏。已查看数量并继续？'));
         if (!approved) return false;
+        if (!await finishEditorBeforeMutation()) return false;
         if (!downloadBundle('ai-tag-favorites-backup.json')) { notify(label('favorites.backupFailed', '无法生成备份，已取消替换导入')); return false; }
       }
       const result = candidate.type === 'paste' ? safeCall('importPaste', candidate.text, candidate.options) : safeCall('importBundle', candidate.bundle, candidate.options);
@@ -987,7 +1027,7 @@
         else textValue = await new Promise((resolve, reject) => { const reader = new win.FileReader(); reader.onload = () => resolve(String(reader.result || '')); reader.onerror = () => reject(reader.error || new Error('read failed')); reader.readAsText(file); });
       } catch (error) { notify(error.message || label('favorites.fileReadFailed', '无法读取文件')); return false; }
       const format = host.querySelector('[data-favorite-import-format]'); const textarea = host.querySelector('[data-favorite-import-text]'); const mode = host.querySelector('[data-favorite-import-mode]');
-      if (format) format.value = 'json'; if (textarea) textarea.value = textValue; if (mode) mode.disabled = false; state.importCandidate = null; input.value = ''; return true;
+      if (format) format.value = 'json'; if (textarea) textarea.value = textValue; if (mode) mode.disabled = false; invalidateImportPreview(); input.value = ''; return true;
     }
 
     async function structureAction(action, target) {
@@ -1088,16 +1128,17 @@
         state.anchorQuery = event.target.value; const needle = state.anchorQuery.trim().toLocaleLowerCase();
         host.querySelectorAll('[data-favorite-anchors] [data-favorite-action="anchor-series"]').forEach(node => { node.hidden = Boolean(needle) && !node.textContent.toLocaleLowerCase().includes(needle); }); return;
       }
-      if (event.target.matches('[data-favorite-field]')) { readDraftFromFields(); scheduleSave(); }
+      if (event.target.matches('[data-favorite-import-text]')) { invalidateImportPreview(); return; }
+      if (event.target.matches('[data-favorite-field]')) { readDraftFromFields(event.target); scheduleSave(); }
     }
     function handleChange(event) {
       const target = event.target;
       if (target.matches('[data-favorite-scope], [data-favorite-kind], [data-favorite-series-filter], [data-favorite-section-filter]')) { if (target.matches('[data-favorite-series-filter]')) { state.sectionId = ''; const section = host.querySelector('[data-favorite-section-filter]'); if (section) section.value = ''; } runSearch(); renderFilters(); return; }
       if (target.matches('[data-favorite-import-file]')) { void readImportFile(target); return; }
       if (target.matches('[data-favorite-inline-field]')) { void saveInlineField(target); return; }
-      if (target.matches('[data-favorite-import-series]')) { renderImportSections(); state.importCandidate = null; return; }
-      if (target.matches('[data-favorite-import-format]')) { const json = target.value === 'json'; const mode = host.querySelector('[data-favorite-import-mode]'); const kind = host.querySelector('[data-favorite-import-kind]'); const section = host.querySelector('[data-favorite-import-section]'); if (mode) mode.disabled = !json; if (kind) kind.disabled = json; if (section) section.disabled = json; state.importCandidate = null; return; }
-      if (target.matches('[data-favorite-import-kind], [data-favorite-import-section], [data-favorite-import-mode]')) { state.importCandidate = null; return; }
+      if (target.matches('[data-favorite-import-series]')) { renderImportSections(); invalidateImportPreview(); return; }
+      if (target.matches('[data-favorite-import-format]')) { const json = target.value === 'json'; const mode = host.querySelector('[data-favorite-import-mode]'); const kind = host.querySelector('[data-favorite-import-kind]'); const section = host.querySelector('[data-favorite-import-section]'); if (mode) mode.disabled = !json; if (kind) kind.disabled = json; if (section) section.disabled = json; invalidateImportPreview(); return; }
+      if (target.matches('[data-favorite-import-kind], [data-favorite-import-section], [data-favorite-import-mode]')) { invalidateImportPreview(); return; }
       if (target.matches('[data-favorite-manage]')) { target.checked ? state.bulk.add(target.dataset.favoriteManage) : state.bulk.delete(target.dataset.favoriteManage); updateBulkbar(); return; }
       if (target.matches('[data-favorite-series-manage]')) { target.checked ? state.bulkSeries.add(target.dataset.favoriteSeriesManage) : state.bulkSeries.delete(target.dataset.favoriteSeriesManage); return; }
       if (target.matches('[data-favorite-column-width]')) { savePreferences({ columnWidth: number(target.value, DEFAULT_VIEW.columnWidth, 220, 420) }); return; }
@@ -1107,28 +1148,29 @@
       if (target.matches('[data-favorite-compact]')) { savePreferences({ compact: target.checked }); return; }
       if (target.matches('[data-favorite-series-color]')) { safeCall('setSeriesColors', state.bulkSeries.size ? [...state.bulkSeries] : [target.dataset.favoriteSeriesColor], { mode: 'custom', color: target.value }); render(); return; }
       if (target.matches('[data-favorite-bulk-move]') && target.value) { applyBulk('move-selected'); return; }
-      if (target.matches('[data-favorite-field="seriesId"]')) { readDraftFromFields(); editorSeriesOptions(target.value, null); readDraftFromFields(); scheduleSave(); }
+      if (target.matches('[data-favorite-field="seriesId"]')) { readDraftFromFields(target); editorSeriesOptions(target.value, null); readDraftFromFields(host.querySelector('[data-favorite-field="sectionId"]')); scheduleSave(); }
     }
     function handleCompositionStart(event) { if (event.target.matches('[data-favorite-field]')) { state.composing = true; win.clearTimeout(state.saveTimer); state.saveTimer = null; } }
-    function handleCompositionEnd(event) { if (event.target.matches('[data-favorite-field]')) { state.composing = false; readDraftFromFields(); scheduleSave(); } }
+    function handleCompositionEnd(event) { if (event.target.matches('[data-favorite-field]')) { state.composing = false; readDraftFromFields(event.target); scheduleSave(); } }
     function handleFocusIn(event) { const entry = event.target.closest?.('[data-favorite-entry]'); if (entry) state.lastShelfFocus = entry.dataset.favoriteEntry || ''; }
     function handleFocusOut(event) { if (event.target.matches?.('[data-favorite-field]') && !event.relatedTarget?.matches?.('[data-favorite-field]')) endEditorTransaction(); }
-    function handleKeydown(event) {
+    async function handleKeydown(event) {
       if (!state.active || state.destroyed) return;
       if (state.dialog && event.key === 'Enter' && event.target.matches?.('[data-favorite-dialog-input]')) { event.preventDefault(); submitNameDialog(); return; }
       const editable = event.target.matches?.('input, textarea, select, [contenteditable="true"]');
       if (event.key === 'Escape') { if (state.dialog) { event.preventDefault(); closeNameDialog(); } else if (state.transferOpen) { event.preventDefault(); host.querySelector('[data-favorite-transfer]').hidden = true; state.transferOpen = false; } else if (state.editor) { event.preventDefault(); discardEditor(); } else if (state.query) { event.preventDefault(); host.querySelector('[data-favorite-action="clear-search"]').click(); } return; }
       if (event.key === 'F2') { const entry = event.target.closest?.('[data-favorite-entry], [data-favorite-search-result]'); if (entry) { event.preventDefault(); openEditor(entry.dataset.favoriteEntry || entry.dataset.favoriteSearchResult); } return; }
       if ((event.ctrlKey || event.metaKey) && !editable && event.key.toLowerCase() === 'c' && !win.getSelection?.()?.toString()) { const entry = event.target.closest?.('[data-favorite-entry], [data-favorite-search-result]'); if (entry) { event.preventDefault(); copyEntry(entry.dataset.favoriteEntry || entry.dataset.favoriteSearchResult, false); } }
-      if ((event.ctrlKey || event.metaKey) && !editable && event.key.toLowerCase() === 'z') { event.preventDefault(); safeCall(event.shiftKey ? 'redo' : 'undo'); render(); }
-      if ((event.ctrlKey || event.metaKey) && !editable && event.key.toLowerCase() === 'y') { event.preventDefault(); safeCall('redo'); render(); }
+      if ((event.ctrlKey || event.metaKey) && !editable && event.key.toLowerCase() === 'z') { event.preventDefault(); if (await finishEditorBeforeMutation()) { safeCall(event.shiftKey ? 'redo' : 'undo'); render(); } }
+      if ((event.ctrlKey || event.metaKey) && !editable && event.key.toLowerCase() === 'y') { event.preventDefault(); if (await finishEditorBeforeMutation()) { safeCall('redo'); render(); } }
     }
     function handleDragStart(event) { const entry = event.target.closest?.('[data-favorite-entry]'); state.draggedId = entry?.dataset.favoriteEntry || ''; event.dataTransfer?.setData?.('text/plain', state.draggedId); }
     function handleDragOver(event) { if (event.target.closest?.('[data-favorite-entry]')) event.preventDefault(); }
-    function handleDrop(event) {
+    async function handleDrop(event) {
       const target = event.target.closest?.('[data-favorite-entry]'); const sourceId = state.draggedId || event.dataTransfer?.getData?.('text/plain'); if (!target || !sourceId || target.dataset.favoriteEntry === sourceId) return;
       event.preventDefault(); const source = safeCall('getEntry', sourceId); const destination = safeCall('getEntry', target.dataset.favoriteEntry); if (!source || !destination || source.seriesId !== destination.seriesId || source.sectionId !== destination.sectionId) return;
-      const rows = readEntries(source.seriesId, source.sectionId || null, 10000).items.map(row => row.id); const from = rows.indexOf(sourceId); const to = rows.indexOf(destination.id); rows.splice(from, 1); rows.splice(to, 0, sourceId); safeCall('reorder', { kind: 'entry', parentId: source.sectionId || source.seriesId, ids: rows }); state.draggedId = ''; render();
+      if (!await finishEditorBeforeMutation()) return;
+      const rows = readEntries(source.seriesId, source.sectionId || null, 10000, true).items.map(row => row.id); const from = rows.indexOf(sourceId); const to = rows.indexOf(destination.id); rows.splice(from, 1); rows.splice(to, 0, sourceId); safeCall('reorder', { kind: 'entry', parentId: source.sectionId || source.seriesId, ids: rows }); state.draggedId = ''; render();
     }
 
     function bind() {

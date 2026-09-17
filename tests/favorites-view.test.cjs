@@ -453,16 +453,18 @@ test('load and migration diagnostics are visible and invalid legacy rows can onl
   assert.equal(app.dom.window.document.querySelector('[data-favorite-editor]').dataset.entryId, 'e2');
 });
 
-test('adult filtering reports hidden entries and reorder still submits complete sibling ids', t => {
+test('adult filtering reports hidden entries and reorder still submits complete sibling ids', async t => {
   const app = fixture(1, { adultEntry: true, includeAdult: false }); t.after(() => app.dom.window.close());
   assert.match(app.dom.window.document.querySelector('[data-favorite-series="s1"] .favorite-adult-hidden').textContent, /1/);
   app.dom.window.document.querySelector('[data-favorite-action="move-down"][data-entry-id="e1"]').click();
+  await settle();
   assert.deepEqual(app.favorites.calls.reorder.at(-1)?.ids, ['large-0', 'e1']);
 });
 
 test('series and sections reorder, collapse persists, section filtering works, and compact mode is remembered', async t => {
   const app = fixture(); t.after(() => app.dom.window.close());
   app.dom.window.document.querySelector('[data-favorite-action="move-series-down"][data-series-id="s1"]').click();
+  await settle();
   assert.deepEqual(app.favorites.calls.reorder.at(-1), { kind: 'series', parentId: null, ids: ['s2', 's1'] });
   const toggle = app.dom.window.document.querySelector('[data-favorite-action="toggle-section"][data-section-id="sec1"]'); toggle.click();
   assert.deepEqual(app.preferences.value.collapsedSections, ['sec1']);
