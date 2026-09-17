@@ -10,6 +10,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : window, function createFactory() {
   const text = (value, fallback = '') => value == null ? fallback : String(value);
   const number = (value, fallback, min, max) => {
+    if (value == null || String(value).trim() === '') return fallback;
     const parsed = Number(value);
     return Number.isFinite(parsed) ? Math.max(min, Math.min(max, parsed)) : fallback;
   };
@@ -42,7 +43,7 @@
         comfyW: number(value('comfyW')?.value, Number(current.comfyW) || 768, 64, 8192),
         comfyH: number(value('comfyH')?.value, Number(current.comfyH) || 1024, 64, 8192),
         comfySteps: number(value('comfySteps')?.value, Number(current.comfySteps) || 25, 1, 200),
-        comfyCfg: number(value('comfyCfg')?.value, Number(current.comfyCfg) || 7, 0, 30),
+        comfyCfg: number(value('comfyCfg')?.value, number(current.comfyCfg, 7, 0, 30), 0, 30),
         comfySeed: value('comfySeed')?.value === '' ? undefined : number(value('comfySeed')?.value, current.comfySeed, 0, 2147483647),
         comfySampler: text(value('comfySampler')?.value, current.comfySampler || 'euler'),
         comfyScheduler: text(value('comfyScheduler')?.value, current.comfyScheduler || 'normal'),

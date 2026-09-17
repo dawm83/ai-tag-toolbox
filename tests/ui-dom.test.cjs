@@ -502,6 +502,27 @@ test('API edits and test requests preserve zero temperatures', async t => {
   assert.ok(configs.every(config => config.temperature === 0));
 });
 
+test('blank Comfy numbers retain saved values while explicit zero and empty seed remain distinct', t => {
+  const app = boot(); t.after(() => app.dom.window.close());
+  const doc = app.window.document;
+  app.view.route('ai'); app.view.showAi('comfy');
+  doc.querySelector('#comfyCfg').value = '';
+  doc.querySelector('#comfyW').value = '';
+  doc.querySelector('#comfySeed').value = '';
+  let patch = app.view.views.comfy.collect();
+  assert.equal(patch.comfyCfg, 7);
+  assert.equal(patch.comfyW, 768);
+  assert.equal(patch.comfySeed, undefined);
+  doc.querySelector('#comfyCfg').value = '0';
+  doc.querySelector('#comfySeed').value = '0';
+  patch = app.view.views.comfy.collect();
+  assert.equal(patch.comfyCfg, 0);
+  assert.equal(patch.comfySeed, 0);
+  app.assistant.setSettings({ comfyCfg: 0 });
+  doc.querySelector('#comfyCfg').value = '';
+  assert.equal(app.view.views.comfy.collect().comfyCfg, 0);
+});
+
 test('ComfyUI workflow action buttons have localized labels', () => {
   const zh = JSON.parse(fs.readFileSync(path.join(root, 'locales', 'zh-CN.json'), 'utf8'));
   const en = JSON.parse(fs.readFileSync(path.join(root, 'locales', 'en-US.json'), 'utf8'));
