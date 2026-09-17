@@ -27,7 +27,8 @@
 - Task 4 已完成温度零值、Comfy 空数值与未知 reset 的局部修复；CFG/Seed 正常零值已有支持，未改参数 schema。
 - Task 5 已提交 `74bf634`，仅删除不可达旧弹窗，提示词组/扩展功能保持。
 - Task 6 已收敛字段写入：API 由 composer 原有流程管理，Settings view 只绑定生图三字段，Comfy 保留独立 view。完整表单搬迁暂缓；重复测试请求、重复保存、跨页草稿误存已用 DOM 用例验证。
-- Tasks 7-10 待执行；Task 9 能力竞态应修 `assistant.refreshCapabilities`，旧 `calls/index.js` 没有活动调用。
+- Task 7 已完成：删除重复简化 Gallery factory，保留 composer 中完整图库功能作为唯一所有者；批量下载/发送与鼠标/键盘选择有 DOM 覆盖。未将缺失业务能力的旧 factory 升级为新抽象。
+- Tasks 8-10 待执行；Task 9 能力竞态应修 `assistant.refreshCapabilities`，旧 `calls/index.js` 没有活动调用。
 - 版本保持 V1.4.32；未推送、未发布、未同步桌面。
 - A0 receipt: route `code-quality-workflow`, snapshot `2026-08-18`, loaded `ST-A0`；目标为已批准维护计划，红线为持久格式/核心协议/新框架，门槛为聚焦行为测试、`npm run check` 与用户人工验收。
 

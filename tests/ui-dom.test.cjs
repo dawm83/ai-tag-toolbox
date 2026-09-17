@@ -105,7 +105,7 @@ function boot(options = {}) {
   };
   const modules = { assistant, characters: options.characters, runtime: { listCallRecords: assistant.listCallRecords, clearCallRecords: assistant.clearCallRecords, ...options.runtime }, prompts, tags, images: { get: id => images.get(id), preview: id => images.get(id) }, imageRepository: repository, preferences: { get: (_k, fallback) => fallback, set: () => {} }, translation: options.translation || { findReferences: () => [] }, comfy, locales: { 'zh-CN': {} }, version: '1.4.194' };
 
-  for (const file of ['views/conversation-view.js', 'views/gallery-view.js', 'views/settings-view.js', 'views/comfy-view.js', 'views/prompt-view.js', 'views/agent-status-view.js', 'views/call-monitor-view.js', 'modules/translation-alignment.js', 'views/translation-view.js', 'app-view.js']) window.eval(source(file));
+  for (const file of ['views/conversation-view.js', 'views/settings-view.js', 'views/comfy-view.js', 'views/prompt-view.js', 'views/agent-status-view.js', 'views/call-monitor-view.js', 'modules/translation-alignment.js', 'views/translation-view.js', 'app-view.js']) window.eval(source(file));
   const view = window.AppView.create(modules, window.document);
   view.start();
   return { dom, window, view, assistant, repository, gallery, downloadBlobs, continuationCalls, getRunCount: () => runCount, getCancelCount: () => cancelCount, getComfyProfile: () => comfyProfile && structuredClone(comfyProfile) };
@@ -439,7 +439,7 @@ test('changing translation direction cancels AI and local completion cannot repl
   assert.equal(app.doc.querySelector('#translateThinking'), null, 'translation must not show a thinking panel');
 });
 
-test('gallery factory owns card action rendering and rename path', () => {
+test('gallery card rename updates the repository', () => {
   const app = boot();
   app.view.route('gallery');
   const card = app.window.document.querySelector('.gallery-card');
@@ -500,6 +500,40 @@ test('API edits and test requests preserve zero temperatures', async t => {
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.ok(configs.length);
   assert.ok(configs.every(config => config.temperature === 0));
+});
+
+test('gallery name copying and bulk actions share one selection state', async t => {
+  const app = boot(); t.after(() => app.dom.window.close());
+  const doc = app.window.document;
+  app.view.route('gallery');
+  doc.querySelector('.gallery-name').click();
+  assert.equal(doc.querySelector('.gallery-card').classList.contains('is-selected'), false);
+  assert.equal(doc.querySelector('#galleryDownload').disabled, true);
+  doc.querySelector('.gallery-thumb').click();
+  assert.equal(doc.querySelector('.gallery-card').classList.contains('is-selected'), true);
+  doc.querySelector('#galleryDownload').click();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(app.downloadBlobs.length, 1);
+  const attached = [];
+  app.repository.attachToConversation = (sessionId, imageId) => { attached.push([sessionId, imageId]); return { refId: 'r1' }; };
+  doc.querySelector('#gallerySend').click();
+  assert.deepEqual(attached, [['s1', 'img-1']]);
+  assert.equal(doc.querySelector('#gallerySend').disabled, true);
+});
+
+test('gallery cards support keyboard selection without losing focus', t => {
+  const app = boot(); t.after(() => app.dom.window.close());
+  const doc = app.window.document;
+  app.view.route('gallery');
+  const card = doc.querySelector('.gallery-card');
+  assert.equal(card.tabIndex, 0);
+  card.focus();
+  card.dispatchEvent(new app.window.KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+  assert.equal(doc.querySelector('.gallery-card').getAttribute('aria-pressed'), 'true');
+  assert.equal(doc.activeElement, doc.querySelector('.gallery-card'));
+  doc.activeElement.dispatchEvent(new app.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  assert.equal(doc.querySelector('.gallery-card').getAttribute('aria-pressed'), 'false');
+  assert.equal(doc.querySelector('#galleryDownload').disabled, true);
 });
 
 test('one AI connection click sends exactly one request', async t => {

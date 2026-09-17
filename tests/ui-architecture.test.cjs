@@ -7,10 +7,10 @@ const vm = require('node:vm');
 const root = path.resolve(__dirname, '..');
 test('view factories load as browser scripts before the app composer', () => {
   const context = vm.createContext({});
-  for (const name of ['conversation', 'gallery', 'settings', 'comfy', 'prompt', 'agent-status', 'call-monitor']) {
+  for (const name of ['conversation', 'settings', 'comfy', 'prompt', 'agent-status', 'call-monitor']) {
     vm.runInContext(fs.readFileSync(path.join(root, 'src/views', `${name}-view.js`), 'utf8'), context);
   }
-  for (const name of ['conversation', 'gallery', 'settings', 'comfy', 'prompt', 'agentStatus', 'callMonitor']) assert.ok(context.AppViews[name]);
+  for (const name of ['conversation', 'settings', 'comfy', 'prompt', 'agentStatus', 'callMonitor']) assert.ok(context.AppViews[name]);
   const html = fs.readFileSync(path.join(root, 'src/index.html'), 'utf8');
   assert.ok(html.indexOf('views/conversation-view.js') < html.indexOf('src="app-view.js"'));
 });
@@ -19,7 +19,6 @@ test('the app composes views and has no old prompt modes or renderer persistence
   const entry = fs.readFileSync(path.join(root, 'src/app.js'), 'utf8');
   assert.doesNotMatch(app + entry, /modules\.storage|talkMode|tkDraw/);
   assert.match(app, /viewFactories\.conversation/);
-  assert.match(app, /viewFactories\.gallery/);
   assert.match(app, /viewFactories\.settings/);
   assert.match(app, /viewFactories\.comfy/);
   assert.match(app, /viewFactories\.prompt/);

@@ -123,7 +123,6 @@
     const views = {
       translation: viewFactories.translation?.createTranslationView?.({ document: doc, runtime, translation: modules.translation, notify, copy: value => copy(value), localized, onTagSelected: id => { tags?.select?.(id, true); renderTags(); renderSelection(); } }),
       conversation: viewFactories.conversation?.createConversationView?.({ document: doc, api: assistant, runtime, repository: imageRepository, images, notify, preferences, autoBind: false, bindControls: false }),
-      gallery: viewFactories.gallery?.createGalleryView?.({ document: doc, repository: imageRepository, images, preferences, notify, autoBind: false, bindToolbar: false, onVision: item => { if (item?.imageId) { visionTempStore?.setLibraryReference?.(item.imageId); clearVisionResult(); renderVisionPreview(); renderTalkVisionPanel(); setVisionOpen(true); } }, onConversation: () => route("ai") }),
       settings: viewFactories.settings?.createSettingsView?.({ document: doc, api: assistant, runtime, comfy, notify, onChange: value => { views.comfy?.render?.(value); syncGenerationControls(); }, autoBind: false }),
       comfy: viewFactories.comfy?.createComfyView?.({ document: doc, comfy, assistant, notify, openExternal: url => global.open(url), onChange: value => { views.settings?.render?.(value); syncGenerationControls(); }, autoBind: false }),
       prompt: viewFactories.prompt?.createPromptView?.({ document: doc, prompts, notify, download, autoBind: false }),
@@ -1293,22 +1292,35 @@
         const card = doc.createElement("article");
         card.className = "gallery-card";
         card.dataset.imageId = item.imageId;
+        card.tabIndex = 0;
+        card.setAttribute("role", "button");
+        card.setAttribute("aria-pressed", String(ui.gallerySelected.has(item.imageId)));
         if (ui.gallerySelected.has(item.imageId)) card.classList.add("is-selected");
         const preview = images?.preview?.(item.imageId) || item;
         const src = preview?.thumbnailDataUrl || preview?.dataUrl || "";
         const nameText = item.displayName || item.filename || item.imageId;
+        card.setAttribute("aria-label", nameText);
         // 布局：名称(顶,可选中复制) → 图片(中) → 操作按钮(底)。图库图片不允许拖动。
         card.innerHTML = `<div class="gallery-name" title=""></div><div class="gallery-thumb-wrap"><img class="gallery-thumb" loading="lazy" decoding="async" alt=""></div><div class="gallery-actions"><button type="button" class="gb gb-vision" data-action="vision">${galleryText("identify", "识图")}</button><button type="button" class="gb gb-send" data-action="conversation">${galleryText("send", "发送到对话仓库")}</button><button type="button" class="gb gb-download" data-action="download">${galleryText("downloadOne", "下载")}</button><button type="button" class="gb gb-rename" data-action="rename">${galleryText("rename", "重命名")}</button><button type="button" class="gb gb-delete" data-action="delete">🗑</button></div>`;
         const nameEl = $(".gallery-name", card);
         nameEl.textContent = nameText;
         nameEl.title = `${nameText} · ${galleryText("copyHint", "可选中复制")}`;
         const img = $(".gallery-thumb", card); img.src = src; img.alt = nameText;
+        const toggleSelection = () => {
+          if (ui.gallerySelected.has(item.imageId)) ui.gallerySelected.delete(item.imageId); else ui.gallerySelected.add(item.imageId);
+          renderGallery();
+        };
+        card.addEventListener("keydown", event => {
+          if (event.target !== card || !["Enter", " "].includes(event.key)) return;
+          event.preventDefault();
+          toggleSelection();
+          $$(".gallery-card", host).find(next => next.dataset.imageId === item.imageId)?.focus();
+        });
         card.addEventListener("click", event => {
           if (event.target.closest("[data-action]")) return;
           // 名称允许文本选中/复制，点击名称不触发选中。
           if (event.target === nameEl || nameEl.contains(event.target)) return;
-          if (ui.gallerySelected.has(item.imageId)) ui.gallerySelected.delete(item.imageId); else ui.gallerySelected.add(item.imageId);
-          renderGallery();
+          toggleSelection();
         });
         card.addEventListener("click", event => {
           const action = event.target.closest("[data-action]")?.dataset.action;
@@ -4038,7 +4050,6 @@
       );
       applyTheme(theme);
       views.conversation?.bind?.();
-      views.gallery?.bind?.();
       views.settings?.bind?.();
       views.prompt?.bind?.();
       views.agentStatus?.bind?.();
