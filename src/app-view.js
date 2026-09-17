@@ -845,9 +845,9 @@
             : $("#visionModel")?.value === "__loading__"
               ? s.visionModel
               : formValue("#visionModel", s.visionModel),
-        visionTemperature: Number(s.visionTemperature) || 0.2,
+        visionTemperature: Number(s.visionTemperature ?? 0.2),
         visionTimeoutMs: Number(s.visionTimeoutMs) || 120000,
-        temperature: Number(s.temperature) || 0.7,
+        temperature: Number(s.temperature ?? 0.7),
         strict: $("#aiStrict") ? $("#aiStrict").checked : s.strict !== false,
         timeoutEnabled: $("#aiTimeoutEnabled")
           ? $("#aiTimeoutEnabled").checked
@@ -1794,7 +1794,7 @@
         base: s.base,
         model: s.model,
         key: s.key,
-        temperature: Number(s.temperature) || 0.7,
+        temperature: Number(s.temperature ?? 0.7),
         timeoutMs: s.timeoutEnabled
           ? (Number(s.timeoutSec) || 300) * 1000
           : 120000,

@@ -487,6 +487,21 @@ test('ComfyUI gets a dedicated AI tab and the conversation debug button opens it
   app.dom.window.close();
 });
 
+test('API edits and test requests preserve zero temperatures', async t => {
+  const app = boot(); t.after(() => app.dom.window.close());
+  const doc = app.window.document;
+  app.assistant.setSettings({ temperature: 0, visionTemperature: 0 });
+  doc.querySelector('#aiStrict').dispatchEvent(new app.window.Event('change', { bubbles: true }));
+  assert.equal(app.assistant.getSettings().temperature, 0);
+  assert.equal(app.assistant.getSettings().visionTemperature, 0);
+  const configs = [];
+  app.assistant.testConnection = async config => { configs.push(config); return { ok: true }; };
+  doc.querySelector('#aiTest').click();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.ok(configs.length);
+  assert.ok(configs.every(config => config.temperature === 0));
+});
+
 test('ComfyUI workflow action buttons have localized labels', () => {
   const zh = JSON.parse(fs.readFileSync(path.join(root, 'locales', 'zh-CN.json'), 'utf8'));
   const en = JSON.parse(fs.readFileSync(path.join(root, 'locales', 'en-US.json'), 'utf8'));
