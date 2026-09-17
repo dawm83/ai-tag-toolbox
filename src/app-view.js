@@ -859,7 +859,6 @@
         ),
       };
       assistant?.setSettings?.(patch);
-      assistant?.calls?.invalidateCapabilities?.();
       scheduleCapabilitiesStatus();
       return patch;
     }
