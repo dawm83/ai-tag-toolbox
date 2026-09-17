@@ -1,8 +1,8 @@
 {
-  "version": "1.4.32",
+  "version": "1.4.33",
   "buildEvidenceFile": "build-info.json",
   "evidenceLocation": "Desktop package root, outside resources/app.asar",
-  "desktopDirectory": "C:\\Users\\admin\\Desktop\\AI绘画Tag工具箱V1.4.32",
+  "desktopDirectory": "C:\\Users\\admin\\Desktop\\AI绘画Tag工具箱V1.4.33",
   "oldDesktopDirectoryRemovedFromDesktop": true,
   "archive": {
     "sourceFilesVerifiedField": "build-info.json:sourceFiles",
@@ -23,6 +23,16 @@
     "command": "npm run check",
     "resultField": "build-info.json:checks",
     "reasoningRegressionFile": "tests/ai-reasoning.test.cjs",
+    "favoritesRegressionFiles": [
+      "tests/favorites-store.test.cjs",
+      "tests/favorites-search.test.cjs",
+      "tests/favorites-selection.test.cjs",
+      "tests/favorites-transfer.test.cjs",
+      "tests/favorites-view.test.cjs",
+      "tests/favorites-close.test.cjs",
+      "tests/favorites-tool.test.cjs",
+      "tests/ui-dom.test.cjs"
+    ],
     "slowUiSmokeRun": false,
     "liveProviderVerified": false,
     "characterRegressionFiles": [
@@ -35,7 +45,8 @@
     "AniMadex official export token was not available; data is the pinned public upstream snapshot.",
     "No role thumbnails, original images, or LoRA files were included.",
     "Character-specific terms stay out of ordinary tag search and are returned only through character data.",
-    "The existing ordinary-tag favorites format does not persist character selections.",
+    "Favorites capture the composed raw prompt including character text; they do not maintain live character references.",
+    "Favorites layout, native clipboard, file dialogs, downloads and actual window-close behavior await manual Electron testing.",
     "Reference-image reproduction requires an explicitly configured source-image binding; otherwise the result is labeled text_approximation.",
     "Source aspect-ratio matching requires explicit writable width and height bindings; otherwise the workflow dimensions remain fixed.",
     "Translation alignment is optional and depends on the configured AI; unavailable mappings fall back to plain translated text without another AI call.",
@@ -46,14 +57,11 @@
     "Original-character intent classification still depends on the configured model; the confirmation card provides a direct original-character continuation action."
   ],
   "release": {
-    "channel": "prerelease",
-    "tag": "v1.4.32",
+    "channel": "local-test",
     "baseTag": "v1.4.3",
-    "asset": "AI.Tag.V1.4.32.7z",
-    "checksumAsset": "AI.Tag.V1.4.32.7z.sha256",
-    "buildInfoAsset": "AI.Tag.V1.4.32.build-info.json",
-    "publishedByExplicitUserRequest": true
+    "published": false,
+    "pushed": false
   },
-  "templateVersion": "1.4.31",
-  "templateBackup": "work/desktop-template-v1.4.31"
+  "templateVersion": "1.4.32",
+  "templateBackup": "work/desktop-before-favorites-v1433"
 }
