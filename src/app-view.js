@@ -4029,6 +4029,10 @@
     function start() {
       if (ui.started) return;
       ui.started = true;
+      const showStorageError = error => notify(`${localized("ui.common.storageWriteFailed", "保存失败，更改暂存在内存中。请检查磁盘空间或目录权限。")} (${error?.code || "STORAGE_WRITE_FAILED"})`);
+      preferencesStore?.onPersistenceError?.(showStorageError);
+      const persistence = preferencesStore?.persistenceStatus?.();
+      if (persistence?.ok === false) showStorageError(persistence.error);
       restoreTags();
       ui.searchPrecision = normaliseSearchPrecision(preferences.get("app.searchPrecision", "standard"));
       $("#searchPrecision")?.setAttribute("value", ui.searchPrecision);

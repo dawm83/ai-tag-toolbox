@@ -64,3 +64,15 @@ for (const action of ['close', 'quit']) test(`${action} waits for persistence be
   assert.equal(host.win.isDestroyed(), true);
   assert.equal(host.exited(), true);
 });
+
+test('a failed save keeps the window open and a later close can retry', async () => {
+  let success = false;
+  const host = await boot(() => Promise.resolve(success));
+  host.win.close();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(host.win.isDestroyed(), false);
+  success = true;
+  host.win.close();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(host.win.isDestroyed(), true);
+});

@@ -10,6 +10,7 @@
   "ui": {
     "document": { "title": "AI Tag Toolbox V1.4.1 · Danbooru Tag Selector" },
     "common": {
+      "storageWriteFailed": "Save failed. Changes remain in memory. Check disk space or folder permissions.",
       "save": "Save",
       "cancel": "Cancel",
       "clear": "Clear",

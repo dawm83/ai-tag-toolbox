@@ -241,7 +241,9 @@ contextBridge.exposeInMainWorld('AppModules', {
   preferences: storage ? {
     get: (key, fallback = null) => storage.get(key, fallback),
     set: (key, value) => storage.set(key, value),
-    remove: key => storage.remove(key)
+    remove: key => storage.remove(key),
+    onPersistenceError: storage.subscribeErrors,
+    persistenceStatus: storage.persistenceStatus
   } : null,
   assistant: assistant ? {
     run: runForRenderer,

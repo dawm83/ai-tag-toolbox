@@ -31,13 +31,18 @@ function isStorage(value) {
   return value && typeof value.getItem === 'function' && typeof value.setItem === 'function';
 }
 
-function createFileAdapter(filePath) {
+function storageError(error) {
+  return { code: String(error?.code || 'STORAGE_WRITE_FAILED'), message: String(error?.message || 'Storage write failed') };
+}
+
+function createFileAdapter(filePath, options = {}) {
   const filename = path.resolve(String(filePath));
   let cache = null;
   let pending = null;
   let writeTimer = null;
   let flushing = false;
   let writePromise = Promise.resolve();
+  let lastError = null;
 
   function read() {
     if (cache) return cache;
@@ -48,14 +53,10 @@ function createFileAdapter(filePath) {
     return cache;
   }
 
-  // Persist state off the main thread. A large store would otherwise block the
-  // renderer every time a single key changes (full-file JSON.stringify +
-  // writeFileSync), which shows up as a multi-second blank window on launch.
-  // The write is debounced so a burst of setItem calls coalesces into one
-  // compact async write; the in-memory cache stays authoritative immediately.
+  // Coalesce disk writes; JSON serialization still runs on the calling thread.
   function flush() {
     if (writeTimer) { clearTimeout(writeTimer); writeTimer = null; }
-    writeTimer = null;
+    if (!flushing && pending == null && lastError) pending = read();
     if (pending == null) return writePromise;
     if (flushing) return writePromise.then(() => flush());
     flushing = true;
@@ -67,7 +68,12 @@ function createFileAdapter(filePath) {
         const text = JSON.stringify(value);
         return fs.promises.writeFile(filename, text, 'utf8');
       })
-      .catch(() => { /* keep the in-memory cache as source of truth */ })
+      .then(() => { lastError = null; return true; })
+      .catch(error => {
+        lastError = storageError(error);
+        try { options.onError?.(lastError); } catch { /* observers do not own writes */ }
+        return false;
+      })
       .finally(() => {
         flushing = false;
         if (pending != null) scheduleWrite();
@@ -91,6 +97,7 @@ function createFileAdapter(filePath) {
     key(index) { return Object.keys(read())[index] || null; },
     get length() { return Object.keys(read()).length; },
     flush,
+    persistenceStatus: () => ({ ok: !lastError, error: lastError && { ...lastError } }),
     filePath: filename
   };
 }
@@ -126,11 +133,17 @@ function toBlob(value, type = 'application/octet-stream') {
 
 function createStorage(options = {}) {
   const prefix = String(options.prefix || 'ai-tag-toolbox');
+  let lastError = null;
+  const errorListeners = new Set(typeof options.onError === 'function' ? [options.onError] : []);
+  function reportError(error) {
+    lastError = storageError(error);
+    errorListeners.forEach(listener => { try { listener({ ...lastError }); } catch { /* optional observer */ } });
+  }
   // 统一使用显式 adapter、文件或内存，不再隐式接管浏览器 localStorage。
   // 这样 Electron 页面和 Node 模块只有一个持久化入口，避免两套状态漂移。
   const adapter = isStorage(options.adapter)
     ? options.adapter
-    : (options.filePath || options.storagePath ? createFileAdapter(options.filePath || options.storagePath) : makeMemoryAdapter());
+    : (options.filePath || options.storagePath ? createFileAdapter(options.filePath || options.storagePath, { onError: reportError }) : makeMemoryAdapter());
   const memory = new Map();
   const blobMemory = new Map();
   const namespaces = new Map();
@@ -143,6 +156,7 @@ function createStorage(options = {}) {
     return `${prefix}:${space}:${String(key)}`;
   }
   function read(key, fallback = undefined) {
+    if (memory.has(key)) return clone(memory.get(key));
     try {
       const raw = adapter.getItem(key);
       if (raw != null) return json(raw, fallback);
@@ -154,14 +168,15 @@ function createStorage(options = {}) {
     memory.set(key, copy);
     try {
       const ok = adapter.setItem(key, JSON.stringify(copy));
-      if (ok === false) return false;
-    } catch { return false; }
+      if (ok === false) { reportError(new Error('Storage adapter rejected the write')); return false; }
+      lastError = null;
+    } catch (error) { reportError(error); return false; }
     listeners.forEach(listener => { try { listener({ key, value: clone(copy) }); } catch { /* listener is optional */ } });
     return true;
   }
   function remove(key) {
     memory.delete(key);
-    try { adapter.removeItem(key); } catch { /* memory is still cleared */ }
+    try { adapter.removeItem(key); } catch (error) { reportError(error); return false; }
     listeners.forEach(listener => { try { listener({ key, value: undefined, removed: true }); } catch { /* optional */ } });
     return true;
   }
@@ -283,6 +298,8 @@ function createStorage(options = {}) {
     clear: root.clear,
     snapshot: root.snapshot,
     subscribe(listener) { if (typeof listener === 'function') listeners.add(listener); return () => listeners.delete(listener); },
+    subscribeErrors(listener) { if (typeof listener === 'function') errorListeners.add(listener); return () => errorListeners.delete(listener); },
+    persistenceStatus: () => adapter.persistenceStatus?.() || { ok: !lastError, error: lastError && { ...lastError } },
     putBlob,
     getBlob,
     removeBlob,

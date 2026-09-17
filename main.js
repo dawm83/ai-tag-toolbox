@@ -62,7 +62,10 @@ function createWindow() {
     savingBeforeClose = true;
     win.webContents.executeJavaScript('window.AppModules?.assistant?.cancel?.(); window.AppModules?.assistant?.flushPersistence?.()')
       .catch(() => { /* A failed renderer cannot service a final save. */ })
-      .finally(() => { closeReady = true; if (!win.isDestroyed()) win.close(); });
+      .then(saved => {
+        if (saved === false) { savingBeforeClose = false; return; }
+        closeReady = true; if (!win.isDestroyed()) win.close();
+      });
   });
   win.loadFile(path.join(__dirname, 'src', 'index.html'));
   return win;

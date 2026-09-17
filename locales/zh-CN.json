@@ -10,6 +10,7 @@
   "ui": {
     "document": { "title": "AI 绘画 Tag 工具箱 V1.4.1 · Danbooru 标签选择器" },
     "common": {
+      "storageWriteFailed": "保存失败，更改暂存在内存中。请检查磁盘空间或目录权限。",
       "save": "保存",
       "cancel": "取消",
       "clear": "清空",
