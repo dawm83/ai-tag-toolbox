@@ -190,6 +190,7 @@
       "clearChat": "🗑 清空对话",
       "clearConversationImages": "🗑 清空对话图片",
       "clearConversationImagesConfirm": "确定清空当前对话区的全部图片吗？",
+      "clearConversationConfirm": "确定清空当前对话的 {count} 条消息吗？对话图片将保留。",
       "uploadImage": "🖼 上传图片",
       "identify": "本地识图",
       "aiVision": "🖼 AI识图",

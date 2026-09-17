@@ -223,6 +223,7 @@
       "clearChat": "🗑 Clear chat",
       "clearConversationImages": "🗑 Clear conversation images",
       "clearConversationImagesConfirm": "Clear all images from this conversation?",
+      "clearConversationConfirm": "Clear all {count} messages in this conversation? Conversation images will be kept.",
       "uploadImage": "🖼 Upload image",
       "identify": "Local recognition",
       "aiVision": "🖼 AI vision",

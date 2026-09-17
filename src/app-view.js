@@ -3115,6 +3115,15 @@
       put("#talkStatus", result?.ok === false ? compactTalkStatus(result, "发送失败") : result?.data?.status === "needs_input" ? "等待补充信息" : result?.data?.status === "awaiting_feedback" ? "本轮完成，等待点评" : "完成");
       setTalkBusy(false, label);
     }
+    function confirmClearConversation() {
+      const session = assistant?.currentSession?.();
+      if (!session) return;
+      const message = formatText(localized("ui.ai.clearConversationConfirm", "确定清空当前对话的 {count} 条消息吗？对话图片将保留。"), { count: session.messages?.length || 0 });
+      confirm(message, () => {
+        assistant?.clearSession?.(session.id);
+        renderManager(); renderTalk(); renderConversationRepository();
+      });
+    }
     function renderManager() {
       const host = $("#mgrGenList");
       if (!host) return;
@@ -3148,14 +3157,7 @@
               renderManager();
             });
         };
-        $("#mgrClear").onclick = () => {
-          const sessions = assistant?.sessions?.() || [];
-          const current = sessions.length ? assistant?.currentSession?.() : null;
-          if (current) assistant?.clearSession?.(current.id);
-          renderManager();
-          renderTalk();
-          renderConversationRepository();
-        };
+        $("#mgrClear").onclick = confirmClearConversation;
       }
       host.replaceChildren();
       (assistant?.sessions?.() || []).forEach((session) => {
@@ -3688,12 +3690,7 @@
           renderConversationRepository();
         });
       });
-      $("#talkClearBtn")?.addEventListener("click", () => {
-        const session = assistant?.currentSession?.();
-        if (session) assistant?.clearSession?.(session.id);
-        renderTalk();
-        renderConversationRepository();
-      });
+      $("#talkClearBtn")?.addEventListener("click", confirmClearConversation);
       $("#talkImgBtn")?.addEventListener("click", () =>
         $("#talkImgFile")?.click(),
       );
@@ -3985,12 +3982,6 @@
             assistant?.importSessions?.(value, false);
             renderManager();
           });
-      });
-      $("#mgrClear")?.addEventListener("click", () => {
-        const current = assistant?.currentSession?.();
-        if (current) assistant?.clearSession?.(current.id);
-        renderManager();
-        renderTalk();
       });
       document.addEventListener("dragover", (event) => {
         if (event.dataTransfer?.types?.includes("Files"))

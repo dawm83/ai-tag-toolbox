@@ -536,6 +536,32 @@ test('gallery cards support keyboard selection without losing focus', t => {
   assert.equal(doc.querySelector('#galleryDownload').disabled, true);
 });
 
+for (const entry of ['#talkClearBtn', '#mgrClear']) test(`${entry} confirms message clearing and retains conversation images`, t => {
+  const app = boot({
+    initialMessages: [{ id: 'm1', role: 'user', text: 'keep until confirmed', imageIds: ['img-1'], status: 'done' }],
+    conversationItems: [{ refId: 'r1', imageId: 'img-1', sessionId: 's1', slotNo: 1 }]
+  });
+  t.after(() => app.dom.window.close());
+  const doc = app.window.document;
+  let calls = 0;
+  app.assistant.clearSession = id => {
+    assert.equal(id, 's1'); calls += 1; app.assistant.currentSession().messages = [];
+  };
+  app.view.route('ai');
+  if (entry === '#mgrClear') app.view.showAi('mgr');
+  doc.querySelector(entry).click();
+  assert.equal(calls, 0);
+  assert.equal(doc.querySelector('#cfmModal').classList.contains('show'), true);
+  assert.match(doc.querySelector('#cfmText').textContent, /1/);
+  doc.querySelector('#cfmNo').click();
+  assert.equal(app.assistant.currentSession().messages.length, 1);
+  doc.querySelector(entry).click(); doc.querySelector('#cfmYes').click();
+  assert.equal(calls, 1);
+  assert.equal(app.assistant.currentSession().messages.length, 0);
+  assert.equal(app.repository.listConversation('s1').items.length, 1);
+  assert.equal(doc.querySelectorAll('#talkImageRepository .conversation-image-card').length, 1);
+});
+
 test('one AI connection click sends exactly one request', async t => {
   const app = boot(); t.after(() => app.dom.window.close());
   let calls = 0;
