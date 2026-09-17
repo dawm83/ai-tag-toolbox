@@ -14,6 +14,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const { BoundedCache } = require('./bounded-cache');
 
 const DEFAULT_CATEGORIES = [
   { id: 'quality', name: '质量词', icon: '⭐' },
@@ -274,7 +275,7 @@ function createTags(options = {}) {
     searchPrecision: "standard",
     revision: 0,
     searchRows: [],
-    searchCache: new Map(),
+    searchCache: new BoundedCache(256),
     countCache: new Map()
   };
 

@@ -1,5 +1,7 @@
 'use strict';
 
+const { BoundedCache } = require('./bounded-cache');
+
 /**
  * Translation 业务模块。
  *
@@ -239,7 +241,7 @@ function createTranslation(options = {}) {
   const ai = options.ai || options.gateway || null;
   const dictionary = options.dictionary || null;
   let runner = options.runner || options.localRunner || options.localModel || options.onnx || null;
-  const resultCache = new Map();
+  const resultCache = new BoundedCache(256);
   const state = { input: '', output: '', direction: 'auto', references: [], status: 'idle', source: '', model: '', error: '' };
 
   function refs(value, extra = {}) {

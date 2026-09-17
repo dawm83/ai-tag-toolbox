@@ -9,6 +9,7 @@
 
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
+const { BoundedCache } = require('./bounded-cache');
 
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 
@@ -381,7 +382,7 @@ function createImages(options = {}) {
       const item = normaliseInput({ ...row, bytes: bytes || undefined, dataUrl: bytes ? dataUrlFromBytes(bytes, row.mime || 'image/png') : row.dataUrl, thumbnailDataUrl: row.thumbnailDataUrl }, {}, ++sequence);
       item.id = String(row.id); item.metadata = row.metadata ? clone(row.metadata) : (bytes ? parsePngMetadata(bytes) : null); item.analysis = row.analysis ? clone(row.analysis) : null; item.status = text(row.status, 'ready'); item.blobId = text(row.blobId);
       items.set(item.id, item);
-      if (item.analysis) analysisCache.set(item.id, new Map([['default', clone(item.analysis)]]));
+      if (item.analysis) analysisCache.set(item.id, new BoundedCache(4).set('default', clone(item.analysis)));
       for (const name of Array.isArray(row.collections) ? row.collections : []) collectionSet(name).add(item.id);
     }
   }
@@ -529,7 +530,7 @@ function createImages(options = {}) {
     }
     if (!analyzer) {
       item.analysis = { status: 'unavailable', tags: [], builtinTags: [], modelTags: [], error: '识图服务未接入' };
-      if (!analysisCache.has(id)) analysisCache.set(id, new Map());
+      if (!analysisCache.has(id)) analysisCache.set(id, new BoundedCache(4));
       analysisCache.get(id).set(key, clone(item.analysis));
       return publicImage(item);
     }
@@ -539,7 +540,7 @@ function createImages(options = {}) {
     } catch (error) {
       item.analysis = { status: 'error', tags: [], builtinTags: [], modelTags: [], error: text(error && error.message, String(error || '识图失败')) };
     }
-    if (!analysisCache.has(id)) analysisCache.set(id, new Map());
+    if (!analysisCache.has(id)) analysisCache.set(id, new BoundedCache(4));
     analysisCache.get(id).set(key, clone(item.analysis));
     persistIndex();
     return publicImage(item);
