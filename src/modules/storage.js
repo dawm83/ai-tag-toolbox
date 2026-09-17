@@ -308,7 +308,17 @@ function createStorage(options = {}) {
     image: { put: putBlob, get: getBlob, remove: removeBlob },
     images: { put: putBlob, get: getBlob, remove: removeBlob },
     idb: { put: putBlob, get: getBlob, remove: removeBlob },
-    flush: () => typeof adapter.flush === 'function' ? adapter.flush() : Promise.resolve()
+    async flush() {
+      if (typeof adapter.flush !== 'function') return !lastError;
+      try {
+        if (await adapter.flush() === false) {
+          if (!lastError) reportError(new Error('Storage adapter rejected the flush'));
+          return false;
+        }
+        lastError = null;
+        return true;
+      } catch (error) { reportError(error); return false; }
+    }
   };
 }
 
