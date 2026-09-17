@@ -289,7 +289,8 @@ git commit -m "V1.4.33：建立快捷收藏页开发基线"
 
 **Files:** 新 `src/modules/favorites.js`、`src/modules/favorites-transfer.js`（本步只实现原文块拼接）、`tests/favorites-store.test.cjs`、`tests/helpers/favorites-fixture.cjs`；修改 `src/modules/index.js`。
 
-**Consumes:** 当前 Storage get/set/flush 与 Tags get。  
+**Consumes:** 当前 Storage get/set/flush 与 Tags get。
+
 **Produces:** 第 4.2 节基础读取、Series/Section/Entry CRUD、revision、subscription、copyText、flush、selected 的只读恢复，以及一次迁移。选择写操作在 Task 6 接入。
 
 - [ ] 先写下列行为测试，确认在旧实现上失败；存储 fixture 使用真实 createStorage，不 mock 收藏内部逻辑。
@@ -349,7 +350,8 @@ git commit -m "V1.4.33：建立收藏数据与旧收藏迁移"
 
 **Files:** 新 `src/views/favorites-view.js`、`src/favorites.css`、`assets/icons/favorites.svg`、`assets/icons/LICENSE-lucide.txt`、`tests/favorites-view.test.cjs`；修改 `preload.js`、`src/app-view.js`、`src/index.html`、`locales/*.json`、`tests/helpers/favorites-fixture.cjs`。
 
-**Consumes:** Favorites list/series/sections/getEntry/copyText。  
+**Consumes:** Favorites list/series/sections/getEntry/copyText。
+
 **Produces:** 唯一 Favorites 实例和页面 factory；路由 `favorites`；单条复制、新增入口和明确类型。
 
 - [ ] 新建页面 fixture，使用真实 index.html、真实 Favorites 和浏览器脚本；注入 copy 记录实际字符串。
@@ -425,7 +427,8 @@ git commit -m "V1.4.33：接入独立快捷收藏页"
 
 **Files:** `favorites.js`、`favorites-view.js`、`src/app.js`、`main.js`、`preload.js`；`tests/favorites-store.test.cjs`、`tests/favorites-view.test.cjs`、`tests/window-close.test.cjs`。
 
-**Consumes:** saveEntry/flush/subscription 与原有关闭保存流程。  
+**Consumes:** saveEntry/flush/subscription 与原有关闭保存流程。
+
 **Produces:** 草稿、300ms 合并提交、上一条/下一条、undo/redo、App.flushBeforeClose。
 
 - [ ] 写草稿隔离和撤销行为测试：
@@ -472,7 +475,8 @@ git commit -m "V1.4.33：完善收藏草稿保存与撤销"
 
 **Files:** `favorites.js`、`favorites-view.js`、`src/favorites.css`、`locales/*.json`；`tests/favorites-store.test.cjs`、`tests/favorites-view.test.cjs`。
 
-**Consumes:** 系列/子分类有序数据、reorder、preferences。  
+**Consumes:** 系列/子分类有序数据、reorder、preferences。
+
 **Produces:** setSeriesColors、稳定列顺序、顶部系列/子分类定位、列宽和内容缩放。
 
 - [ ] 先写自动颜色和批量变更测试：
@@ -518,7 +522,8 @@ git commit -m "V1.4.33：增加系列配色与收藏快捷定位"
 
 **Files:** `favorites.js`、`favorites-view.js`；新 `tests/favorites-search.test.cjs`；修改 `tests/favorites-view.test.cjs`。
 
-**Consumes:** 当前 document revision、Entry 原文、系列/子分类名称。  
+**Consumes:** 当前 document revision、Entry 原文、系列/子分类名称。
+
 **Produces:** search + 命中位置；内部条件与主 Tag 页完全分开。
 
 - [ ] 先写 scope、命中和失效测试：
@@ -570,7 +575,8 @@ git commit -m "V1.4.33：实现收藏内部搜索与命中定位"
 
 **Files:** `favorites.js`、`favorites-transfer.js`、`favorites-view.js`、`src/app-view.js`、`preload.js`；新 `tests/favorites-selection.test.cjs`；修改 `tests/ui-dom.test.cjs`。
 
-**Consumes:** 现有 Tags/Characters selected 和 Favorites 原文。  
+**Consumes:** 现有 Tags/Characters selected 和 Favorites 原文。
+
 **Produces:** 独立 favorites_selection_v1 快照及统一底部汇总，不修改词库选择状态。
 
 - [ ] 先写不误删手动词与编辑不污染已选内容的测试：
@@ -621,7 +627,8 @@ git commit -m "V1.4.33：接入收藏组合整体选择与原文复制"
 
 **Files:** `favorites.js`、`preload.js`、`src/app-view.js`、`src/modules/assistant.js`、`src/modules/primary-tools.js`、`src/modules/primary-agent.js`；`tests/favorites-search.test.cjs`、新 `tests/favorites-integration.test.cjs`、`tests/character-tools.test.cjs`。
 
-**Consumes:** 同一个 Favorites.search(scope=global)。  
+**Consumes:** 同一个 Favorites.search(scope=global)。
+
 **Produces:** 主 Tag 页独立收藏结果区；tags.search 可选 favorites 返回。
 
 - [ ] 在 Favorites editor 增加一个默认开启的 checkbox；精确名称说明它作用于站内全局和 AI 查询。
@@ -695,7 +702,8 @@ git commit -m "V1.4.33：接入收藏查询开关与全局搜索"
 
 **Files:** `favorites-transfer.js`、`favorites.js`、`favorites-view.js`；`tests/favorites-transfer.test.cjs`；按需 `package.json`、`package-lock.json`。
 
-**Consumes:** 成熟 TSV 解析器和同一 Favorites CRUD/候选状态校验。  
+**Consumes:** 成熟 TSV 解析器和同一 Favorites CRUD/候选状态校验。
+
 **Produces:** parseFavoritePaste/validateFavoriteBundle/previewImport/importBundle/exportBundle。
 
 - [ ] 为一行一条、两列 TSV、引号中换行和内容中的逗号写测试：
@@ -758,7 +766,8 @@ git commit -m "V1.4.33：支持收藏批量粘贴与完整备份"
 
 **Files:** `favorites.js`、`favorites-view.js`、`favorites.css`；`tests/favorites-store.test.cjs`、`tests/favorites-view.test.cjs`。
 
-**Consumes:** applyBatch/duplicateEntries/delete/reorder/markCopied 与有界 undo。  
+**Consumes:** applyBatch/duplicateEntries/delete/reorder/markCopied 与有界 undo。
+
 **Produces:** 可预期的多选管理，不与 Prompt 选择共用状态。
 
 - [ ] 增加“批量勾选不加入底部、跨页搜索全选、一次撤销恢复整批”的测试：
@@ -803,7 +812,8 @@ git commit -m "V1.4.33：完善收藏批量整理和最近复制"
 
 **Files:** `assistant.js`、`src/app-view.js`、`src/index.html`、`src/app.css`、`preload.js`；`tests/ui-dom.test.cjs`、`tests/ui-architecture.test.cjs`、`tests/favorites-integration.test.cjs`。
 
-**Consumes:** 完成的新收藏页、迁移和选择链路。  
+**Consumes:** 完成的新收藏页、迁移和选择链路。
+
 **Produces:** 一个收藏数据所有者、一个收藏视图、没有并行旧写入入口。
 
 - [ ] 全仓搜索确认旧方法、旧 DOM ID、动态事件和旧 snapshot.favorites 没有必须保留的调用者：
@@ -834,7 +844,8 @@ git commit -m "V1.4.33：移除旧收藏抽屉与重复状态"
 
 **Files:** `scripts/benchmark-favorites.mjs`、`tests/favorites-view.test.cjs`、`tests/favorites-search.test.cjs`；仅在实测发现热点时修改 Favorites 模块/视图。
 
-**Consumes:** 完整实现。  
+**Consumes:** 完整实现。
+
 **Produces:** 固定数据规模的测量结果、焦点/滚动/输入稳定性用例。
 
 - [ ] 固定生成 20 系列、每系列 5 子分类、每类 30 条的 3,000 条 fixture；每 5 条一个组合，每 3 条一个备注。文本使用确定序号，测试可重复。
@@ -878,7 +889,8 @@ git commit -m "V1.4.33：验证大收藏库与编辑交互稳定性"
 
 **Files:** `README.md`、`项目当前架构与统一重构规划.md`、版本文件、对应交付说明；本计划的执行记录。
 
-**Consumes:** 全部实际完成的功能与测试证据。  
+**Consumes:** 全部实际完成的功能与测试证据。
+
 **Produces:** 最终内部包、文件一致性证明和人工验收清单。
 
 - [ ] 对照本计划末尾需求矩阵逐项标记完成、未验证或暂缓，不能只勾“一切通过”。
