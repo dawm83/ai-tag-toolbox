@@ -1,19 +1,20 @@
 'use strict';
-/* Settings view exposes only the flat public settings adapter. */
+/* Renders shared settings and owns generation controls. API form events stay
+ * with the composer, which handles model loading and independent Vision drafts. */
 (function installSettingsView(root, factory) {
   const api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;
   root.AppViews = root.AppViews || {};
   root.AppViews.settings = api;
 })(typeof globalThis !== 'undefined' ? globalThis : window, function createFactory() {
-  const text = (value, fallback = '') => value == null || value === '' ? fallback : String(value);
   const number = (value, fallback, min, max) => { const n = Number(value); if (!Number.isFinite(n)) return fallback; return Math.max(min, Math.min(max, n)); };
   const fields = {
     base: ['#aiBase', 'value'], model: ['#aiModel', 'value'], key: ['#aiKey', 'value'],
     visionInheritPrimary: ['#visionInheritPrimary', 'checked'], visionBase: ['#visionBase', 'value'], visionModel: ['#visionModel', 'value'], visionKey: ['#visionKey', 'value'],
     imagesPerRound: ['#imagesPerRound', 'value'], maxAutoRounds: ['#maxAutoRounds', 'value'], generationAutoRun: ['#generationAutoRun', 'checked']
   };
-  function createSettingsView({ document, api, runtime, comfy, notify, onChange, autoBind = true } = {}) {
+  const generationFields = ['imagesPerRound', 'maxAutoRounds', 'generationAutoRun'];
+  function createSettingsView({ document, api, notify, onChange, autoBind = true } = {}) {
     const doc = document || (typeof globalThis !== 'undefined' ? globalThis.document : null);
     const q = selector => doc?.querySelector?.(selector);
     const read = () => { try { return api?.getSettings?.() || {}; } catch { return {}; } };
@@ -26,39 +27,22 @@
     function render(snapshot = read()) {
       const value = snapshot || {};
       Object.entries(fields).forEach(([key, config]) => { const el = q(config[0]); if (!el) return; if (config[1] === 'checked') el.checked = value[key] === true; else if (value[key] != null) el.value = String(value[key]); });
-      const seed = q('#comfySeed'); if (seed && value.seed != null && value.comfySeed == null) seed.value = String(value.seed);
-      const sampler = q('#comfySampler'); if (sampler && value.sampler != null && value.comfySampler == null) sampler.value = String(value.sampler);
-      const scheduler = q('#comfyScheduler'); if (scheduler && value.scheduler != null && value.comfyScheduler == null) scheduler.value = String(value.scheduler);
       return value;
     }
     function collect() {
       const current = read();
-      const inherit = q('#visionInheritPrimary')?.checked ?? current.visionInheritPrimary !== false;
       return {
-        base: text(readField('base', current.base), current.base || 'https://api.openai.com/v1').replace(/\/+$/, ''),
-        model: text(readField('model', current.model), current.model || 'gpt-4o-mini'), key: text(readField('key', current.key), current.key),
-        visionInheritPrimary: inherit, visionBase: text(readField('visionBase', current.visionBase), current.visionBase), visionModel: text(readField('visionModel', current.visionModel), current.visionModel), visionKey: text(readField('visionKey', current.visionKey), current.visionKey),
         imagesPerRound: number(readField('imagesPerRound', current.imagesPerRound), Number(current.imagesPerRound) || 1, 1, 10),
         maxAutoRounds: number(readField('maxAutoRounds', current.maxAutoRounds), Number(current.maxAutoRounds) || 3, 1, 10),
-        generationAutoRun: Boolean(readField('generationAutoRun', current.generationAutoRun !== false)),
-        temperature: number(current.temperature, 0.7, 0, 2)
+        generationAutoRun: Boolean(readField('generationAutoRun', current.generationAutoRun !== false))
       };
     }
     function update(patch = collect()) { const value = write(patch); onChange?.(value); return value; }
-    async function testConnection() {
-      const value = update(collect());
-      try {
-        const result = await (api?.testConnection?.(value) || runtime?.callTool?.('comfy.status', {}, { caller: 'ui' }));
-        if (result?.ok === false) throw new Error(result.error?.message || result.error || result.text || '连接失败');
-        notify?.('连接成功'); return result || { ok: true };
-      } catch (error) { notify?.(error.message || String(error)); return { ok: false, error: { code: 'CONNECTION_FAILED', message: error.message || String(error) } }; }
-    }
     function bind() {
-      Object.values(fields).forEach(config => { const el = q(config[0]); if (!el) return; el.addEventListener('change', () => update(collect())); if (config[1] === 'value' && (el.tagName === 'TEXTAREA' || el.type === 'text')) el.addEventListener('input', () => update(collect())); });
-      q('#aiTest')?.addEventListener('click', () => testConnection());
+      generationFields.forEach(key => q(fields[key][0])?.addEventListener('change', () => update()));
     }
     if (autoBind) bind();
-    return { render, collect, update, testConnection, bind, get: read, set: write, fields };
+    return { render, collect, update, bind, get: read, set: write, fields };
   }
   return { createSettingsView, fields };
 });

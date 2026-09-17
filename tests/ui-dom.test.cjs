@@ -502,6 +502,39 @@ test('API edits and test requests preserve zero temperatures', async t => {
   assert.ok(configs.every(config => config.temperature === 0));
 });
 
+test('one AI connection click sends exactly one request', async t => {
+  const app = boot(); t.after(() => app.dom.window.close());
+  let calls = 0;
+  app.assistant.testConnection = async () => { calls += 1; return { ok: true }; };
+  app.window.document.querySelector('#aiTest').click();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(calls, 1);
+});
+
+test('API address changes have one settings writer', async t => {
+  const app = boot(); t.after(() => app.dom.window.close());
+  await new Promise(resolve => setTimeout(resolve, 0));
+  const patches = [];
+  const save = app.assistant.setSettings;
+  app.assistant.setSettings = patch => { patches.push(patch); return save(patch); };
+  const input = app.window.document.querySelector('#aiBase');
+  input.value = 'https://example.test/v1';
+  input.dispatchEvent(new app.window.Event('change', { bubbles: true }));
+  assert.equal(patches.length, 1);
+  assert.equal(app.assistant.getSettings().base, input.value);
+});
+
+test('generation controls cannot save an unfinished custom API model', t => {
+  const app = boot(); t.after(() => app.dom.window.close());
+  const doc = app.window.document;
+  doc.querySelector('#aiModel').value = '__custom__';
+  doc.querySelector('#aiModelCustom').value = 'unfinished-model';
+  const rounds = doc.querySelector('#imagesPerRound');
+  rounds.value = '4'; rounds.dispatchEvent(new app.window.Event('change', { bubbles: true }));
+  assert.equal(app.assistant.getSettings().model, 'gpt-4o-mini');
+  assert.equal(app.assistant.getSettings().imagesPerRound, 4);
+});
+
 test('blank Comfy numbers retain saved values while explicit zero and empty seed remain distinct', t => {
   const app = boot(); t.after(() => app.dom.window.close());
   const doc = app.window.document;
