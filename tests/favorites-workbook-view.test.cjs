@@ -117,6 +117,20 @@ test('category plus adds a colored column and quick blank card saves a tag with 
   assert.ok(app.$(`[data-favorite-quick-new][data-section-id="${sections[1].id}"]`));
 });
 
+test('quick tag creation restores focus to the raw tag input after the clicked blank card takes focus back', async t => {
+  const app = workbookFixture(t);
+  const blank = app.$('[data-favorite-quick-new]');
+  app.dom.window.document.addEventListener('click', () => blank.focus(), { once: true });
+  blank.click();
+  await settle(25);
+  const raw = app.$('[data-favorite-quick-raw]');
+  assert.equal(app.$('[data-favorite-quick-editor]').hidden, false);
+  assert.equal(app.dom.window.document.activeElement, raw);
+  raw.value = 'blue hair';
+  raw.dispatchEvent(new app.dom.window.InputEvent('input', { bubbles: true, data: 'blue hair', inputType: 'insertText' }));
+  assert.equal(raw.value, 'blue hair');
+});
+
 test('entry note is exposed as a hover popover and the editor close button actually closes', async t => {
   const app = workbookFixture(t);
   const section = app.favorites.sections(app.favorites.series()[0].id)[0];

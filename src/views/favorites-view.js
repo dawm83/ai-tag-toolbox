@@ -143,11 +143,20 @@
       menu.querySelectorAll('button').forEach(item => item.setAttribute('role', 'menuitem'));
       return menu;
     }
-    function openQuickEditor(seriesId, sectionId) {
+    function openQuickEditor(seriesId, sectionId, trigger = doc.activeElement) {
+      const returnFocus = trigger;
       state.quickEditor = { seriesId, sectionId };
       const panel = host.querySelector('[data-favorite-quick-editor]'); if (!panel) return false;
-      panel.hidden = false; panel.querySelector('[data-favorite-quick-raw]').value = ''; panel.querySelector('[data-favorite-quick-title]').value = ''; panel.querySelector('[data-favorite-quick-note]').value = '';
-      panel.querySelector('[data-favorite-quick-raw]').focus(); return true;
+      panel.hidden = false;
+      const raw = panel.querySelector('[data-favorite-quick-raw]');
+      raw.value = ''; panel.querySelector('[data-favorite-quick-title]').value = ''; panel.querySelector('[data-favorite-quick-note]').value = '';
+      const focusRaw = () => {
+        if (!state.quickEditor || panel.hidden || !raw?.isConnected) return;
+        if (doc.activeElement === returnFocus || doc.activeElement === doc.body) raw.focus({ preventScroll: true });
+      };
+      raw.focus({ preventScroll: true });
+      win?.setTimeout?.(focusRaw, 0);
+      return true;
     }
     function closeQuickEditor() { state.quickEditor = null; const panel = host.querySelector('[data-favorite-quick-editor]'); if (panel) panel.hidden = true; }
     async function saveQuickEditor() {
@@ -938,7 +947,7 @@
       if (target.dataset.favoriteSelect) return void copyEntry(target.dataset.favoriteSelect, true);
       if (target.dataset.favoriteLocate) return void focusEntry(target.dataset.favoriteLocate);
       const action = target.dataset.favoriteAction;
-      if (Object.prototype.hasOwnProperty.call(target.dataset, 'favoriteQuickNew')) return void openQuickEditor(target.dataset.seriesId, target.dataset.sectionId);
+      if (Object.prototype.hasOwnProperty.call(target.dataset, 'favoriteQuickNew')) return void openQuickEditor(target.dataset.seriesId, target.dataset.sectionId, target);
       if (action === 'quick-close' || action === 'quick-cancel') { closeQuickEditor(); return; }
       if (action === 'quick-save') return void saveQuickEditor();
       if (action === 'context-edit') return void contextEdit();
