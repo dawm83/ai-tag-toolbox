@@ -13,12 +13,13 @@ function workbookFixture(t) {
   const dom = new JSDOM('<!doctype html><body><section id="favoritesView"></section></body>', { pretendToBeVisual: true });
   const storage = createStorage();
   const favorites = createFavorites({ storage });
-  const view = createFavoritesView({ document: dom.window.document, favorites, preferences: storage.namespace('favorites-view') });
+  const notices = [];
+  const view = createFavoritesView({ document: dom.window.document, favorites, preferences: storage.namespace('favorites-view'), copy: async () => true, notify: value => notices.push(value) });
   view.enter();
   t.after(() => { view.destroy(); dom.window.close(); });
   const $ = selector => dom.window.document.querySelector(selector);
   const click = async selector => { assert.ok($(selector), selector); $(selector).click(); await settle(); };
-  return { dom, storage, favorites, view, $, click };
+  return { dom, storage, favorites, view, $, click, notices };
 }
 
 test('empty favorites opens a workbook with one page, one category column, and a blank tag card', t => {
@@ -30,6 +31,9 @@ test('empty favorites opens a workbook with one page, one category column, and a
   assert.equal(app.$('[data-favorite-series-tab]')?.textContent.includes('新建收藏页'), true);
   assert.equal(app.$('[data-favorite-section-tab]')?.textContent.includes('新建标签栏'), true);
   assert.ok(app.$('[data-favorite-quick-new]'));
+  assert.equal(app.$('.favorites-toolbar [data-favorite-zoom]').value, '120');
+  assert.equal(app.$('.favorites-toolbar [data-favorite-action="new-tag"]'), null);
+  assert.equal(app.$('.favorites-toolbar [data-favorite-action="bulk"]'), null);
 });
 
 test('page plus creates and switches a complete collection page, while page context actions rename and delete it', async t => {
@@ -82,6 +86,15 @@ test('entry note is exposed as a hover popover and the editor close button actua
   assert.equal(app.$('[data-favorite-editor]').hidden, false);
   await app.click('[data-favorite-action="editor-close"]');
   assert.equal(app.$('[data-favorite-editor]').hidden, true);
+});
+
+test('clicking a normal tag copies it and reports the copied status', async t => {
+  const app = workbookFixture(t);
+  const section = app.favorites.sections(app.favorites.series()[0].id)[0];
+  const entry = app.favorites.saveEntry({ seriesId: app.favorites.series()[0].id, sectionId: section.id, rawText: 'soft lighting' }).data;
+  app.view.render();
+  app.$(`[data-favorite-select="${entry.id}"]`).click(); await settle();
+  assert.match(app.notices.join(' '), /已复制|Copied/);
 });
 
 test('category headers can be dragged to exchange their order', async t => {

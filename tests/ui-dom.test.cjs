@@ -540,8 +540,7 @@ test('real favorites page creates exact content and keeps its selected snapshot 
   await settle();
   assert.equal(favorites.series().length, 2);
   assert.match(favorites.series().at(-1).name, /新建收藏页/);
-  doc.querySelector('[data-favorite-action="new-bundle"]').click();
-  await settle();
+  await app.view.views.favorites.openCreate({ kind: 'bundle', seriesId: favorites.series().at(-1).id });
   const original = ' soft lighting, (blue_hair:1.2),\\(detail\\) \n';
   for (const [field, value] of Object.entries({ title: 'Portrait', rawText: original })) {
     const input = doc.querySelector(`[data-favorite-field="${field}"]`);

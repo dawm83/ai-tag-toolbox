@@ -34,6 +34,7 @@
   overflow-x:auto;
   scrollbar-width:thin;
 }
+.favorites-toolbar-minimal{justify-content:flex-end;min-height:42px;padding:5px 14px}
 .favorites-toolbar select,
 .favorites-toolbar input,
 .favorites-bulkbar select,
@@ -166,7 +167,8 @@
 .favorite-series{
   display:flex;
   align-items:stretch;
-  flex:1;
+  flex:none;
+  width:max-content;
 }
 .favorite-series-manage{display:none;width:14px;height:14px;flex:none;accent-color:var(--cp)}
 #favoritesView.is-bulk .favorite-series-manage{display:block}

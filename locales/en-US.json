@@ -169,6 +169,7 @@
       "saved": "Saved",
       "selectFailed": "Selection failed",
       "copyFailed": "Copy failed. Check clipboard permission.",
+      "copied": "Copied",
       "operationFailed": "Operation failed",
       "validEntries": "Valid entries",
       "importFailed": "Import failed",

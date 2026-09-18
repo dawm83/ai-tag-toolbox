@@ -10,7 +10,7 @@
   const COLUMN_BATCH = 120;
   const INITIAL_COLUMN_BATCH = 60;
   const INITIAL_COLUMNS = 4;
-  const DEFAULT_VIEW = Object.freeze({ zoom: 100, columnWidth: 280, primary: 'raw', showSecondary: true, compact: false });
+  const DEFAULT_VIEW = Object.freeze({ zoom: 120, columnWidth: 280, primary: 'raw', showSecondary: true, compact: false });
 
   const string = (value, fallback = '') => value == null || value === '' ? fallback : String(value);
   const number = (value, fallback, min, max) => {
@@ -44,7 +44,8 @@
       let saved = {};
       try { saved = preferences?.get?.('favorites.view', {}) || {}; } catch { saved = {}; }
       return {
-        zoom: number(saved.zoom, DEFAULT_VIEW.zoom, 75, 150),
+        zoom: saved.favoriteViewVersion ? number(saved.zoom, DEFAULT_VIEW.zoom, 75, 150) : saved.zoom === 100 ? 120 : number(saved.zoom, DEFAULT_VIEW.zoom, 75, 150),
+        favoriteViewVersion: 2,
         columnWidth: number(saved.columnWidth, DEFAULT_VIEW.columnWidth, 220, 420),
         primary: ['raw', 'zh', 'title'].includes(saved.primary) ? saved.primary : DEFAULT_VIEW.primary,
         showSecondary: saved.showSecondary !== false,
@@ -113,38 +114,11 @@
       host.classList.add('favorites-view');
       host.setAttribute('aria-label', label('favorites.title', '快捷收藏'));
 
-      const toolbar = el('div', 'favorites-toolbar');
-
-      const create = el('div', 'favorites-toolbar-group');
-      const newTag = button('plus', label('favorites.newTag', '新增单标签'), 'new-tag'); newTag.classList.add('has-label'); newTag.append(doc.createTextNode(label('favorites.newTagShort', '标签')));
-      const newBundle = button('layers', label('favorites.newBundle', '新增标签组'), 'new-bundle'); newBundle.classList.add('has-label'); newBundle.append(doc.createTextNode(label('favorites.newBundleShort', '组合')));
-      create.append(newTag, newBundle);
-      toolbar.append(create);
-
-      const history = el('div', 'favorites-toolbar-group');
-      history.append(button('undo-2', label('favorites.undo', '撤销'), 'undo'), button('redo-2', label('favorites.redo', '重做'), 'redo'));
-      const recent = button('pin', label('favorites.recent', '最近复制'), 'recent'); recent.dataset.favoriteRecent = '';
-      const bulk = button('check', label('favorites.bulk', '批量管理'), 'bulk'); bulk.dataset.favoriteBulkToggle = '';
-      history.append(recent, bulk);
-      toolbar.append(history);
-
-      const display = el('div', 'favorites-display-controls');
-      const primary = control('select', 'favoritePrimary'); primary.title = label('favorites.primaryText', '主显示文本');
-      primary.append(optionNode('raw', label('favorites.rawFirst', '原文优先')), optionNode('zh', label('favorites.zhFirst', '中文优先')), optionNode('title', label('favorites.titleFirst', '名称优先')));
-      const secondaryLabel = el('label', 'favorite-check-control');
-      const secondary = control('input', 'favoriteSecondary'); secondary.type = 'checkbox'; secondaryLabel.append(secondary, doc.createTextNode(label('favorites.secondary', '次信息')));
-      const compactLabel = el('label', 'favorite-check-control');
-      const compact = control('input', 'favoriteCompact'); compact.type = 'checkbox'; compactLabel.append(compact, doc.createTextNode(label('favorites.compact', '紧凑')));
-      const width = control('input', 'favoriteColumnWidth'); width.type = 'number'; width.min = '220'; width.max = '420'; width.step = '20'; width.title = label('favorites.columnWidth', '列宽'); width.setAttribute('aria-label', width.title);
+      const toolbar = el('div', 'favorites-toolbar favorites-toolbar-minimal');
       const zoomGroup = el('div', 'favorite-zoom-control');
       const zoom = control('input', 'favoriteZoom'); zoom.type = 'number'; zoom.min = '75'; zoom.max = '150'; zoom.step = '10'; zoom.setAttribute('aria-label', label('favorites.zoom', '缩放百分比'));
       zoomGroup.append(button('minus', label('favorites.zoomOut', '缩小'), 'zoom-out'), zoom, el('span', '', '%'), button('plus', label('favorites.zoomIn', '放大'), 'zoom-in'), button('locate-fixed', label('favorites.zoomReset', '重置缩放'), 'zoom-reset'));
-      display.append(primary, secondaryLabel, compactLabel, width, zoomGroup);
-      toolbar.append(display);
-
-      const transfer = el('div', 'favorites-toolbar-group');
-      transfer.append(button('upload', label('favorites.import', '导入收藏'), 'open-import'), button('download', label('favorites.export', '导出收藏'), 'export'));
-      toolbar.append(transfer);
+      toolbar.append(zoomGroup);
 
       const anchors = el('nav', 'favorites-anchors'); anchors.dataset.favoriteAnchors = ''; anchors.setAttribute('aria-label', label('favorites.switchSeries', '切换收藏系列'));
       const seriesControls = el('div', 'favorites-series-controls'); seriesControls.dataset.favoriteSeriesControls = '';
@@ -171,7 +145,7 @@
       const scroll = el('div', 'favorites-scroll'); scroll.dataset.favoriteScroll = '';
       const shelf = el('div', 'favorites-shelf'); shelf.dataset.favoriteShelf = '';
       scroll.append(shelf); body.append(scroll, createEditor(), createQuickEditor(), createTransferPanel());
-      host.append(anchors, seriesControls, toolbar, subanchors, bulkbar, health, body, createContextMenu(), createDialog());
+      host.append(anchors, seriesControls, toolbar, subanchors, health, body, createContextMenu(), createDialog());
       applyPreferences();
     }
 
@@ -404,7 +378,6 @@
       const rename = button('pencil', label('favorites.renameSeries', '重命名系列'), 'rename-series'); rename.dataset.seriesId = series.id;
       const color = el('input', 'favorite-color-input'); color.type = 'color'; color.value = series.color || '#5e6ad2'; color.dataset.favoriteSeriesColor = series.id;
       color.title = label('favorites.seriesColor', '系列颜色'); color.setAttribute('aria-label', color.title);
-      const newSection = actionTextButton('new-section', label('favorites.newSection', '新增标签栏')); newSection.dataset.seriesId = series.id;
       const menu = el('details', 'favorite-series-menu'); const summary = el('summary', '', '⋯'); summary.title = label('favorites.seriesActions', '系列操作'); summary.setAttribute('aria-label', summary.title);
       const menuBody = el('div', 'favorite-series-menu-body');
       const actions = [
@@ -415,7 +388,7 @@
         ['x', 'favorites.deleteSeriesAll', '删除系列及内容', 'delete-series-all']
       ];
       actions.forEach(([icon, key, fallback, action]) => { const item = button(icon, label(key, fallback), action); item.dataset.seriesId = series.id; menuBody.append(item); });
-      menu.append(summary, menuBody); hostControls.append(title, rename, color, newSection, menu);
+      menu.append(summary, menuBody); hostControls.append(title, rename, color, menu);
     }
     function columnKey(seriesId, sectionId) { return JSON.stringify([seriesId, sectionId || 'root']); }
     function columnsFor(seriesId) {
@@ -529,9 +502,8 @@
       const group = el('section', 'favorite-section'); group.dataset.favoriteSection = section.id; group.dataset.seriesId = series.id; group.style.setProperty('--favorite-accent', string(section.color, '#287EA4'));
       const head = el('div', 'favorite-section-head'); head.dataset.favoriteSectionHead = section.id; head.dataset.seriesId = series.id; head.draggable = true;
       const title = el('button', 'favorite-section-title', string(section.name, section.id)); title.type = 'button'; title.dataset.favoriteAction = 'select-section'; title.dataset.sectionId = section.id; title.dataset.seriesId = series.id;
-      const add = button('plus', label('favorites.newTag', '新增单标签'), 'new-tag'); add.dataset.seriesId = series.id; add.dataset.sectionId = section.id;
       const color = el('input', 'favorite-section-color'); color.type = 'color'; color.value = /^#[0-9a-f]{6}$/i.test(section.color || '') ? section.color : '#287EA4'; color.dataset.favoriteSectionColor = section.id; color.dataset.seriesId = series.id; color.title = label('favorites.sectionColor', '标签栏颜色'); color.setAttribute('aria-label', color.title);
-      head.append(title, el('span', 'favorite-section-count', rows.total), color, add);
+      head.append(title, el('span', 'favorite-section-count', rows.total), color);
       if (section.id !== 'root') {
         const menu = el('details', 'favorite-series-menu'); const summary = el('summary', '', '⋯'); summary.title = label('favorites.sectionActions', '子分类操作'); summary.setAttribute('aria-label', summary.title);
         const menuBody = el('div', 'favorite-series-menu-body');
@@ -787,7 +759,7 @@
       const value = safeCall('copyText', [id]);
       if (!value) return false;
       let copied = false; try { copied = Boolean(await copy(value)); } catch { copied = false; }
-      if (copied) safeCall('markCopied', [id]); else notify(label('favorites.copyFailed', '复制失败，请检查剪贴板权限'));
+      if (copied) { safeCall('markCopied', [id]); notify(label('favorites.copied', '已复制')); } else notify(label('favorites.copyFailed', '复制失败，请检查剪贴板权限'));
       return copied;
     }
     function cssEscape(value) { return win?.CSS?.escape ? win.CSS.escape(value) : String(value).replace(/[^a-zA-Z0-9_-]/g, '\\$&'); }
@@ -1155,7 +1127,7 @@
         refreshChangedEntries(event.changedEntryIds || []); renderHealth(); updateHistory();
       }) || null;
     }
-    function enter() { if (state.destroyed) return; bind(); state.active = true; host.hidden = false; state.prefs = readPreferences(); render(); }
+    function enter() { if (state.destroyed) return; bind(); state.active = true; host.hidden = false; state.prefs = readPreferences(); savePreferences({ favoriteViewVersion: 2 }); render(); }
     function refreshLocale() {
       if (!host || state.destroyed) return false;
       const dialogInput = host.querySelector('[data-favorite-dialog-input]'); const dialogStatus = host.querySelector('[data-favorite-dialog-status]');
