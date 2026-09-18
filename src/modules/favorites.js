@@ -248,6 +248,10 @@ function createFavorites(options = {}) {
       if (!row) return errorResult('SERIES_NOT_FOUND', '系列不存在');
       if (typeof patch.name !== 'string' || !patch.name.trim()) return errorResult('INVALID_SERIES', '系列名称不能为空');
       row.name = patch.name.trim();
+      if (patch.color !== undefined) {
+        if (typeof patch.color !== 'string' || !/^#[0-9a-f]{6}$/i.test(patch.color)) return errorResult('INVALID_SERIES', '系列颜色无效');
+        row.color = patch.color.toUpperCase(); row.colorMode = 'custom';
+      }
     } else {
       if (typeof patch.name !== 'string' || !patch.name.trim()) return errorResult('INVALID_SERIES', '系列名称不能为空');
       id = makeId('series', candidate);

@@ -20,23 +20,6 @@
   outline:2px solid var(--pri);
   outline-offset:2px;
 }
-.favorites-toolbar{
-  position:relative;
-  z-index:8;
-  flex:none;
-  display:flex;
-  align-items:center;
-  gap:7px;
-  min-height:50px;
-  padding:8px 14px;
-  border-bottom:1px solid var(--border);
-  background:var(--card);
-  overflow-x:auto;
-  scrollbar-width:thin;
-}
-.favorites-toolbar-minimal{justify-content:flex-end;min-height:42px;padding:5px 14px}
-.favorites-toolbar select,
-.favorites-toolbar input,
 .favorites-bulkbar select,
 .favorite-transfer select{
   min-height:32px;
@@ -47,18 +30,12 @@
   padding:5px 8px;
   outline:none;
 }
-.favorites-toolbar select{max-width:130px}
-.favorites-toolbar-group,.favorites-display-controls,.favorite-zoom-control{
+.favorite-zoom-control{
   display:flex;
   align-items:center;
   gap:4px;
   white-space:nowrap;
 }
-.favorites-toolbar-group,.favorites-display-controls{
-  padding-left:6px;
-  border-left:1px solid var(--border);
-}
-.favorites-toolbar-group:first-child{padding-left:0;border-left:0}
 .favorite-icon-button,.favorite-action-button{
   min-height:30px;
   display:inline-flex;
@@ -85,10 +62,12 @@
 .favorite-icon{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;pointer-events:none;flex:none}
 .favorite-check-control{display:inline-flex;align-items:center;gap:5px;color:var(--muted);font-size:12px;white-space:nowrap}
 .favorite-check-control input{accent-color:var(--pri)}
-.favorites-display-controls>[data-favorite-column-width]{width:60px;text-align:center}
 .favorite-zoom-control{padding:2px;border:1px solid var(--border);border-radius:8px;background:var(--well)}
 .favorite-zoom-control .favorite-icon-button{min-height:26px;width:26px;border:0;background:transparent}
-.favorite-zoom-control input{width:45px;min-height:26px;padding:2px;text-align:right;border:0;background:transparent;font-weight:700}
+.favorite-zoom-control input{width:54px;min-height:26px;padding:2px;text-align:right;border:0;background:transparent;color:var(--text);font-weight:700}
+.favorites-inline-zoom{flex:none;margin-left:auto}
+.favorite-page-tabs{min-width:0;display:flex;align-items:center;gap:5px;flex:1;overflow-x:auto;scrollbar-width:thin}
+.favorite-page-tabs>.favorite-icon-button{flex:none}
 
 .favorites-anchors,.favorites-subanchors{
   position:relative;
@@ -103,7 +82,7 @@
   border-bottom:1px solid var(--border);
   background:color-mix(in srgb,var(--card) 93%,var(--well));
 }
-.favorites-anchors{min-height:42px;background:var(--card)}
+.favorites-anchors{min-height:42px;background:var(--card);overflow:hidden}
 .favorite-series-tab{border-bottom:2px solid transparent}
 .favorite-series-tab.is-active{border-bottom-color:var(--favorite-accent,var(--pri))}
 .favorite-series-tab .favorite-action-button{border-color:var(--border2)}
@@ -126,9 +105,6 @@
   background:var(--favorite-accent,var(--pri));
 }
 .favorites-anchors>.favorite-icon-button{flex:none}
-.favorites-series-controls{position:relative;z-index:9;display:flex;align-items:center;gap:8px;flex:none;padding:6px 14px;border-bottom:1px solid var(--border);background:var(--card)}
-.favorites-series-controls[hidden]{display:none!important}
-.favorites-series-controls h3{min-width:0;max-width:320px;margin:0;font-size:14px;overflow-wrap:anywhere;color:var(--favorite-accent,var(--text))}
 .favorite-section-choice{display:inline-flex;align-items:center;gap:5px;flex:none;min-height:30px;padding:4px 9px;border:1px solid var(--border2);border-radius:7px;color:var(--muted);font-size:12px;cursor:pointer;white-space:nowrap}
 .favorite-section-choice.is-active{background:var(--pri-bg);border-color:var(--pri);color:var(--text)}
 .favorite-section-choice input{accent-color:var(--pri)}
@@ -291,7 +267,6 @@
 .favorite-context-menu{position:fixed;z-index:30;display:flex;flex-direction:column;gap:3px;min-width:150px;padding:6px;border:1px solid var(--border2);border-radius:8px;background:var(--card);box-shadow:var(--pop-shadow)}
 .favorite-context-menu[hidden]{display:none!important}
 .favorite-context-menu .favorite-action-button{justify-content:flex-start;width:100%;border-color:transparent}
-.favorite-context-color{width:100%;height:26px;border:1px solid var(--border2);border-radius:5px;background:var(--card)}
 .favorite-transfer-controls{display:flex;gap:6px;padding:10px 12px}
 .favorite-transfer-text{flex:1;min-height:190px;margin:0 12px;width:calc(100% - 24px);resize:none;font:12px/1.55 Consolas,"Cascadia Code",monospace}
 .favorite-transfer-preview{min-height:45px;padding:9px 12px;color:var(--muted);font-size:12px}
@@ -300,6 +275,9 @@
 .favorite-dialog-panel{width:min(360px,100%);padding:16px;border:1px solid var(--border2);border-radius:8px;background:var(--card);box-shadow:0 14px 34px rgba(16,18,40,.2)}
 .favorite-dialog-panel h3{margin:0 0 10px;font-size:14px}
 .favorite-dialog-panel>input{width:100%;min-height:34px;padding:7px 9px;border:1px solid var(--input-border);border-radius:7px;background:var(--input-bg);color:var(--text);outline:0}
+.favorite-dialog-panel>label{display:block;margin:10px 0 5px;color:var(--muted);font-size:12px}
+.favorite-dialog-panel>label[hidden],.favorite-dialog-color[hidden]{display:none!important}
+.favorite-dialog-panel>.favorite-dialog-color{height:40px;padding:4px;cursor:pointer}
 .favorite-dialog-status{min-height:20px;margin:6px 0 0;color:var(--neg);font-size:12px}
 
 /* Favorites surfaced by the ordinary Tag search and the shared prompt bar. */
@@ -322,8 +300,6 @@
 .favorite-selection.schip{border-radius:8px}
 
 @media(max-width:980px){
-  .favorites-toolbar{padding:7px 9px}
-  .favorites-display-controls{flex:none}
   .favorite-editor,.favorite-transfer{position:absolute;inset:0 0 0 auto;width:min(390px,94vw);min-width:0;flex-basis:auto}
 }
 @media(max-width:620px){

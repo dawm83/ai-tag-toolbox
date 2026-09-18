@@ -57,6 +57,20 @@ test('CRUD validates parents, preserves stable IDs, and commits each batch once'
   assert.equal(favorites.getEntry(copies.data.ids[0]).sectionId, null);
 });
 
+test('page name and color save together, reject invalid input atomically, and undo together', () => {
+  const { storage, favorites } = make();
+  const page = favorites.saveSeries({ name: '原名称' }).data;
+  const revision = favorites.snapshot().revision;
+  assert.equal(favorites.saveSeries({ id: page.id, name: '新名称', color: 'invalid' }).ok, false);
+  assert.deepEqual(favorites.series()[0], page);
+  assert.equal(favorites.snapshot().revision, revision);
+  assert.equal(favorites.saveSeries({ id: page.id, name: '新名称', color: '#aabbcc' }).ok, true);
+  assert.equal(favorites.snapshot().revision, revision + 1);
+  assert.equal(make({ storage }).favorites.series()[0].color, '#AABBCC');
+  favorites.undo();
+  assert.deepEqual(favorites.series()[0], page);
+});
+
 test('reorder, series deletion modes, deterministic colors, and bulk colors are undoable', () => {
   const { favorites } = make();
   const a = favorites.saveSeries({ name: 'A' }).data;

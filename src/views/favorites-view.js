@@ -114,38 +114,16 @@
       host.classList.add('favorites-view');
       host.setAttribute('aria-label', label('favorites.title', '快捷收藏'));
 
-      const toolbar = el('div', 'favorites-toolbar favorites-toolbar-minimal');
-      const zoomGroup = el('div', 'favorite-zoom-control');
-      const zoom = control('input', 'favoriteZoom'); zoom.type = 'number'; zoom.min = '75'; zoom.max = '150'; zoom.step = '10'; zoom.setAttribute('aria-label', label('favorites.zoom', '缩放百分比'));
-      zoomGroup.append(button('minus', label('favorites.zoomOut', '缩小'), 'zoom-out'), zoom, el('span', '', '%'), button('plus', label('favorites.zoomIn', '放大'), 'zoom-in'), button('locate-fixed', label('favorites.zoomReset', '重置缩放'), 'zoom-reset'));
-      toolbar.append(zoomGroup);
-
       const anchors = el('nav', 'favorites-anchors'); anchors.dataset.favoriteAnchors = ''; anchors.setAttribute('aria-label', label('favorites.switchSeries', '切换收藏系列'));
-      const seriesControls = el('div', 'favorites-series-controls'); seriesControls.dataset.favoriteSeriesControls = '';
       const subanchors = el('nav', 'favorites-subanchors'); subanchors.dataset.favoriteSubanchors = ''; subanchors.hidden = true;
       subanchors.setAttribute('aria-label', label('favorites.visibleSections', '显示子分类'));
-
-      const bulkbar = el('div', 'favorites-bulkbar'); bulkbar.dataset.favoriteBulkbar = ''; bulkbar.hidden = true;
-      const count = el('strong', 'favorites-bulk-count', '0'); count.dataset.favoriteBulkCount = '';
-      const move = control('select', 'favoriteBulkMove'); move.setAttribute('aria-label', label('favorites.moveTo', '移动到系列'));
-      bulkbar.append(el('span', '', label('favorites.selected', '已选')), count,
-        actionTextButton('visible', label('favorites.selectVisible', '选择当前显示')),
-        actionTextButton('pin-selected', label('favorites.pin', '置顶')),
-        actionTextButton('unpin-selected', label('favorites.unpin', '取消置顶')),
-        actionTextButton('searchable-on', label('favorites.searchableOn', '允许全局查询')),
-        actionTextButton('searchable-off', label('favorites.searchableOff', '关闭全局查询')),
-        actionTextButton('copy-selected', label('favorites.copySelected', '复制原文')),
-        move,
-        actionTextButton('duplicate-selected', label('favorites.duplicate', '复制到目标')),
-        actionTextButton('delete-selected', label('favorites.delete', '删除'), 'danger'),
-        actionTextButton('clear-bulk', label('favorites.clearSelection', '清除勾选')));
 
       const health = el('div', 'favorites-health'); health.dataset.favoriteHealth = ''; health.hidden = true;
       const body = el('div', 'favorites-body');
       const scroll = el('div', 'favorites-scroll'); scroll.dataset.favoriteScroll = '';
       const shelf = el('div', 'favorites-shelf'); shelf.dataset.favoriteShelf = '';
-      scroll.append(shelf); body.append(scroll, createEditor(), createQuickEditor(), createTransferPanel());
-      host.append(anchors, seriesControls, toolbar, subanchors, health, body, createContextMenu(), createDialog());
+      scroll.append(shelf); body.append(scroll, createEditor(), createQuickEditor());
+      host.append(anchors, subanchors, health, body, createContextMenu(), createDialog());
       applyPreferences();
     }
 
@@ -160,8 +138,9 @@
     }
     function createContextMenu() {
       const menu = el('div', 'favorite-context-menu'); menu.dataset.favoriteContextMenu = ''; menu.hidden = true;
-      menu.append(actionTextButton('context-rename', label('favorites.rename', '重命名')), actionTextButton('context-edit', label('favorites.edit', '编辑')), actionTextButton('context-delete', label('favorites.delete', '删除'), 'danger'));
-      const color = el('input', 'favorite-context-color'); color.type = 'color'; color.dataset.favoriteContextColor = ''; color.title = label('favorites.seriesColor', '颜色'); color.setAttribute('aria-label', color.title); menu.append(color);
+      menu.setAttribute('role', 'menu'); menu.setAttribute('aria-label', label('favorites.tabActions', '页签操作'));
+      menu.append(actionTextButton('context-edit', label('favorites.edit', '编辑')), actionTextButton('context-delete', label('favorites.delete', '删除'), 'danger'));
+      menu.querySelectorAll('button').forEach(item => item.setAttribute('role', 'menuitem'));
       return menu;
     }
     function openQuickEditor(seriesId, sectionId) {
@@ -181,17 +160,32 @@
     }
     function openContextMenu(kind, id, event) {
       const menu = host.querySelector('[data-favorite-context-menu]'); if (!menu) return;
-      state.contextTarget = { kind, id, seriesId: event.currentTarget?.dataset?.seriesId || state.seriesId };
-      menu.style.left = `${Math.max(4, event.clientX || 0)}px`; menu.style.top = `${Math.max(4, event.clientY || 0)}px`; menu.hidden = false;
-      const color = menu.querySelector('[data-favorite-context-color]');
       const row = kind === 'series' ? seriesRows().find(item => item.id === id) : sectionRows(state.seriesId).find(item => item.id === id);
-      if (color) color.value = row?.color || '#287EA4';
+      if (!row) { closeContextMenu(); return; }
+      const anchor = event.target.closest('[data-favorite-series-tab], [data-favorite-section-tab], [data-favorite-section-head]');
+      const returnFocus = anchor?.matches('button') ? anchor : anchor?.querySelector('button');
+      state.contextTarget = { kind, id, seriesId: row.seriesId || id, returnFocus };
+      menu.hidden = false;
+      const bounds = menu.getBoundingClientRect();
+      menu.style.left = `${number(event.clientX, 4, 4, Math.max(4, win.innerWidth - bounds.width - 4))}px`;
+      menu.style.top = `${number(event.clientY, 4, 4, Math.max(4, win.innerHeight - bounds.height - 4))}px`;
+      menu.querySelector('button')?.focus();
     }
     function closeContextMenu() { state.contextTarget = null; host.querySelector('[data-favorite-context-menu]')?.setAttribute('hidden', ''); }
-    function contextRename() {
+    function dismissContextMenu(event) {
+      if (state.contextTarget && !event.target.closest?.('[data-favorite-context-menu]')) closeContextMenu();
+    }
+    function contextEdit() {
       const target = state.contextTarget; if (!target) return false;
-      const row = target.kind === 'series' ? seriesRows().find(item => item.id === target.id) : sectionRows(target.seriesId).find(item => item.id === target.id); if (!row) return false;
-      closeContextMenu(); return openNameDialog(() => label('favorites.namePrompt', '输入名称'), row.name, name => safeCall(target.kind === 'series' ? 'saveSeries' : 'saveSection', target.kind === 'series' ? { id: row.id, name } : { id: row.id, seriesId: row.seriesId, name }), doc.activeElement);
+      const row = target.kind === 'series' ? seriesRows().find(item => item.id === target.id) : sectionRows(target.seriesId).find(item => item.id === target.id);
+      if (!row) return false; closeContextMenu();
+      const dialog = host.querySelector('[data-favorite-dialog]'); const input = host.querySelector('[data-favorite-dialog-input]'); const color = host.querySelector('[data-favorite-dialog-color]');
+      const title = () => label(target.kind === 'series' ? 'favorites.editPage' : 'favorites.editColumn', target.kind === 'series' ? '编辑收藏页' : '编辑标签栏');
+      state.dialog = { returnFocus: target.returnFocus, title, structure: { kind: target.kind, row } };
+      host.querySelector('[data-favorite-dialog-status]').textContent = '';
+      dialog.querySelector('h3').textContent = title(); input.value = row.name || ''; color.value = row.color || '#287EA4'; color.hidden = false;
+      host.querySelector('[data-favorite-dialog-color-label]').hidden = false;
+      dialog.hidden = false; input.focus(); input.select(); return true;
     }
     async function contextDelete() {
       const target = state.contextTarget; if (!target) return false; closeContextMenu();
@@ -206,14 +200,17 @@
     }
     function createDialog() {
       const dialog = el('div', 'favorite-dialog'); dialog.dataset.favoriteDialog = ''; dialog.hidden = true;
-      dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true');
+      dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true'); dialog.setAttribute('aria-labelledby', 'favorite-dialog-heading');
       const panel = el('form', 'favorite-dialog-panel'); panel.dataset.favoriteDialogForm = '';
-      panel.append(el('h3', '', label('favorites.namePrompt', '输入名称')));
-      const input = el('input'); input.type = 'text'; input.dataset.favoriteDialogInput = ''; input.autocomplete = 'off';
+      const heading = el('h3', '', label('favorites.namePrompt', '输入名称')); heading.id = 'favorite-dialog-heading'; panel.append(heading);
+      const input = el('input'); input.type = 'text'; input.dataset.favoriteDialogInput = ''; input.autocomplete = 'off'; input.id = 'favorite-dialog-name';
+      const nameLabel = el('label', '', label('favorites.entryTitle', '名称')); nameLabel.htmlFor = input.id;
+      const color = el('input', 'favorite-dialog-color'); color.type = 'color'; color.dataset.favoriteDialogColor = ''; color.hidden = true; color.id = 'favorite-dialog-color';
+      const colorLabel = el('label', '', label('favorites.borderColor', '边框颜色')); colorLabel.htmlFor = color.id; colorLabel.dataset.favoriteDialogColorLabel = ''; colorLabel.hidden = true;
       const status = el('p', 'favorite-dialog-status'); status.dataset.favoriteDialogStatus = '';
       const actions = el('div', 'favorite-editor-actions');
       const cancel = actionTextButton('dialog-cancel', label('favorites.cancel', '取消')); const confirm = actionTextButton('dialog-confirm', label('favorites.confirm', '确定'), 'primary');
-      actions.append(cancel, confirm); panel.append(input, status, actions); dialog.append(panel); return dialog;
+      actions.append(cancel, confirm); panel.append(nameLabel, input, colorLabel, color, status, actions); dialog.append(panel); return dialog;
     }
     function openNameDialog(title, initial, onSave, returnFocus) {
       const dialog = host.querySelector('[data-favorite-dialog]'); const input = host.querySelector('[data-favorite-dialog-input]');
@@ -221,6 +218,7 @@
       const titleText = typeof title === 'function' ? title() : title;
       state.dialog = { returnFocus: returnFocus || doc.activeElement, onSave, title, titleText };
       dialog.querySelector('h3').textContent = titleText; host.querySelector('[data-favorite-dialog-status]').textContent = '';
+      host.querySelector('[data-favorite-dialog-color]').hidden = true; host.querySelector('[data-favorite-dialog-color-label]').hidden = true;
       input.value = string(initial); dialog.hidden = false; input.focus(); input.select(); return true;
     }
     function closeNameDialog() {
@@ -241,10 +239,12 @@
       if (!state.dialog) return false;
       const input = host.querySelector('[data-favorite-dialog-input]'); const status = host.querySelector('[data-favorite-dialog-status]'); const name = string(input?.value).trim();
       if (!name) { if (status) status.textContent = label('favorites.nameRequired', '名称不能为空'); input?.focus(); return false; }
-      const result = state.dialog.onSave(name);
+      const structure = state.dialog.structure; const color = host.querySelector('[data-favorite-dialog-color]');
+      const patch = structure ? { id: structure.row.id, name, ...(structure.kind === 'section' ? { seriesId: structure.row.seriesId } : {}), ...(color.value.toUpperCase() !== structure.row.color?.toUpperCase() ? { color: color.value } : {}) } : null;
+      const result = structure ? safeCall(structure.kind === 'series' ? 'saveSeries' : 'saveSection', patch) : state.dialog.onSave(name);
       if (result?.ok === false) { if (status) status.textContent = result.error?.message || label('favorites.operationFailed', '操作失败'); return false; }
       const dialogState = state.dialog; state.dialog = null; const dialog = host.querySelector('[data-favorite-dialog]'); if (dialog) dialog.hidden = true;
-      render(); restoreDialogFocus(dialogState); return true;
+      const dialogColor = host.querySelector('[data-favorite-dialog-color]'); if (dialogColor) dialogColor.hidden = true; render(); restoreDialogFocus(dialogState); return true;
     }
 
     function createEditor() {
@@ -324,7 +324,7 @@
       if (!rows.some(row => row.id === state.seriesId)) state.seriesId = rows.find(row => row.id === state.prefs.activeSeriesId)?.id || rows[0]?.id || '';
       const sections = sectionRows(state.seriesId);
       if (!sections.some(row => row.id === state.sectionId)) state.sectionId = sections[0]?.id || '';
-      renderFilters(); renderAnchors(); renderSeriesControls(); renderSubanchors(); renderHealth(); renderShelf();
+      renderAnchors(); renderSubanchors(); renderHealth(); renderShelf();
       updateBulkbar(); updateHistory(); applyPreferences();
       host.querySelector('[data-favorite-recent]')?.classList.toggle('is-active', state.recent);
     }
@@ -346,49 +346,22 @@
         state.initializing = false; if (created?.ok) state.sectionId = created.data.id;
       }
     }
-    function renderFilters() {
-      const rows = seriesRows();
-      const controls = [host.querySelector('[data-favorite-bulk-move]'), host.querySelector('[data-favorite-import-series]')];
-      controls.forEach((select, index) => {
-        if (!select) return;
-        const previous = select.value;
-        select.replaceChildren();
-        if (index === 0) select.append(optionNode('', label('favorites.chooseTarget', '目标系列')));
-        rows.forEach(row => select.append(optionNode(row.id, string(row.name, row.id))));
-        if ([...select.options].some(item => item.value === previous)) select.value = previous;
-      });
-    }
     function renderAnchors() {
       const anchors = host.querySelector('[data-favorite-anchors]'); if (!anchors) return;
       anchors.replaceChildren();
+      const tabs = el('div', 'favorite-page-tabs');
       seriesRows().forEach(row => {
         const tab = el('span', 'favorite-series-tab'); tab.style.setProperty('--favorite-accent', string(row.color, 'var(--pri)'));
         tab.dataset.favoriteSeriesTab = row.id; tab.dataset.seriesId = row.id; tab.draggable = true;
         const item = actionTextButton('select-series', string(row.name, row.id)); item.dataset.seriesId = row.id;
         item.classList.toggle('is-active', row.id === state.seriesId); tab.classList.toggle('is-active', row.id === state.seriesId); item.setAttribute('aria-pressed', String(row.id === state.seriesId));
-        tab.append(item); anchors.append(tab);
+        tab.append(item); tabs.append(tab);
       });
-      anchors.append(button('plus', label('favorites.newSeries', '新建收藏页'), 'new-series-tab'));
-    }
-    function renderSeriesControls() {
-      const hostControls = host.querySelector('[data-favorite-series-controls]'); hostControls.replaceChildren();
-      const series = seriesRows().find(row => row.id === state.seriesId); hostControls.hidden = !series; if (!series) return;
-      hostControls.style.setProperty('--favorite-accent', string(series.color, 'var(--pri)'));
-      const title = el('h3', '', string(series.name, series.id));
-      const rename = button('pencil', label('favorites.renameSeries', '重命名系列'), 'rename-series'); rename.dataset.seriesId = series.id;
-      const color = el('input', 'favorite-color-input'); color.type = 'color'; color.value = series.color || '#5e6ad2'; color.dataset.favoriteSeriesColor = series.id;
-      color.title = label('favorites.seriesColor', '系列颜色'); color.setAttribute('aria-label', color.title);
-      const menu = el('details', 'favorite-series-menu'); const summary = el('summary', '', '⋯'); summary.title = label('favorites.seriesActions', '系列操作'); summary.setAttribute('aria-label', summary.title);
-      const menuBody = el('div', 'favorite-series-menu-body');
-      const actions = [
-        ['palette', 'favorites.autoColor', '自动配色', 'auto-color'],
-        ['arrow-up', 'favorites.moveSeriesUp', '系列左移', 'move-series-up'],
-        ['arrow-down', 'favorites.moveSeriesDown', '系列右移', 'move-series-down'],
-        ['trash-2', 'favorites.deleteSeries', '删除系列', 'delete-series'],
-        ['x', 'favorites.deleteSeriesAll', '删除系列及内容', 'delete-series-all']
-      ];
-      actions.forEach(([icon, key, fallback, action]) => { const item = button(icon, label(key, fallback), action); item.dataset.seriesId = series.id; menuBody.append(item); });
-      menu.append(summary, menuBody); hostControls.append(title, rename, color, menu);
+      tabs.append(button('plus', label('favorites.newSeries', '新建收藏页'), 'new-series-tab'));
+      const zoomGroup = el('div', 'favorite-zoom-control favorites-inline-zoom');
+      const zoom = control('input', 'favoriteZoom'); zoom.type = 'number'; zoom.min = '75'; zoom.max = '150'; zoom.step = '10'; zoom.value = String(state.prefs.zoom); zoom.setAttribute('aria-label', label('favorites.zoom', '缩放百分比'));
+      zoomGroup.append(button('minus', label('favorites.zoomOut', '缩小'), 'zoom-out'), zoom, el('span', '', '%'), button('plus', label('favorites.zoomIn', '放大'), 'zoom-in'), button('locate-fixed', label('favorites.zoomReset', '重置缩放'), 'zoom-reset'));
+      anchors.append(tabs, zoomGroup);
     }
     function columnKey(seriesId, sectionId) { return JSON.stringify([seriesId, sectionId || 'root']); }
     function columnsFor(seriesId) {
@@ -502,20 +475,7 @@
       const group = el('section', 'favorite-section'); group.dataset.favoriteSection = section.id; group.dataset.seriesId = series.id; group.style.setProperty('--favorite-accent', string(section.color, '#287EA4'));
       const head = el('div', 'favorite-section-head'); head.dataset.favoriteSectionHead = section.id; head.dataset.seriesId = series.id; head.draggable = true;
       const title = el('button', 'favorite-section-title', string(section.name, section.id)); title.type = 'button'; title.dataset.favoriteAction = 'select-section'; title.dataset.sectionId = section.id; title.dataset.seriesId = series.id;
-      const color = el('input', 'favorite-section-color'); color.type = 'color'; color.value = /^#[0-9a-f]{6}$/i.test(section.color || '') ? section.color : '#287EA4'; color.dataset.favoriteSectionColor = section.id; color.dataset.seriesId = series.id; color.title = label('favorites.sectionColor', '标签栏颜色'); color.setAttribute('aria-label', color.title);
-      head.append(title, el('span', 'favorite-section-count', rows.total), color);
-      if (section.id !== 'root') {
-        const menu = el('details', 'favorite-series-menu'); const summary = el('summary', '', '⋯'); summary.title = label('favorites.sectionActions', '子分类操作'); summary.setAttribute('aria-label', summary.title);
-        const menuBody = el('div', 'favorite-series-menu-body');
-        const actions = [
-          ['arrow-up', 'favorites.moveSectionUp', '子分类左移', 'move-section-up'],
-          ['arrow-down', 'favorites.moveSectionDown', '子分类右移', 'move-section-down'],
-          ['pencil', 'favorites.renameSection', '重命名子分类', 'rename-section'],
-          ['trash-2', 'favorites.deleteSection', '删除子分类', 'delete-section']
-        ];
-        actions.forEach(([icon, key, fallback, action]) => { const item = button(icon, label(key, fallback), action); item.dataset.seriesId = series.id; item.dataset.sectionId = section.id; menuBody.append(item); });
-        menu.append(summary, menuBody); head.append(menu);
-      }
+      head.append(title, el('span', 'favorite-section-count', rows.total));
       group.append(head);
       const list = el('div', 'favorite-entry-list'); rows.items.forEach(entry => list.append(renderEntry(entry, selected.has(entry.id)))); list.append(renderQuickBlank(series, section)); group.append(list);
       if (rows.hasMore) { const more = actionTextButton('load-column', label('favorites.loadMore', '加载更多')); more.dataset.seriesId = series.id; more.dataset.sectionId = section.id; group.append(more); }
@@ -839,7 +799,6 @@
       const panel = host.querySelector('[data-favorite-transfer]'); if (panel) panel.hidden = false;
       const fresh = !state.transferOpen && !host.querySelector('[data-favorite-import-text]')?.value;
       state.transferOpen = true;
-      renderFilters();
       if (fresh) { host.querySelector('[data-favorite-import-series]').value = state.seriesId; invalidateImportPreview(); }
       renderImportSections();
       const format = host.querySelector('[data-favorite-import-format]'); const mode = host.querySelector('[data-favorite-import-mode]');
@@ -971,6 +930,7 @@
     }
 
     async function handleClick(event) {
+      dismissContextMenu(event);
       const target = event.target.closest?.('[data-favorite-action], [data-favorite-copy], [data-favorite-edit], [data-favorite-expand], [data-favorite-select], [data-favorite-locate], [data-favorite-quick-new]'); if (!target || !host.contains(target)) return;
       if (target.dataset.favoriteCopy) return void copyEntry(target.dataset.favoriteCopy, false);
       if (target.dataset.favoriteEdit) return void openEditor(target.dataset.favoriteEdit);
@@ -981,9 +941,8 @@
       if (Object.prototype.hasOwnProperty.call(target.dataset, 'favoriteQuickNew')) return void openQuickEditor(target.dataset.seriesId, target.dataset.sectionId);
       if (action === 'quick-close' || action === 'quick-cancel') { closeQuickEditor(); return; }
       if (action === 'quick-save') return void saveQuickEditor();
-      if (action === 'context-rename') return void contextRename();
+      if (action === 'context-edit') return void contextEdit();
       if (action === 'context-delete') return void contextDelete();
-      if (action === 'context-edit') { const targetContext = state.contextTarget; closeContextMenu(); if (targetContext?.kind === 'series') return void structureAction('rename-series', { dataset: { seriesId: targetContext.id } }); return; }
       if (action === 'dialog-cancel') { closeNameDialog(); return; }
       if (action === 'dialog-confirm') { submitNameDialog(); return; }
       if (action === 'new-series-tab') return void structureAction('new-series-tab', target);
@@ -1050,13 +1009,6 @@
     }
     function handleChange(event) {
       const target = event.target;
-      if (target.matches('[data-favorite-section-color]')) { safeCall('saveSection', { id: target.dataset.favoriteSectionColor, seriesId: target.dataset.seriesId, name: sectionRows(target.dataset.seriesId).find(row => row.id === target.dataset.favoriteSectionColor)?.name || '', color: target.value }); render(); return; }
-      if (target.matches('[data-favorite-context-color]')) {
-        const context = state.contextTarget; if (!context) return;
-        if (context.kind === 'series') safeCall('setSeriesColors', [context.id], { mode: 'custom', color: target.value });
-        else { const row = sectionRows(context.seriesId).find(item => item.id === context.id); if (row) safeCall('saveSection', { id: row.id, seriesId: row.seriesId, name: row.name, color: target.value }); }
-        closeContextMenu(); render(); return;
-      }
       if (target.matches('[data-favorite-import-file]')) { void readImportFile(target); return; }
       if (target.matches('[data-favorite-inline-field]')) { void saveInlineField(target); return; }
       if (target.matches('[data-favorite-import-series]')) { renderImportSections(); invalidateImportPreview(); return; }
@@ -1069,7 +1021,6 @@
       if (target.matches('[data-favorite-primary]')) { savePreferences({ primary: target.value }); renderShelf(); return; }
       if (target.matches('[data-favorite-secondary]')) { savePreferences({ showSecondary: target.checked }); renderShelf(); return; }
       if (target.matches('[data-favorite-compact]')) { savePreferences({ compact: target.checked }); return; }
-      if (target.matches('[data-favorite-series-color]')) { safeCall('setSeriesColors', [target.dataset.favoriteSeriesColor], { mode: 'custom', color: target.value }); render(); return; }
       if (target.matches('[data-favorite-bulk-move]') && target.value) { applyBulk('move-selected'); return; }
       if (target.matches('[data-favorite-field="seriesId"]')) { readDraftFromFields(target); editorSeriesOptions(target.value, null); readDraftFromFields(host.querySelector('[data-favorite-field="sectionId"]')); scheduleSave(); }
     }
@@ -1078,6 +1029,14 @@
     function handleFocusOut(event) { if (event.target.matches?.('[data-favorite-field]') && !event.relatedTarget?.matches?.('[data-favorite-field]')) endEditorTransaction(); }
     async function handleKeydown(event) {
       if (!state.active || state.destroyed) return;
+      if (state.contextTarget) {
+        if (event.key === 'Escape') { event.preventDefault(); const target = state.contextTarget; closeContextMenu(); target.returnFocus?.focus(); return; }
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+          event.preventDefault();
+          const items = [...host.querySelectorAll('[data-favorite-context-menu] button')];
+          const index = items.indexOf(doc.activeElement); items[(index + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length]?.focus(); return;
+        }
+      }
       if (state.dialog && event.key === 'Enter' && event.target.matches?.('[data-favorite-dialog-input]')) { event.preventDefault(); submitNameDialog(); return; }
       const editable = event.target.matches?.('input, textarea, select, [contenteditable="true"]');
       if (event.key === 'Escape') { if (state.dialog) { event.preventDefault(); closeNameDialog(); } else if (state.transferOpen) { event.preventDefault(); host.querySelector('[data-favorite-transfer]').hidden = true; state.transferOpen = false; } else if (state.editor) { event.preventDefault(); discardEditor(); } return; }
@@ -1116,6 +1075,7 @@
       if (!host || state.bound || state.destroyed) return;
       ensureShell(); state.bound = true;
       host.addEventListener('click', handleClick); host.addEventListener('contextmenu', handleContextMenu); host.addEventListener('input', handleInput); host.addEventListener('change', handleChange); host.addEventListener('submit', handleSubmit); host.addEventListener('focusout', handleFocusOut);
+      doc.addEventListener('pointerdown', dismissContextMenu);
       host.addEventListener('compositionstart', handleCompositionStart); host.addEventListener('compositionend', handleCompositionEnd);
       host.addEventListener('keydown', handleKeydown); host.addEventListener('dragstart', handleDragStart); host.addEventListener('dragover', handleDragOver); host.addEventListener('drop', handleDrop); host.addEventListener('scroll', handleShelfScroll, true);
       state.unsubscribe = favorites?.subscribe?.((event = {}) => {
@@ -1131,14 +1091,15 @@
     function refreshLocale() {
       if (!host || state.destroyed) return false;
       const dialogInput = host.querySelector('[data-favorite-dialog-input]'); const dialogStatus = host.querySelector('[data-favorite-dialog-status]');
-      const dialogSnapshot = state.dialog ? { value: dialogInput?.value || '', status: dialogStatus?.textContent || '', focused: doc.activeElement === dialogInput } : null;
+      const dialogSnapshot = state.dialog ? { value: dialogInput?.value || '', color: host.querySelector('[data-favorite-dialog-color]')?.value, status: dialogStatus?.textContent || '', focused: doc.activeElement === dialogInput } : null;
+      closeContextMenu();
       const transferSnapshot = state.transferOpen ? {
         format: host.querySelector('[data-favorite-import-format]')?.value || 'lines', mode: host.querySelector('[data-favorite-import-mode]')?.value || 'append',
         kind: host.querySelector('[data-favorite-import-kind]')?.value || 'tag', seriesId: host.querySelector('[data-favorite-import-series]')?.value || '', sectionId: host.querySelector('[data-favorite-import-section]')?.value || '',
         text: host.querySelector('[data-favorite-import-text]')?.value || '', preview: host.querySelector('[data-favorite-import-preview]')?.textContent || ''
       } : null;
       host.replaceChildren(); delete host.dataset.favoritesReady; ensureShell(); render();
-      renderFilters(); if (state.editor) renderEditor();
+      if (state.editor) renderEditor();
       if (transferSnapshot) {
         host.querySelector('[data-favorite-transfer]').hidden = false;
         const format = host.querySelector('[data-favorite-import-format]'); const mode = host.querySelector('[data-favorite-import-mode]'); const kindControl = host.querySelector('[data-favorite-import-kind]'); const series = host.querySelector('[data-favorite-import-series]');
@@ -1149,13 +1110,14 @@
       if (dialogSnapshot && state.dialog) {
         const dialog = host.querySelector('[data-favorite-dialog]'); const input = host.querySelector('[data-favorite-dialog-input]'); const status = host.querySelector('[data-favorite-dialog-status]');
         const title = typeof state.dialog.title === 'function' ? state.dialog.title() : state.dialog.titleText;
+        if (state.dialog.structure) { const color = host.querySelector('[data-favorite-dialog-color]'); color.value = dialogSnapshot.color; color.hidden = false; host.querySelector('[data-favorite-dialog-color-label]').hidden = false; }
         dialog.querySelector('h3').textContent = title; input.value = dialogSnapshot.value; status.textContent = dialogSnapshot.status; dialog.hidden = false; if (dialogSnapshot.focused) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
       }
       return true;
     }
     async function leave() {
       const saved = await flushEdits(); if (!saved) return false;
-      state.active = false; cancelColumnLoading(); return true;
+      state.active = false; closeContextMenu(); cancelColumnLoading(); return true;
     }
     function cancelColumnLoading() {
       state.columnObserver?.disconnect?.(); state.columnObserver = null;
@@ -1165,6 +1127,7 @@
       if (!host || state.destroyed) return;
       state.destroyed = true; state.active = false; win.clearTimeout(state.saveTimer); state.saveTimer = null;
       host.removeEventListener('click', handleClick); host.removeEventListener('contextmenu', handleContextMenu); host.removeEventListener('input', handleInput); host.removeEventListener('change', handleChange); host.removeEventListener('submit', handleSubmit); host.removeEventListener('focusout', handleFocusOut);
+      doc.removeEventListener('pointerdown', dismissContextMenu);
       host.removeEventListener('compositionstart', handleCompositionStart); host.removeEventListener('compositionend', handleCompositionEnd);
       host.removeEventListener('keydown', handleKeydown); host.removeEventListener('dragstart', handleDragStart); host.removeEventListener('dragover', handleDragOver); host.removeEventListener('drop', handleDrop); host.removeEventListener('scroll', handleShelfScroll, true); cancelColumnLoading();
       try { state.unsubscribe?.(); } catch { /* optional subscription */ } state.unsubscribe = null;

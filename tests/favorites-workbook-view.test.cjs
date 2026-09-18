@@ -31,9 +31,17 @@ test('empty favorites opens a workbook with one page, one category column, and a
   assert.equal(app.$('[data-favorite-series-tab]')?.textContent.includes('新建收藏页'), true);
   assert.equal(app.$('[data-favorite-section-tab]')?.textContent.includes('新建标签栏'), true);
   assert.ok(app.$('[data-favorite-quick-new]'));
-  assert.equal(app.$('.favorites-toolbar [data-favorite-zoom]').value, '120');
+  assert.equal(app.$('[data-favorite-zoom]').value, '120');
   assert.equal(app.$('.favorites-toolbar [data-favorite-action="new-tag"]'), null);
   assert.equal(app.$('.favorites-toolbar [data-favorite-action="bulk"]'), null);
+});
+
+test('page and tag navigation are adjacent rows, with zoom inline and no page control band', t => {
+  const app = workbookFixture(t);
+  assert.equal(app.$('[data-favorite-series-controls]'), null);
+  assert.equal(app.$('.favorites-toolbar'), null);
+  assert.ok(app.$('[data-favorite-anchors] [data-favorite-zoom]'));
+  assert.equal(app.$('[data-favorite-anchors] + [data-favorite-subanchors]') != null, true);
 });
 
 test('page plus creates and switches a complete collection page, while page context actions rename and delete it', async t => {
@@ -45,15 +53,49 @@ test('page plus creates and switches a complete collection page, while page cont
   let tab = app.$('[data-favorite-series-tab].is-active');
   tab.dispatchEvent(new app.dom.window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
   assert.ok(app.$('[data-favorite-context-menu]'));
-  await app.click('[data-favorite-action="context-rename"]');
+  await app.click('[data-favorite-action="context-edit"]');
   app.$('[data-favorite-dialog-input]').value = '人物素材';
   await app.click('[data-favorite-action="dialog-confirm"]');
   assert.equal(app.favorites.series()[1].name, '人物素材');
-  app.dom.window.confirm = () => true;
+  let confirmed = false;
+  app.dom.window.confirm = () => confirmed;
   tab = app.$('[data-favorite-series-tab].is-active');
   tab.dispatchEvent(new app.dom.window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
   await app.click('[data-favorite-action="context-delete"]');
+  assert.equal(app.favorites.series().length, 2, 'cancelling confirmation preserves the page');
+  confirmed = true;
+  tab.dispatchEvent(new app.dom.window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+  await app.click('[data-favorite-action="context-delete"]');
   assert.equal(app.favorites.series().length, 1);
+});
+
+test('page and tag right-click menus share edit/delete actions and edit name plus color in one dialog', async t => {
+  const app = workbookFixture(t);
+  const pageTab = app.$('[data-favorite-series-tab]');
+  pageTab.dispatchEvent(new app.dom.window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+  assert.ok(app.$('[data-favorite-action="context-edit"]'));
+  assert.ok(app.$('[data-favorite-action="context-delete"]'));
+  assert.deepEqual([...app.$('[data-favorite-context-menu]').querySelectorAll('button')].map(node => node.textContent), ['编辑', '删除']);
+  assert.equal(app.$('[data-favorite-context-color]'), null);
+  await app.click('[data-favorite-action="context-edit"]');
+  const color = app.$('[data-favorite-dialog-color]');
+  assert.equal(color.hidden, false);
+  app.$('[data-favorite-dialog-input]').value = '改名后的收藏页'; color.value = '#112233';
+  await app.click('[data-favorite-action="dialog-confirm"]');
+  assert.equal(app.favorites.series()[0].name, '改名后的收藏页');
+  assert.equal(app.favorites.series()[0].color, '#112233');
+
+  const sectionTab = app.$('[data-favorite-section-tab]');
+  sectionTab.dispatchEvent(new app.dom.window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+  await app.click('[data-favorite-action="context-edit"]');
+  assert.equal(app.$('[data-favorite-dialog-color]').hidden, false);
+  app.$('[data-favorite-dialog-input]').value = '改名后的标签栏'; app.$('[data-favorite-dialog-color]').value = '#445566';
+  await app.click('[data-favorite-action="dialog-confirm"]');
+  assert.equal(app.favorites.sections(app.favorites.series()[0].id)[0].name, '改名后的标签栏');
+  assert.equal(app.favorites.sections(app.favorites.series()[0].id)[0].color, '#445566');
+  assert.equal(app.$('[data-favorite-section] .favorite-section-title').textContent, '改名后的标签栏');
+  assert.equal(app.$('[data-favorite-section-color]'), null);
+  assert.equal(app.$('[data-favorite-section] details'), null);
 });
 
 test('category plus adds a colored column and quick blank card saves a tag with optional note', async t => {
@@ -107,4 +149,48 @@ test('category headers can be dragged to exchange their order', async t => {
   target.dispatchEvent(new app.dom.window.Event('drop', { bubbles: true, cancelable: true }));
   await settle();
   assert.deepEqual(app.favorites.sections(app.favorites.series()[0].id).map(row => row.id), [sections[1].id, sections[0].id]);
+});
+
+test('shared context menu closes on Escape and clicking outside, and editing never selects a different page', async t => {
+  const app = workbookFixture(t);
+  const first = app.favorites.series()[0];
+  await app.click('[data-favorite-action="new-series-tab"]');
+  const second = app.favorites.series()[1];
+  const openFirst = () => app.$(`[data-favorite-series-tab="${first.id}"]`).dispatchEvent(new app.dom.window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+  openFirst();
+  app.$('[data-favorite-context-menu]').dispatchEvent(new app.dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.equal(app.$('[data-favorite-context-menu]').hidden, true);
+  openFirst();
+  app.dom.window.document.body.dispatchEvent(new app.dom.window.Event('pointerdown', { bubbles: true }));
+  assert.equal(app.$('[data-favorite-context-menu]').hidden, true);
+  openFirst();
+  await app.click('[data-favorite-action="context-edit"]');
+  app.$('[data-favorite-dialog-input]').value = '第一页';
+  app.$('[data-favorite-dialog-color]').value = '#eeaa66';
+  await app.click('[data-favorite-action="dialog-confirm"]');
+  assert.equal(app.$('[data-favorite-series]').dataset.favoriteSeries, second.id);
+  assert.equal(app.favorites.series().find(row => row.id === first.id).color, '#EEAA66');
+});
+
+test('shared edit form preserves pending color through locale refresh and cancel does not save changes', async t => {
+  const app = workbookFixture(t);
+  const original = app.favorites.exportBundle();
+  const header = app.$('[data-favorite-section-head]');
+  header.dispatchEvent(new app.dom.window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+  await app.click('[data-favorite-action="context-edit"]');
+  app.$('[data-favorite-dialog-input]').value = '临时名字';
+  app.$('[data-favorite-dialog-color]').value = '#123456';
+  app.view.refreshLocale();
+  assert.equal(app.$('[data-favorite-dialog-input]').value, '临时名字');
+  assert.equal(app.$('[data-favorite-dialog-color]').value, '#123456');
+  assert.equal(app.$('[data-favorite-dialog-color]').hidden, false);
+  await app.click('[data-favorite-action="dialog-cancel"]');
+  assert.deepEqual(app.favorites.exportBundle(), original);
+
+  app.$('[data-favorite-section-tab]').dispatchEvent(new app.dom.window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+  await app.click('[data-favorite-action="context-edit"]');
+  app.$('[data-favorite-dialog-input]').value = ' ';
+  await app.click('[data-favorite-action="dialog-confirm"]');
+  assert.equal(app.$('[data-favorite-dialog]').hidden, false);
+  assert.deepEqual(app.favorites.exportBundle(), original);
 });
