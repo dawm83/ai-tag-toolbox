@@ -180,7 +180,11 @@
       menu.style.top = `${number(event.clientY, 4, 4, Math.max(4, win.innerHeight - bounds.height - 4))}px`;
       menu.querySelector('button')?.focus();
     }
-    function closeContextMenu() { state.contextTarget = null; host.querySelector('[data-favorite-context-menu]')?.setAttribute('hidden', ''); }
+    function closeContextMenu() {
+      const menu = host.querySelector('[data-favorite-context-menu]');
+      if (menu?.contains(doc.activeElement)) doc.activeElement.blur();
+      state.contextTarget = null; menu?.setAttribute('hidden', '');
+    }
     function dismissContextMenu(event) {
       if (state.contextTarget && !event.target.closest?.('[data-favorite-context-menu]')) closeContextMenu();
     }
@@ -200,6 +204,7 @@
       const target = state.contextTarget; if (!target) return false; closeContextMenu();
       if (typeof win?.confirm === 'function' && !win.confirm(label(target.kind === 'series' ? 'favorites.confirmDeleteSeries' : 'favorites.confirmDeleteSection', '确定删除吗？'))) return false;
       if (!await finishEditorBeforeMutation()) return false;
+      closeQuickEditor();
       const result = target.kind === 'series' ? safeCall('deleteSeries', target.id, { mode: 'delete' }) : safeCall('deleteSection', target.id);
       if (result?.ok) { if (target.id === state.seriesId) state.seriesId = ''; render(); } else notify(result?.error?.message || label('favorites.operationFailed', '操作失败')); return Boolean(result?.ok);
     }

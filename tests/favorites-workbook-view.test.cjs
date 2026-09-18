@@ -131,6 +131,31 @@ test('quick tag creation restores focus to the raw tag input after the clicked b
   assert.equal(raw.value, 'blue hair');
 });
 
+test('deleting the current collection page closes its stale quick editor before the replacement page accepts input', async t => {
+  const app = workbookFixture(t);
+  const page = app.favorites.series()[0];
+  const originalBlank = app.$('[data-favorite-quick-new]');
+  originalBlank.click();
+  await settle();
+  assert.equal(app.$('[data-favorite-quick-editor]').hidden, false);
+
+  const tab = app.$(`[data-favorite-series-tab][data-series-id="${page.id}"]`);
+  tab.dispatchEvent(new app.dom.window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+  app.dom.window.confirm = () => true;
+  await app.click('[data-favorite-action="context-delete"]');
+
+  assert.equal(app.favorites.series().some(row => row.id === page.id), false);
+  assert.equal(app.$('[data-favorite-quick-editor]').hidden, true);
+  const replacementBlank = app.$('[data-favorite-quick-new]');
+  replacementBlank.click();
+  await settle(25);
+  const raw = app.$('[data-favorite-quick-raw]');
+  assert.equal(app.dom.window.document.activeElement, raw);
+  raw.value = 'after page delete';
+  raw.dispatchEvent(new app.dom.window.InputEvent('input', { bubbles: true, data: 'after page delete', inputType: 'insertText' }));
+  assert.equal(raw.value, 'after page delete');
+});
+
 test('entry note is exposed as a hover popover and the editor close button actually closes', async t => {
   const app = workbookFixture(t);
   const section = app.favorites.sections(app.favorites.series()[0].id)[0];
