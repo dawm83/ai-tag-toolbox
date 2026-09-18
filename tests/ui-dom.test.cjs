@@ -103,7 +103,7 @@ function boot(options = {}) {
     save: value => { comfyProfile = structuredClone(value); return structuredClone(comfyProfile); },
     setActive: () => structuredClone(comfyProfile), remove: () => false
   };
-  const modules = { assistant, favorites: options.favorites, joinFavoriteBlocks: options.joinFavoriteBlocks, characters: options.characters, runtime: { listCallRecords: assistant.listCallRecords, clearCallRecords: assistant.clearCallRecords, ...options.runtime }, prompts, tags, images: { get: id => images.get(id), preview: id => images.get(id) }, imageRepository: repository, preferences: { get: (_k, fallback) => fallback, set: () => {} }, translation: options.translation || { findReferences: () => [] }, comfy, locales: options.locales || { 'zh-CN': {} }, version: '1.4.33' };
+  const modules = { assistant, favorites: options.favorites, joinFavoriteBlocks: options.joinFavoriteBlocks, characters: options.characters, runtime: { listCallRecords: assistant.listCallRecords, clearCallRecords: assistant.clearCallRecords, ...options.runtime }, prompts, tags, images: { get: id => images.get(id), preview: id => images.get(id) }, imageRepository: repository, preferences: { get: (_k, fallback) => fallback, set: () => {} }, translation: options.translation || { findReferences: () => [] }, comfy, locales: options.locales || { 'zh-CN': {} }, version: '1.4.34' };
 
   for (const file of ['views/settings-view.js', 'views/comfy-view.js', 'views/prompt-view.js', 'views/agent-status-view.js', 'views/call-monitor-view.js', 'modules/translation-alignment.js', 'views/translation-view.js', 'views/favorites-view.js', 'app-view.js']) window.eval(source(file));
   if (options.favoritesView) window.AppViews.favorites = { createFavoritesView: () => options.favoritesView };
@@ -607,7 +607,7 @@ test('global favorite results and English favorites labels use the real page and
   app.window.document.querySelector('#localeBtn').click();
   app.window.document.querySelector('[data-locale="en-US"]').click();
   await app.view.route('favorites');
-  assert.equal(app.window.document.querySelector('[data-favorite-search]').placeholder, locales['en-US'].ui.favorites.searchPlaceholder);
+  assert.equal(app.window.document.querySelector('[data-favorite-action="toggle-all-sections"]').textContent, locales['en-US'].ui.favorites.deselectAllSections);
 });
 
 test('gallery name copying and bulk actions share one selection state', async t => {

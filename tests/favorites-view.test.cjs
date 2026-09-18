@@ -141,7 +141,7 @@ function fixture(extraCount = 0, options = {}) {
 test('renders series and section columns while an explicit copy preserves raw text and selection', async t => {
   const app = fixture(); t.after(() => app.dom.window.close());
   app.view.bind();
-  assert.equal(app.dom.window.document.querySelectorAll('[data-favorite-series]').length, 2);
+  assert.equal(app.dom.window.document.querySelectorAll('[data-favorite-series]').length, 1);
   assert.equal(app.dom.window.document.querySelector('[data-favorite-section="sec1"] h4').textContent, '发型');
   app.dom.window.document.querySelector('[data-favorite-copy="e1"]').click();
   await settle();
@@ -209,28 +209,11 @@ test('editor navigation flushes a valid draft and uses the opening result order'
   assert.equal(app.favorites.calls.flush > 0, true);
 });
 
-test('search highlights matched text with DOM nodes and locate returns to the shelf entry', async t => {
+test('expanded entry shows notes without adding them to copied text', async t => {
   const app = fixture(); t.after(() => app.dom.window.close());
-  const input = app.dom.window.document.querySelector('[data-favorite-search]');
-  input.value = 'backlighting';
-  input.dispatchEvent(new app.dom.window.Event('input', { bubbles: true }));
-  await settle(130);
-  const result = app.dom.window.document.querySelector('[data-favorite-search-result="e1"]');
-  assert.equal(result.querySelector('mark').textContent, 'backlighting');
-  result.querySelector('[data-favorite-locate="e1"]').click();
-  const original = app.dom.window.document.querySelector('[data-favorite-entry="e1"]');
-  assert.equal(original.dataset.scrolled, 'true');
-  assert.equal(app.dom.window.document.querySelector('[data-favorite-search-results]').hidden, true);
-});
-
-test('a private note match shows the matching note without adding it to copied text', async t => {
-  const app = fixture(); t.after(() => app.dom.window.close());
-  const input = app.dom.window.document.querySelector('[data-favorite-search]');
-  input.value = '人像'; input.dispatchEvent(new app.dom.window.Event('input', { bubbles: true }));
-  await settle(130);
-  const result = app.dom.window.document.querySelector('[data-favorite-search-result="e1"]');
-  assert.equal(result.querySelector('[data-favorite-match-field="note"] mark').textContent, '人像');
-  result.querySelector('[data-favorite-copy="e1"]').click(); await settle();
+  app.dom.window.document.querySelector('[data-favorite-expand="e1"]').click();
+  assert.match(app.dom.window.document.querySelector('[data-favorite-entry="e1"]').textContent, /人像测试/);
+  app.dom.window.document.querySelector('[data-favorite-copy="e1"]').click(); await settle();
   assert.deepEqual(app.copied, ['soft lighting, backlighting']);
 });
 
@@ -293,7 +276,8 @@ test('paste import previews and commits atomically into the chosen existing seri
 test('column load-more reaches entries beyond the domain 500-row page cap', t => {
   const app = fixture(620); t.after(() => app.dom.window.close());
   const root = app.dom.window.document.querySelector('[data-favorite-series="s1"] [data-favorite-section="root"]');
-  assert.equal(app.dom.window.document.querySelectorAll('[data-favorite-series="s1"] [data-favorite-entry]').length, 60);
+  assert.equal(root.querySelectorAll('[data-favorite-entry]').length, 60);
+  assert.ok(app.dom.window.document.querySelector('[data-favorite-section="sec1"] [data-favorite-entry="e2"]'), 'a long first column does not starve another category');
   for (let index = 0; index < 8; index += 1) {
     const more = app.dom.window.document.querySelector('[data-favorite-series="s1"] [data-favorite-action="load-column"]');
     if (!more) break;
@@ -346,7 +330,7 @@ test('default series deletion moves entries to an explicit uncategorized series'
 
 test('series chrome avoids global header styles and labeled icon controls have stable dimensions', t => {
   const app = fixture(); t.after(() => app.dom.window.close());
-  assert.equal(app.dom.window.document.querySelector('.favorite-series-head').tagName, 'DIV');
+  assert.equal(app.dom.window.document.querySelector('.favorites-series-controls').tagName, 'DIV');
   assert.equal(app.dom.window.document.querySelector('[data-favorite-action="new-tag"]').classList.contains('has-label'), true);
   assert.equal(app.dom.window.document.querySelector('[data-favorite-zoom]').step, '10');
 });
@@ -361,7 +345,7 @@ test('empty shelf creates a series through the local dialog and then creates an 
   name.value = '构图';
   name.dispatchEvent(new app.dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
   assert.equal(dialog.hidden, true);
-  assert.equal(app.dom.window.document.querySelector('[data-favorite-series] h3').textContent, '构图');
+  assert.equal(app.dom.window.document.querySelector('[data-favorite-series-controls] h3').textContent, '构图');
   assert.equal(app.dom.window.document.activeElement.dataset.favoriteAction, 'new-series');
 
   app.dom.window.document.querySelector('[data-favorite-action="new-tag"]').click(); await settle();
@@ -371,33 +355,16 @@ test('empty shelf creates a series through the local dialog and then creates an 
   assert.equal(app.favorites.getEntry('e1').rawText, 'dynamic pose');
 });
 
-test('empty-query filters apply to the shelf and autosave keeps the current columns mounted', async t => {
+test('autosave keeps the active series and its category columns mounted', async t => {
   const app = fixture(); t.after(() => app.dom.window.close());
-  const kind = app.dom.window.document.querySelector('[data-favorite-kind]');
-  kind.value = 'tag'; kind.dispatchEvent(new app.dom.window.Event('change', { bubbles: true }));
-  assert.equal(app.dom.window.document.querySelector('[data-favorite-entry="e1"]'), null);
-  assert.equal(app.dom.window.document.querySelectorAll('[data-favorite-entry]').length, 2);
-  const scope = app.dom.window.document.querySelector('[data-favorite-scope]');
-  scope.value = 'global'; scope.dispatchEvent(new app.dom.window.Event('change', { bubbles: true }));
-  assert.deepEqual([...app.dom.window.document.querySelectorAll('[data-favorite-entry]')].map(node => node.dataset.favoriteEntry), ['e3']);
-
+  app.dom.window.document.querySelector('[data-favorite-action="select-series"][data-series-id="s2"]').click(); await settle();
   await app.view.openEditor('e3');
   const column = app.dom.window.document.querySelector('[data-favorite-series="s2"]');
   const note = app.dom.window.document.querySelector('[data-favorite-field="note"]');
   note.value = '保持列节点'; note.dispatchEvent(new app.dom.window.Event('input', { bubbles: true }));
   await settle(340);
   assert.equal(app.dom.window.document.querySelector('[data-favorite-series="s2"]'), column);
-});
-
-test('search paging crosses the domain 500-row cap and loads every matching result', async t => {
-  const app = fixture(621); t.after(() => app.dom.window.close());
-  const search = app.dom.window.document.querySelector('[data-favorite-search]');
-  search.value = 'large tag'; search.dispatchEvent(new app.dom.window.Event('input', { bubbles: true })); await settle(130);
-  for (let index = 0; index < 10; index += 1) {
-    const more = app.dom.window.document.querySelector('[data-favorite-action="load-search"]'); if (!more) break; more.click();
-  }
-  assert.equal(app.dom.window.document.querySelectorAll('[data-favorite-search-result]').length, 621);
-  assert.equal(app.dom.window.document.querySelector('[data-favorite-action="load-search"]'), null);
+  assert.equal(app.favorites.getEntry('e3').note, '保持列节点');
 });
 
 test('JSON file replace import saves drafts, previews counts, confirms, and downloads a backup first', async t => {
@@ -461,15 +428,14 @@ test('adult filtering reports hidden entries and reorder still submits complete 
   assert.deepEqual(app.favorites.calls.reorder.at(-1)?.ids, ['large-0', 'e1']);
 });
 
-test('series and sections reorder, collapse persists, section filtering works, and compact mode is remembered', async t => {
+test('series and categories reorder while compact mode is remembered', async t => {
   const app = fixture(); t.after(() => app.dom.window.close());
-  app.dom.window.document.querySelector('[data-favorite-action="move-series-down"][data-series-id="s1"]').click();
-  await settle();
+  app.dom.window.document.querySelector('[data-favorite-action="move-series-down"][data-series-id="s1"]').click(); await settle();
   assert.deepEqual(app.favorites.calls.reorder.at(-1), { kind: 'series', parentId: null, ids: ['s2', 's1'] });
-  const toggle = app.dom.window.document.querySelector('[data-favorite-action="toggle-section"][data-section-id="sec1"]'); toggle.click();
-  assert.deepEqual(app.preferences.value.collapsedSections, ['sec1']);
-  const section = app.dom.window.document.querySelector('[data-favorite-section-filter]'); section.value = 'sec1'; section.dispatchEvent(new app.dom.window.Event('change', { bubbles: true }));
-  assert.deepEqual([...app.dom.window.document.querySelectorAll('[data-favorite-entry]')].map(node => node.dataset.favoriteEntry), ['e2']);
+  assert.equal(app.dom.window.document.querySelector('[data-favorite-series]').dataset.favoriteSeries, 's1');
+  app.favorites.saveSection({ seriesId: 's1', name: '服装' });
+  app.dom.window.document.querySelector('[data-favorite-action="move-section-down"][data-section-id="sec1"]').click(); await settle();
+  assert.deepEqual([...app.dom.window.document.querySelectorAll('[data-favorite-section]')].map(node => node.dataset.favoriteSection), ['root', 'sec2', 'sec1']);
   const compact = app.dom.window.document.querySelector('[data-favorite-compact]'); compact.checked = true; compact.dispatchEvent(new app.dom.window.Event('change', { bubbles: true }));
   assert.equal(app.preferences.value.compact, true); assert.equal(app.dom.window.document.querySelector('#favoritesView').classList.contains('is-compact'), true);
 });
@@ -519,37 +485,18 @@ test('locale refresh preserves an open name dialog and uncommitted import contro
   assert.equal(app.dom.window.document.querySelector('[data-favorite-import-preview]').textContent, '尚未提交');
 });
 
-test('selection synchronization updates shelf and search without rebuilding either result', async t => {
+test('selection synchronization updates visible favorites without rebuilding the column', t => {
   const app = fixture(); t.after(() => app.dom.window.close());
-  const shelf = app.dom.window.document.querySelector('[data-favorite-entry="e1"]');
+  const entry = app.dom.window.document.querySelector('[data-favorite-entry="e1"]');
   app.favorites.setSelected('e1', true); app.view.syncSelection();
-  assert.equal(shelf.classList.contains('is-selected'), true); assert.equal(shelf.querySelector('[data-favorite-select]').getAttribute('aria-pressed'), 'true');
-  const search = app.dom.window.document.querySelector('[data-favorite-search]'); search.value = 'backlighting'; search.dispatchEvent(new app.dom.window.Event('input', { bubbles: true })); await settle(130);
-  const result = app.dom.window.document.querySelector('[data-favorite-search-result="e1"]'); app.favorites.setSelected('e1', false); app.view.syncSelection();
-  assert.equal(app.dom.window.document.querySelector('[data-favorite-search-result="e1"]'), result);
-  assert.equal(result.classList.contains('is-selected'), false); assert.equal(result.querySelector('[data-favorite-select]').getAttribute('aria-pressed'), 'false');
+  assert.equal(entry.classList.contains('is-selected'), true); assert.equal(entry.querySelector('[data-favorite-select]').getAttribute('aria-pressed'), 'true');
+  app.favorites.setSelected('e1', false); app.view.syncSelection();
+  assert.equal(app.dom.window.document.querySelector('[data-favorite-entry="e1"]'), entry);
+  assert.equal(entry.classList.contains('is-selected'), false); assert.equal(entry.querySelector('[data-favorite-select]').getAttribute('aria-pressed'), 'false');
 });
 
-test('clearing and locating search results restores shelf scroll, focus, and collapsed sections', async t => {
+test('invalid drafts block opening import', async t => {
   const app = fixture(); t.after(() => app.dom.window.close());
-  app.dom.window.document.querySelector('[data-favorite-action="toggle-section"][data-section-id="sec1"]').click();
-  const scroll = app.dom.window.document.querySelector('[data-favorite-scroll]'); scroll.scrollTop = 42; scroll.scrollLeft = 17;
-  app.dom.window.document.querySelector('[data-favorite-entry="e2"] [data-favorite-select]').focus();
-  const search = app.dom.window.document.querySelector('[data-favorite-search]'); search.focus(); search.value = 'blue_hair'; search.dispatchEvent(new app.dom.window.Event('input', { bubbles: true })); await settle(130);
-  app.dom.window.document.querySelector('[data-favorite-locate="e2"]').click();
-  assert.equal(app.preferences.value.collapsedSections.includes('sec1'), false);
-  app.dom.window.document.querySelector('[data-favorite-action="return-search"]').click();
-  app.dom.window.document.querySelector('[data-favorite-action="clear-search"]').click();
-  assert.equal(app.preferences.value.collapsedSections.includes('sec1'), true);
-  assert.equal(scroll.scrollTop, 42); assert.equal(scroll.scrollLeft, 17);
-  assert.equal(app.dom.window.document.activeElement.dataset.favoriteSelect, 'e2');
-});
-
-test('series locator filters anchors and invalid drafts block opening import', async t => {
-  const app = fixture(); t.after(() => app.dom.window.close());
-  const locator = app.dom.window.document.querySelector('[data-favorite-anchor-search]'); locator.value = '外貌'; locator.dispatchEvent(new app.dom.window.Event('input', { bubbles: true }));
-  const anchors = [...app.dom.window.document.querySelectorAll('[data-favorite-action="anchor-series"]')];
-  assert.deepEqual(anchors.filter(node => !node.hidden).map(node => node.textContent), ['外貌']);
   await app.view.openCreate({ kind: 'tag', seriesId: 's1' });
   const raw = app.dom.window.document.querySelector('[data-favorite-field="rawText"]'); raw.value = ' '; raw.dispatchEvent(new app.dom.window.Event('input', { bubbles: true }));
   app.dom.window.document.querySelector('[data-favorite-action="open-import"]').click(); await settle();
@@ -568,13 +515,4 @@ test('prefilled create saves without another input event and undo finishes the c
   app.dom.window.document.querySelector('[data-favorite-action="undo"]').click(); await settle();
   assert.equal(app.favorites.calls.saveEntry.at(-1)[0].note, '撤销前提交');
   assert.equal(app.dom.window.document.querySelector('[data-favorite-editor]').hidden, true);
-});
-
-test('discoverable-only shelf search still matches private notes but excludes private entries', async t => {
-  const app = fixture(); t.after(() => app.dom.window.close());
-  const scope = app.dom.window.document.querySelector('[data-favorite-scope]'); scope.value = 'global'; scope.dispatchEvent(new app.dom.window.Event('change', { bubbles: true }));
-  const search = app.dom.window.document.querySelector('[data-favorite-search]'); search.value = '人像'; search.dispatchEvent(new app.dom.window.Event('input', { bubbles: true })); await settle(130);
-  assert.equal(app.dom.window.document.querySelector('[data-favorite-search-result="e1"]') != null, true);
-  search.value = 'blue_hair'; search.dispatchEvent(new app.dom.window.Event('input', { bubbles: true })); await settle(130);
-  assert.equal(app.dom.window.document.querySelector('[data-favorite-search-result="e2"]'), null);
 });

@@ -6,13 +6,11 @@
   root.AppViews = root.AppViews || {};
   root.AppViews.favorites = api;
 })(typeof globalThis !== 'undefined' ? globalThis : window, function createFactory() {
-  const SEARCH_DELAY = 100;
   const SAVE_DELAY = 300;
-  const PAGE_SIZE = 80;
   const COLUMN_BATCH = 120;
   const INITIAL_COLUMN_BATCH = 60;
   const INITIAL_COLUMNS = 4;
-  const DEFAULT_VIEW = Object.freeze({ zoom: 100, columnWidth: 280, primary: 'raw', showSecondary: true, compact: false, collapsedSections: [] });
+  const DEFAULT_VIEW = Object.freeze({ zoom: 100, columnWidth: 280, primary: 'raw', showSecondary: true, compact: false });
 
   const string = (value, fallback = '') => value == null || value === '' ? fallback : String(value);
   const number = (value, fallback, min, max) => {
@@ -35,11 +33,10 @@
     const host = doc?.querySelector?.('#favoritesView');
     const state = {
       bound: false, active: false, destroyed: false, composing: false,
-      query: '', scope: 'internal', kind: 'all', seriesId: '', sectionId: '', anchorQuery: '', searchOffset: PAGE_SIZE,
-      searchHits: [], searchTotal: 0, searchHasMore: false, searchContext: null,
+      seriesId: '',
       recent: false, expanded: new Set(), bulk: new Set(), bulkSeries: new Set(), columnLimits: new Map(), loadedColumns: new Set(),
-      prefs: readPreferences(), editor: null, saveTimer: null, searchTimer: null, transferOpen: false,
-      unsubscribe: null, renderToken: 0, draggedId: '', returnFocus: null, dialog: null, editorSession: 0, shelfContext: null, lastShelfFocus: '', pendingRender: false, columnObserver: null, scrollFrame: null
+      prefs: readPreferences(), editor: null, saveTimer: null, transferOpen: false,
+      unsubscribe: null, draggedId: '', returnFocus: null, dialog: null, editorSession: 0, columnObserver: null, scrollFrame: null
     };
 
     function label(key, fallback) { return string(localize(key, fallback), fallback); }
@@ -52,7 +49,8 @@
         primary: ['raw', 'zh', 'title'].includes(saved.primary) ? saved.primary : DEFAULT_VIEW.primary,
         showSecondary: saved.showSecondary !== false,
         compact: saved.compact === true,
-        collapsedSections: Array.isArray(saved.collapsedSections) ? unique(saved.collapsedSections.map(String)) : []
+        activeSeriesId: typeof saved.activeSeriesId === 'string' ? saved.activeSeriesId : '',
+        hiddenSectionsBySeries: Object.fromEntries(Object.entries(saved.hiddenSectionsBySeries || {}).filter(([, ids]) => Array.isArray(ids)).map(([id, ids]) => [id, unique(ids.map(String))]))
       };
     }
     function savePreferences(patch) {
@@ -116,26 +114,11 @@
       host.setAttribute('aria-label', label('favorites.title', '快捷收藏'));
 
       const toolbar = el('div', 'favorites-toolbar');
-      const searchWrap = el('div', 'favorites-search-box');
-      const search = el('input', 'favorites-search-input');
-      search.type = 'search'; search.placeholder = label('favorites.searchPlaceholder', '仅搜索收藏内容'); search.dataset.favoriteSearch = '';
-      search.setAttribute('aria-label', label('favorites.search', '搜索收藏'));
-      const clear = button('x', label('favorites.clearSearch', '清除搜索'), 'clear-search'); clear.classList.add('favorites-search-clear');
-      searchWrap.append(button('search', label('favorites.search', '搜索收藏'), '', 'favorite-static-icon'), search, clear);
-      toolbar.append(searchWrap);
-
-      const scope = control('select', 'favoriteScope'); scope.setAttribute('aria-label', label('favorites.searchScope', '搜索范围'));
-      scope.append(optionNode('internal', label('favorites.scopeAll', '全部收藏')), optionNode('global', label('favorites.scopeGlobal', '可全局查询')));
-      const kind = control('select', 'favoriteKind'); kind.setAttribute('aria-label', label('favorites.kind', '收藏类型'));
-      kind.append(optionNode('all', label('favorites.kindAll', '全部类型')), optionNode('tag', label('favorites.kindTag', '单标签')), optionNode('bundle', label('favorites.kindBundle', '标签组')));
-      const seriesFilter = control('select', 'favoriteSeriesFilter'); seriesFilter.setAttribute('aria-label', label('favorites.seriesFilter', '筛选系列'));
-      const sectionFilter = control('select', 'favoriteSectionFilter'); sectionFilter.setAttribute('aria-label', label('favorites.sectionFilter', '筛选子分类'));
-      toolbar.append(scope, kind, seriesFilter, sectionFilter);
 
       const create = el('div', 'favorites-toolbar-group');
       const newTag = button('plus', label('favorites.newTag', '新增单标签'), 'new-tag'); newTag.classList.add('has-label'); newTag.append(doc.createTextNode(label('favorites.newTagShort', '标签')));
       const newBundle = button('layers', label('favorites.newBundle', '新增标签组'), 'new-bundle'); newBundle.classList.add('has-label'); newBundle.append(doc.createTextNode(label('favorites.newBundleShort', '组合')));
-      create.append(newTag, newBundle, button('folder-plus', label('favorites.newSeries', '新增系列'), 'new-series'));
+      create.append(newTag, newBundle);
       toolbar.append(create);
 
       const history = el('div', 'favorites-toolbar-group');
@@ -163,15 +146,16 @@
       transfer.append(button('upload', label('favorites.import', '导入收藏'), 'open-import'), button('download', label('favorites.export', '导出收藏'), 'export'));
       toolbar.append(transfer);
 
-      const anchors = el('nav', 'favorites-anchors'); anchors.dataset.favoriteAnchors = ''; anchors.setAttribute('aria-label', label('favorites.anchors', '系列快捷定位'));
+      const anchors = el('nav', 'favorites-anchors'); anchors.dataset.favoriteAnchors = ''; anchors.setAttribute('aria-label', label('favorites.switchSeries', '切换收藏系列'));
+      const seriesControls = el('div', 'favorites-series-controls'); seriesControls.dataset.favoriteSeriesControls = '';
       const subanchors = el('nav', 'favorites-subanchors'); subanchors.dataset.favoriteSubanchors = ''; subanchors.hidden = true;
+      subanchors.setAttribute('aria-label', label('favorites.visibleSections', '显示子分类'));
 
       const bulkbar = el('div', 'favorites-bulkbar'); bulkbar.dataset.favoriteBulkbar = ''; bulkbar.hidden = true;
       const count = el('strong', 'favorites-bulk-count', '0'); count.dataset.favoriteBulkCount = '';
       const move = control('select', 'favoriteBulkMove'); move.setAttribute('aria-label', label('favorites.moveTo', '移动到系列'));
       bulkbar.append(el('span', '', label('favorites.selected', '已选')), count,
         actionTextButton('visible', label('favorites.selectVisible', '选择当前显示')),
-        actionTextButton('all-results', label('favorites.selectAllResults', '选择全部搜索结果')),
         actionTextButton('pin-selected', label('favorites.pin', '置顶')),
         actionTextButton('unpin-selected', label('favorites.unpin', '取消置顶')),
         actionTextButton('searchable-on', label('favorites.searchableOn', '允许全局查询')),
@@ -186,9 +170,8 @@
       const body = el('div', 'favorites-body');
       const scroll = el('div', 'favorites-scroll'); scroll.dataset.favoriteScroll = '';
       const shelf = el('div', 'favorites-shelf'); shelf.dataset.favoriteShelf = '';
-      const results = el('div', 'favorites-search-results'); results.dataset.favoriteSearchResults = ''; results.hidden = true;
-      scroll.append(shelf, results); body.append(scroll, createEditor(), createTransferPanel());
-      host.append(toolbar, anchors, subanchors, bulkbar, health, body, createDialog());
+      scroll.append(shelf); body.append(scroll, createEditor(), createTransferPanel());
+      host.append(anchors, seriesControls, toolbar, subanchors, bulkbar, health, body, createDialog());
       applyPreferences();
     }
 
@@ -310,44 +293,85 @@
     function render() {
       if (!host || state.destroyed) return;
       ensureShell();
-      state.renderToken += 1;
-      renderFilters(); renderAnchors(); renderHealth(); renderShelf();
-      if (state.query) renderSearch(false);
+      const rows = seriesRows();
+      if (!rows.some(row => row.id === state.seriesId)) state.seriesId = rows.find(row => row.id === state.prefs.activeSeriesId)?.id || rows[0]?.id || '';
+      renderFilters(); renderAnchors(); renderSeriesControls(); renderSubanchors(); renderHealth(); renderShelf();
       updateBulkbar(); updateHistory(); applyPreferences();
+      host.querySelector('[data-favorite-recent]')?.classList.toggle('is-active', state.recent);
     }
     function renderFilters() {
       const rows = seriesRows();
-      const controls = [host.querySelector('[data-favorite-series-filter]'), host.querySelector('[data-favorite-bulk-move]'), host.querySelector('[data-favorite-import-series]')];
+      const controls = [host.querySelector('[data-favorite-bulk-move]'), host.querySelector('[data-favorite-import-series]')];
       controls.forEach((select, index) => {
         if (!select) return;
         const previous = select.value;
         select.replaceChildren();
-        if (index === 0) select.append(optionNode('', label('favorites.allSeries', '全部系列')));
-        else if (index === 1) select.append(optionNode('', label('favorites.chooseTarget', '目标系列')));
+        if (index === 0) select.append(optionNode('', label('favorites.chooseTarget', '目标系列')));
         rows.forEach(row => select.append(optionNode(row.id, string(row.name, row.id))));
         if ([...select.options].some(item => item.value === previous)) select.value = previous;
       });
-      const filter = host.querySelector('[data-favorite-series-filter]'); if (filter) filter.value = state.seriesId;
-      const section = host.querySelector('[data-favorite-section-filter]');
-      if (section) {
-        section.replaceChildren(optionNode('', label('favorites.allSections', '全部子分类')));
-        rows.filter(row => !state.seriesId || row.id === state.seriesId).forEach(row => {
-          sectionRows(row.id).forEach(child => section.append(optionNode(child.id, state.seriesId ? string(child.name, child.id) : `${string(row.name, row.id)} / ${string(child.name, child.id)}`)));
-        });
-        if ([...section.options].some(item => item.value === state.sectionId)) section.value = state.sectionId;
-        else state.sectionId = '';
-      }
     }
     function renderAnchors() {
       const anchors = host.querySelector('[data-favorite-anchors]'); if (!anchors) return;
       anchors.replaceChildren();
-      const search = el('input', 'favorites-anchor-search'); search.type = 'search'; search.dataset.favoriteAnchorSearch = ''; search.value = state.anchorQuery;
-      search.placeholder = label('favorites.findSeries', '查找系列'); search.setAttribute('aria-label', search.placeholder); anchors.append(search);
-      const needle = state.anchorQuery.trim().toLocaleLowerCase();
-      seriesRows().filter(row => !needle || string(row.name).toLocaleLowerCase().includes(needle)).forEach(row => {
-        const item = actionTextButton('anchor-series', string(row.name, row.id)); item.dataset.seriesId = row.id; item.style.setProperty('--favorite-accent', string(row.color, 'var(--pri)')); anchors.append(item);
+      seriesRows().forEach(row => {
+        const tab = el('span', 'favorite-series-tab'); tab.style.setProperty('--favorite-accent', string(row.color, 'var(--pri)'));
+        const manage = el('input', 'favorite-series-manage'); manage.type = 'checkbox'; manage.checked = state.bulkSeries.has(row.id); manage.dataset.favoriteSeriesManage = row.id;
+        manage.setAttribute('aria-label', label('favorites.selectSeries', '选择系列以批量改色') + '：' + row.name);
+        const item = actionTextButton('select-series', string(row.name, row.id)); item.dataset.seriesId = row.id;
+        item.classList.toggle('is-active', row.id === state.seriesId); item.setAttribute('aria-pressed', String(row.id === state.seriesId));
+        tab.append(manage, item); anchors.append(tab);
       });
-      if (state.searchContext) anchors.append(actionTextButton('return-search', label('favorites.returnSearch', '返回搜索结果')));
+      anchors.append(button('folder-plus', label('favorites.newSeries', '新增系列'), 'new-series'));
+    }
+    function renderSeriesControls() {
+      const hostControls = host.querySelector('[data-favorite-series-controls]'); hostControls.replaceChildren();
+      const series = seriesRows().find(row => row.id === state.seriesId); hostControls.hidden = !series; if (!series) return;
+      hostControls.style.setProperty('--favorite-accent', string(series.color, 'var(--pri)'));
+      const title = el('h3', '', string(series.name, series.id));
+      const rename = button('pencil', label('favorites.renameSeries', '重命名系列'), 'rename-series'); rename.dataset.seriesId = series.id;
+      const color = el('input', 'favorite-color-input'); color.type = 'color'; color.value = series.color || '#5e6ad2'; color.dataset.favoriteSeriesColor = series.id;
+      color.title = label('favorites.seriesColor', '系列颜色'); color.setAttribute('aria-label', color.title);
+      const newSection = actionTextButton('new-section', label('favorites.newSection', '新增子分类')); newSection.dataset.seriesId = series.id;
+      const menu = el('details', 'favorite-series-menu'); const summary = el('summary', '', '⋯'); summary.title = label('favorites.seriesActions', '系列操作'); summary.setAttribute('aria-label', summary.title);
+      const menuBody = el('div', 'favorite-series-menu-body');
+      const actions = [
+        ['palette', 'favorites.autoColor', '自动配色', 'auto-color'],
+        ['arrow-up', 'favorites.moveSeriesUp', '系列左移', 'move-series-up'],
+        ['arrow-down', 'favorites.moveSeriesDown', '系列右移', 'move-series-down'],
+        ['trash-2', 'favorites.deleteSeries', '删除系列', 'delete-series'],
+        ['x', 'favorites.deleteSeriesAll', '删除系列及内容', 'delete-series-all']
+      ];
+      actions.forEach(([icon, key, fallback, action]) => { const item = button(icon, label(key, fallback), action); item.dataset.seriesId = series.id; menuBody.append(item); });
+      menu.append(summary, menuBody); hostControls.append(title, rename, color, newSection, menu);
+    }
+    function columnKey(seriesId, sectionId) { return JSON.stringify([seriesId, sectionId || 'root']); }
+    function columnsFor(seriesId) {
+      const rows = sectionRows(seriesId);
+      const rootCount = safeCall('list', { seriesId, sectionId: null, includeAdult: true, limit: 1, view: 'shelf' })?.total || 0;
+      return rootCount || !rows.length ? [{ id: 'root', name: label('favorites.unfiled', '未分类') }, ...rows] : rows;
+    }
+    function hiddenSections(seriesId = state.seriesId) { return new Set(state.prefs.hiddenSectionsBySeries[seriesId] || []); }
+    function saveHiddenSections(ids, seriesId = state.seriesId) {
+      savePreferences({ hiddenSectionsBySeries: { ...state.prefs.hiddenSectionsBySeries, [seriesId]: [...ids] } });
+    }
+    async function selectSeries(id) {
+      if (id === state.seriesId) return true;
+      if (!seriesRows().some(row => row.id === id) || !await finishEditorBeforeMutation()) return false;
+      state.seriesId = id; state.bulk.clear(); state.recent = false; savePreferences({ activeSeriesId: id }); render();
+      const scroll = host.querySelector('[data-favorite-scroll]'); scroll.scrollTop = 0; scroll.scrollLeft = 0;
+      host.querySelector('[data-favorite-action="select-series"][data-series-id="' + cssEscape(id) + '"]')?.focus(); return true;
+    }
+    async function setSectionVisibility(sectionId, visible) {
+      if (!await finishEditorBeforeMutation()) { renderSubanchors(); return false; }
+      const hidden = hiddenSections(); visible ? hidden.delete(sectionId) : hidden.add(sectionId);
+      saveHiddenSections(hidden); state.bulk.clear(); renderSubanchors(); renderShelf(); updateBulkbar(); return true;
+    }
+    async function toggleAllSections() {
+      if (!await finishEditorBeforeMutation()) return false;
+      const ids = columnsFor(state.seriesId).map(row => row.id); const hidden = hiddenSections();
+      const allVisible = ids.every(id => !hidden.has(id));
+      saveHiddenSections(allVisible ? ids : []); state.bulk.clear(); renderSubanchors(); renderShelf(); updateBulkbar(); return true;
     }
     function renderHealth() {
       const node = host.querySelector('[data-favorite-health]'); if (!node) return;
@@ -365,84 +389,46 @@
 
     function renderShelf() {
       const shelf = host.querySelector('[data-favorite-shelf]'); if (!shelf) return;
-      state.columnObserver?.disconnect?.(); state.columnObserver = null;
-      const selected = allSelectedIds(); shelf.replaceChildren();
-      if (state.recent) {
-        const recent = safeCall('list', { includeAdult: includeAdult(), offset: 0, limit: 20, view: 'recent' });
-        const column = el('section', 'favorite-series favorite-recent-series'); column.dataset.favoriteSeries = 'recent';
-        const head = el('div', 'favorite-series-head'); head.append(el('h3', '', label('favorites.recent', '最近复制')), el('span', 'favorite-series-count', recent?.total || 0)); column.append(head);
-        const list = el('div', 'favorite-entry-list');
-        (recent?.items || []).forEach(entry => {
-          const parent = seriesRows().find(row => row.id === entry.seriesId); const section = sectionRows(entry.seriesId).find(row => row.id === entry.sectionId);
-          const wrapper = el('div', 'favorite-recent-item'); wrapper.append(el('div', 'favorite-search-path', [parent?.name, section?.name].filter(Boolean).join(' / ')), renderEntry(entry, selected.has(entry.id))); list.append(wrapper);
-        });
-        if (!recent?.items?.length) list.append(el('p', 'favorites-empty', label('favorites.noRecent', '还没有最近复制记录')));
-        column.append(list); shelf.append(column); return;
-      }
-      const rows = seriesRows().filter(series => !state.seriesId || series.id === state.seriesId);
-      if (!rows.length) { shelf.append(el('p', 'favorites-empty', label('favorites.empty', '还没有收藏系列'))); return; }
-      rows.forEach((series, index) => shelf.append(renderSeries(series, selected, index >= INITIAL_COLUMNS && !state.loadedColumns.has(series.id))));
-      setupColumnLoading();
+      state.columnObserver?.disconnect?.(); state.columnObserver = null; shelf.replaceChildren();
+      const series = seriesRows().find(row => row.id === state.seriesId);
+      if (!series) { shelf.append(el('p', 'favorites-empty', label('favorites.empty', '还没有收藏系列'))); return; }
+      const content = el('section', 'favorite-series'); content.dataset.favoriteSeries = series.id;
+      content.style.setProperty('--favorite-accent', string(series.color, 'var(--pri)')); content.setAttribute('aria-label', series.name);
+      const selected = allSelectedIds(); const hidden = hiddenSections(); const columns = columnsFor(series.id).filter(row => !hidden.has(row.id));
+      columns.forEach((section, index) => content.append(renderColumn(series, section, selected, index >= INITIAL_COLUMNS && !state.loadedColumns.has(columnKey(series.id, section.id)))));
+      if (!columns.length) content.append(el('p', 'favorites-empty', label('favorites.allSectionsHidden', '当前子分类已全部隐藏，可在上方选择要显示的子分类')));
+      shelf.append(content); setupColumnLoading();
     }
-    function renderSeries(series, selected, lazy = false) {
-      const column = el('section', 'favorite-series'); column.dataset.favoriteSeries = series.id; column.id = `favorite-series-${series.id}`;
-      column.style.setProperty('--favorite-accent', string(series.color, '#5E6AD2'));
-      const visible = lazy ? null : readSeriesEntries(series.id, state.columnLimits.get(series.id) || INITIAL_COLUMN_BATCH);
-      const head = el('div', 'favorite-series-head');
-      const title = el('h3', '', string(series.name, series.id)); title.title = string(series.name, series.id);
-      const count = visible?.total ?? (safeCall('list', { seriesId: series.id, includeAdult: includeAdult(), offset: 0, limit: 1, view: 'shelf' })?.total || 0);
-      const manage = el('input', 'favorite-series-manage'); manage.type = 'checkbox'; manage.checked = state.bulkSeries.has(series.id); manage.dataset.favoriteSeriesManage = series.id; manage.setAttribute('aria-label', label('favorites.selectSeries', '选择系列以批量改色'));
-      head.append(manage, title, el('span', 'favorite-series-count', count));
-      const menu = el('details', 'favorite-series-menu'); const summary = el('summary', '', '⋯'); summary.title = label('favorites.seriesActions', '系列操作'); summary.setAttribute('aria-label', summary.title);
-      const menuBody = el('div', 'favorite-series-menu-body');
-      const newSection = button('folder-plus', label('favorites.newSection', '新增子分类'), 'new-section'); newSection.dataset.seriesId = series.id;
-      const rename = button('pencil', label('favorites.renameSeries', '重命名系列'), 'rename-series'); rename.dataset.seriesId = series.id;
-      const color = el('input', 'favorite-color-input'); color.type = 'color'; color.value = /^#[0-9a-f]{6}$/i.test(series.color || '') ? series.color : '#5e6ad2'; color.dataset.favoriteSeriesColor = series.id; color.title = label('favorites.seriesColor', '系列颜色'); color.setAttribute('aria-label', color.title);
-      const auto = button('palette', label('favorites.autoColor', '自动配色'), 'auto-color'); auto.dataset.seriesId = series.id;
-      const seriesUp = button('arrow-up', label('favorites.moveSeriesUp', '系列左移'), 'move-series-up'); seriesUp.dataset.seriesId = series.id;
-      const seriesDown = button('arrow-down', label('favorites.moveSeriesDown', '系列右移'), 'move-series-down'); seriesDown.dataset.seriesId = series.id;
-      const remove = button('trash-2', label('favorites.deleteSeries', '删除系列'), 'delete-series'); remove.dataset.seriesId = series.id;
-      const removeAll = button('x', label('favorites.deleteSeriesAll', '删除系列及内容'), 'delete-series-all'); removeAll.dataset.seriesId = series.id;
-      menuBody.append(newSection, rename, color, auto, seriesUp, seriesDown, remove, removeAll); menu.append(summary, menuBody); head.append(menu); column.append(head);
+    function renderColumn(series, section, selected, lazy = false) {
+      const id = section.id === 'root' ? null : section.id;
+      const limit = state.columnLimits.get(columnKey(series.id, section.id)) || INITIAL_COLUMN_BATCH;
+      const rows = state.recent
+        ? safeCall('list', { seriesId: series.id, sectionId: id, includeAdult: includeAdult(), limit: 20, view: 'recent' })
+        : readEntries(series.id, id, lazy ? 1 : limit);
+      const group = renderSection(series, section, lazy ? { ...rows, items: [], hasMore: false } : rows, selected);
       if (lazy) {
-        column.dataset.favoriteLazySeries = series.id;
-        const placeholder = actionTextButton('load-series', `${label('favorites.loadSeries', '加载系列内容')} · ${count}`); placeholder.dataset.seriesId = series.id; placeholder.classList.add('favorite-series-placeholder'); column.append(placeholder); return column;
+        group.dataset.favoriteLazySection = section.id;
+        const placeholder = actionTextButton('load-section', label('favorites.loadSection', '加载子分类内容')); placeholder.dataset.seriesId = series.id; placeholder.dataset.sectionId = section.id; group.append(placeholder);
       }
-
-      const rootItems = visible.items.filter(entry => entry.sectionId == null);
-      const rootTotal = visible.sectionTotals ? visible.sectionTotals.get('') || 0 : safeCall('list', { seriesId: series.id, sectionId: null, includeAdult: includeAdult(), offset: 0, limit: 1, view: 'shelf' })?.total || 0;
-      const rootRows = { items: rootItems, total: rootTotal, hasMore: false };
-      if (!state.sectionId && rootRows.items.length) column.append(renderSection(series, null, rootRows, selected));
-      const sections = sectionRows(series.id).filter(section => !state.sectionId || section.id === state.sectionId);
-      sections.forEach(section => {
-        const items = visible.items.filter(entry => entry.sectionId === section.id);
-        const total = visible.sectionTotals ? visible.sectionTotals.get(section.id) || 0 : safeCall('list', { seriesId: series.id, sectionId: section.id, includeAdult: includeAdult(), offset: 0, limit: 1, view: 'shelf' })?.total || 0;
-        const rows = { items, total, hasMore: false };
-        column.append(renderSection(series, section, rows, selected));
-      });
-      if ((!rootRows.items.length || state.sectionId) && !sections.some(section => visible.items.some(entry => entry.sectionId === section.id))) column.append(el('p', 'favorites-empty favorites-empty-column', label('favorites.emptySeries', '此系列暂无收藏')));
       if (!includeAdult()) {
-        const allTotal = safeCall('list', { seriesId: series.id, includeAdult: true, offset: 0, limit: 1, view: 'shelf' })?.total || 0;
-        const visibleTotal = safeCall('list', { seriesId: series.id, includeAdult: false, offset: 0, limit: 1, view: 'shelf' })?.total || 0;
-        if (allTotal > visibleTotal) column.append(el('p', 'favorite-adult-hidden', `${label('favorites.adultHidden', '已隐藏成人内容')}：${allTotal - visibleTotal}`));
+        const total = safeCall('list', { seriesId: series.id, sectionId: id, includeAdult: true, limit: 1, view: state.recent ? 'recent' : 'shelf' })?.total || 0;
+        if (total > rows.total) group.append(el('p', 'favorite-adult-hidden', label('favorites.adultHidden', '已隐藏成人内容') + '：' + (total - rows.total)));
       }
-      if (visible.hasMore) { const more = actionTextButton('load-column', label('favorites.loadMore', '加载更多')); more.dataset.seriesId = series.id; column.append(more); }
-      return column;
+      return group;
     }
     function setupColumnLoading() {
       state.columnObserver?.disconnect?.(); state.columnObserver = null;
-      const lazy = [...host.querySelectorAll('[data-favorite-lazy-series]')]; if (!lazy.length || !state.active) return;
+      const lazy = [...host.querySelectorAll('[data-favorite-lazy-section]')]; if (!lazy.length || !state.active) return;
       if (typeof win?.IntersectionObserver === 'function') {
         const scroll = host.querySelector('[data-favorite-scroll]');
-        state.columnObserver = new win.IntersectionObserver(entries => entries.forEach(entry => { if (entry.isIntersecting) hydrateSeries(entry.target.dataset.favoriteLazySeries); }), { root: scroll, rootMargin: '0px 560px' });
+        state.columnObserver = new win.IntersectionObserver(entries => entries.forEach(entry => { if (entry.isIntersecting) hydrateSection(entry.target.dataset.seriesId, entry.target.dataset.favoriteLazySection); }), { root: scroll, rootMargin: '0px 560px' });
         lazy.forEach(node => state.columnObserver.observe(node));
       }
     }
-    function hydrateSeries(seriesId) {
-      if (!seriesId) return false;
-      const node = host.querySelector(`[data-favorite-lazy-series="${cssEscape(seriesId)}"]`); if (!node) return false;
-      const series = seriesRows().find(row => row.id === seriesId); if (!series) return false;
-      state.loadedColumns.add(seriesId); state.columnObserver?.unobserve?.(node); node.replaceWith(renderSeries(series, allSelectedIds(), false)); return true;
+    function hydrateSection(seriesId, sectionId) {
+      const node = host.querySelector('[data-favorite-lazy-section="' + cssEscape(sectionId) + '"][data-series-id="' + cssEscape(seriesId) + '"]'); if (!node) return false;
+      const series = seriesRows().find(row => row.id === seriesId); const section = columnsFor(seriesId).find(row => row.id === sectionId); if (!series || !section) return false;
+      state.loadedColumns.add(columnKey(seriesId, sectionId)); state.columnObserver?.unobserve?.(node); node.replaceWith(renderColumn(series, section, allSelectedIds())); return true;
     }
     function handleShelfScroll() {
       if (state.scrollFrame != null) return;
@@ -450,34 +436,8 @@
       state.scrollFrame = request(() => {
         state.scrollFrame = null; const scroll = host.querySelector('[data-favorite-scroll]'); if (!scroll) return;
         const viewport = scroll.getBoundingClientRect();
-        [...host.querySelectorAll('[data-favorite-lazy-series]')].forEach(node => { const rect = node.getBoundingClientRect(); if (rect.left < viewport.right + 560 && rect.right > viewport.left - 560) hydrateSeries(node.dataset.favoriteLazySeries); });
+        [...host.querySelectorAll('[data-favorite-lazy-section]')].forEach(node => { const rect = node.getBoundingClientRect(); if (rect.left < viewport.right + 560 && rect.right > viewport.left - 560) hydrateSection(node.dataset.seriesId, node.dataset.favoriteLazySection); });
       });
-    }
-    function readSeriesEntries(seriesId, limit) {
-      const filtered = state.kind !== 'all' || state.scope === 'global' || Boolean(state.sectionId);
-      if (filtered) {
-        const items = []; const sectionTotals = new Map(); let offset = 0, total = 0, hasMore = true;
-        while (hasMore) {
-          const result = safeCall('list', { seriesId, includeAdult: includeAdult(), offset, limit: 500, view: 'shelf' });
-          if (!result || !Array.isArray(result.items)) break;
-          result.items.forEach(entry => {
-            if ((state.kind !== 'all' && entry.kind !== state.kind) || (state.scope === 'global' && !entry.globalSearchable) || (state.sectionId && entry.sectionId !== state.sectionId)) return;
-            total += 1;
-            const sectionKey = entry.sectionId || '';
-            sectionTotals.set(sectionKey, (sectionTotals.get(sectionKey) || 0) + 1);
-            if (items.length < limit) items.push(entry);
-          });
-          offset += result.items.length; hasMore = Boolean(result.hasMore) && result.items.length > 0;
-        }
-        return { items, total, hasMore: items.length < total, sectionTotals };
-      }
-      const items = []; let offset = 0, total = 0, hasMore = true;
-      while (items.length < limit && hasMore) {
-        const result = safeCall('list', { seriesId, includeAdult: includeAdult(), offset, limit: Math.min(500, limit - items.length), view: 'shelf' });
-        if (!result || !Array.isArray(result.items)) break;
-        items.push(...result.items); total = Number(result.total) || items.length; hasMore = Boolean(result.hasMore) && result.items.length > 0; offset += result.items.length;
-      }
-      return { items, total, hasMore: items.length < total };
     }
     function readEntries(seriesId, sectionId, limit, forceAdult = false) {
       const items = []; let offset = 0, total = 0, hasMore = true;
@@ -489,19 +449,26 @@
       return { items, total, hasMore: items.length < total };
     }
     function renderSection(series, section, rows, selected) {
-      const group = el('section', 'favorite-section'); group.dataset.favoriteSection = section?.id || 'root'; group.dataset.seriesId = series.id;
-      const collapsed = Boolean(section && state.prefs.collapsedSections.includes(section.id));
-      if (section) {
-        const head = el('div', 'favorite-section-head'); const title = el('h4', '', string(section.name, section.id)); title.tabIndex = -1;
-        const toggle = button(collapsed ? 'chevron-right' : 'chevron-down', collapsed ? label('favorites.expandSection', '展开子分类') : label('favorites.collapseSection', '折叠子分类'), 'toggle-section'); toggle.dataset.sectionId = section.id;
-        const rename = button('pencil', label('favorites.renameSection', '重命名子分类'), 'rename-section'); rename.dataset.sectionId = section.id; rename.dataset.seriesId = series.id;
-        const remove = button('trash-2', label('favorites.deleteSection', '删除子分类'), 'delete-section'); remove.dataset.sectionId = section.id;
-        const up = button('arrow-up', label('favorites.moveSectionUp', '子分类上移'), 'move-section-up'); up.dataset.sectionId = section.id; up.dataset.seriesId = series.id;
-        const down = button('arrow-down', label('favorites.moveSectionDown', '子分类下移'), 'move-section-down'); down.dataset.sectionId = section.id; down.dataset.seriesId = series.id;
-        head.append(toggle, title, el('span', '', rows.total), up, down, rename, remove); group.append(head);
+      const group = el('section', 'favorite-section'); group.dataset.favoriteSection = section.id; group.dataset.seriesId = series.id;
+      const head = el('div', 'favorite-section-head'); const title = el('h4', '', string(section.name, section.id)); title.tabIndex = -1;
+      const add = button('plus', label('favorites.newTag', '新增单标签'), 'new-tag'); add.dataset.seriesId = series.id; add.dataset.sectionId = section.id;
+      head.append(title, el('span', 'favorite-section-count', rows.total), add);
+      if (section.id !== 'root') {
+        const menu = el('details', 'favorite-series-menu'); const summary = el('summary', '', '⋯'); summary.title = label('favorites.sectionActions', '子分类操作'); summary.setAttribute('aria-label', summary.title);
+        const menuBody = el('div', 'favorite-series-menu-body');
+        const actions = [
+          ['arrow-up', 'favorites.moveSectionUp', '子分类左移', 'move-section-up'],
+          ['arrow-down', 'favorites.moveSectionDown', '子分类右移', 'move-section-down'],
+          ['pencil', 'favorites.renameSection', '重命名子分类', 'rename-section'],
+          ['trash-2', 'favorites.deleteSection', '删除子分类', 'delete-section']
+        ];
+        actions.forEach(([icon, key, fallback, action]) => { const item = button(icon, label(key, fallback), action); item.dataset.seriesId = series.id; item.dataset.sectionId = section.id; menuBody.append(item); });
+        menu.append(summary, menuBody); head.append(menu);
       }
-      const list = el('div', 'favorite-entry-list'); rows.items.forEach(entry => list.append(renderEntry(entry, selected.has(entry.id)))); list.hidden = collapsed; group.append(list);
-      if (rows.hasMore) { const more = actionTextButton('load-column', label('favorites.loadMore', '加载更多')); more.dataset.seriesId = series.id; more.dataset.sectionId = section?.id || ''; group.append(more); }
+      group.append(head);
+      const list = el('div', 'favorite-entry-list'); rows.items.forEach(entry => list.append(renderEntry(entry, selected.has(entry.id)))); group.append(list);
+      if (!rows.total) list.append(el('p', 'favorites-empty-column', state.recent ? label('favorites.noRecent', '还没有最近复制记录') : label('favorites.emptySection', '此子分类暂无收藏')));
+      if (rows.hasMore) { const more = actionTextButton('load-column', label('favorites.loadMore', '加载更多')); more.dataset.seriesId = series.id; more.dataset.sectionId = section.id; group.append(more); }
       return group;
     }
 
@@ -561,111 +528,10 @@
       const use = doc.createElementNS('http://www.w3.org/2000/svg', 'use'); use.setAttribute('href', `../assets/icons/favorites.svg#${id}`); svg.append(use); return svg;
     }
 
-    function runSearch(reset = true) {
-      if (reset) state.searchOffset = PAGE_SIZE;
-      const wasSearching = Boolean(state.query);
-      state.query = string(host?.querySelector('[data-favorite-search]')?.value).trim();
-      state.scope = host?.querySelector('[data-favorite-scope]')?.value || 'internal';
-      state.kind = host?.querySelector('[data-favorite-kind]')?.value || 'all';
-      state.seriesId = host?.querySelector('[data-favorite-series-filter]')?.value || '';
-      state.sectionId = host?.querySelector('[data-favorite-section-filter]')?.value || '';
-      if (!wasSearching && state.query) state.shelfContext = captureShelfContext();
-      renderSearch(true);
-    }
-    function captureShelfContext() {
-      const scroll = host.querySelector('[data-favorite-scroll]'); const active = doc.activeElement?.closest?.('[data-favorite-entry]');
-      return { scrollTop: scroll?.scrollTop || 0, scrollLeft: scroll?.scrollLeft || 0, entryId: active?.dataset.favoriteEntry || state.lastShelfFocus, collapsedSections: [...state.prefs.collapsedSections] };
-    }
-    function restoreShelfContext(context = state.shelfContext) {
-      if (!context) return;
-      savePreferences({ collapsedSections: [...(context.collapsedSections || [])] }); renderShelf();
-      const scroll = host.querySelector('[data-favorite-scroll]'); if (scroll) { scroll.scrollTop = context.scrollTop || 0; scroll.scrollLeft = context.scrollLeft || 0; }
-      if (context.entryId) host.querySelector(`[data-favorite-entry="${cssEscape(context.entryId)}"] [data-favorite-select]`)?.focus();
-    }
-    function clearSearch() {
-      const input = host.querySelector('[data-favorite-search]'); if (input) input.value = '';
-      state.query = ''; state.searchHits = []; state.searchTotal = 0; state.searchHasMore = false;
-      const shelf = host.querySelector('[data-favorite-shelf]'); const results = host.querySelector('[data-favorite-search-results]'); if (shelf) shelf.hidden = false; if (results) results.hidden = true;
-      restoreShelfContext(); state.shelfContext = null;
-    }
-    function renderSearch(updateQuery = false) {
-      const shelf = host.querySelector('[data-favorite-shelf]'); const results = host.querySelector('[data-favorite-search-results]');
-      if (!state.query) { shelf.hidden = false; results.hidden = true; state.searchHits = []; state.searchTotal = 0; renderShelf(); updateBulkbar(); return; }
-      const result = collectSearch(state.searchOffset);
-      state.searchHits = result.items; state.searchTotal = result.total; state.searchHasMore = result.hasMore;
-      shelf.hidden = true; results.hidden = false; results.replaceChildren();
-      const summary = el('div', 'favorites-search-summary', `${label('favorites.searchResults', '搜索结果')} · ${state.searchTotal}`); results.append(summary);
-      state.searchHits.forEach(hit => results.append(renderSearchHit(hit)));
-      if (!state.searchHits.length) results.append(el('p', 'favorites-empty', label('favorites.noResults', '没有匹配的收藏')));
-      if (state.searchHasMore) results.append(actionTextButton('load-search', label('favorites.loadMore', '加载更多')));
-      if (updateQuery) updateBulkbar();
-    }
-    function collectSearch(limit) {
-      if (state.scope === 'global') {
-        const items = []; let offset = 0, total = 0, hasMore = true;
-        while (hasMore) {
-          const result = safeCall('search', state.query, { scope: 'internal', seriesId: state.seriesId || undefined, ...(state.sectionId ? { sectionId: state.sectionId } : {}), kind: state.kind, includeAdult: includeAdult(), offset, limit: 500 });
-          const rows = Array.isArray(result?.items) ? result.items : [];
-          rows.forEach(hit => { const entry = safeCall('getEntry', hit.entryId || hit.id); if (entry?.globalSearchable) { total += 1; if (items.length < limit) items.push(hit); } });
-          offset += rows.length; hasMore = Boolean(result?.hasMore) && rows.length > 0;
-        }
-        return { items, total, hasMore: items.length < total };
-      }
-      const items = []; let offset = 0, total = 0, hasMore = true;
-      while (items.length < limit && hasMore) {
-        const result = safeCall('search', state.query, { scope: state.scope, seriesId: state.seriesId || undefined, ...(state.sectionId ? { sectionId: state.sectionId } : {}), kind: state.kind, includeAdult: includeAdult(), offset, limit: Math.min(500, limit - items.length) });
-        const rows = Array.isArray(result?.items) ? result.items : [];
-        items.push(...rows); total = Number(result?.total) || items.length; offset += rows.length; hasMore = Boolean(result?.hasMore) && rows.length > 0;
-      }
-      return { items, total, hasMore: items.length < total };
-    }
-    function renderSearchHit(hit) {
-      const id = hit.entryId || hit.id; const entry = safeCall('getEntry', id) || hit;
-      const invalidLegacy = entry.legacyInvalid === true && !string(entry.rawText).trim();
-      const selected = allSelectedIds().has(id); const item = el('article', `favorite-search-hit${selected ? ' is-selected' : ''}`); item.dataset.favoriteSearchResult = id;
-      const path = el('div', 'favorite-search-path', [hit.seriesName, hit.sectionName].filter(Boolean).join(' / '));
-      const content = el('button', 'favorite-search-content'); content.type = 'button'; content.dataset.favoriteSelect = id;
-      content.disabled = invalidLegacy;
-      content.setAttribute('aria-pressed', String(selected));
-      const title = el('strong'); appendHighlighted(title, displayText(entry), hit.matches, primaryField(entry));
-      const raw = el('span'); appendHighlighted(raw, string(entry.rawText), hit.matches, 'rawText');
-      content.append(title, raw);
-      const shown = new Set([primaryField(entry), 'rawText']);
-      for (const field of ['title', 'zh', 'note', 'aliases']) {
-        if (shown.has(field) || !hit.matches?.some(match => match.field === field)) continue;
-        const value = field === 'aliases' ? (entry.aliases || []).join(' · ') : string(entry[field]); if (!value) continue;
-        const snippet = el('span', 'favorite-search-match'); snippet.dataset.favoriteMatchField = field;
-        if (field === 'aliases') snippet.append(el('mark', '', value)); else appendHighlighted(snippet, value, hit.matches, field);
-        content.append(snippet);
-      }
-      const actions = el('div', 'favorite-entry-actions');
-      const locate = button('locate-fixed', label('favorites.locate', '定位原处'), 'locate'); locate.dataset.favoriteLocate = id;
-      const copyButton = button('copy', label('favorites.copy', '复制'), 'copy'); copyButton.dataset.favoriteCopy = id;
-      copyButton.disabled = invalidLegacy;
-      const edit = button('pencil', label('favorites.edit', '编辑'), 'edit'); edit.dataset.favoriteEdit = id;
-      const manage = el('input', 'favorite-manage-check'); manage.type = 'checkbox'; manage.checked = state.bulk.has(id); manage.dataset.favoriteManage = id; manage.setAttribute('aria-label', label('favorites.manageSelect', '选择用于批量管理'));
-      actions.append(manage, locate, copyButton, edit); item.append(path, content, actions); return item;
-    }
-    function primaryField(entry) {
-      if (entry.kind === 'bundle' && entry.title) return 'title';
-      if (state.prefs.primary === 'zh' && entry.zh) return 'zh';
-      if (state.prefs.primary === 'title' && entry.title) return 'title';
-      return 'rawText';
-    }
-    function appendHighlighted(parent, value, matches, field) {
-      const textValue = string(value); const ranges = (matches || []).filter(match => match.field === field).map(match => [number(match.start, 0, 0, textValue.length), number(match.end, textValue.length, 0, textValue.length)]).filter(([start, end]) => end > start).sort((a, b) => a[0] - b[0]);
-      if (!ranges.length) { parent.textContent = textValue; return; }
-      let offset = 0;
-      ranges.forEach(([start, end]) => {
-        if (start < offset) return;
-        parent.append(doc.createTextNode(textValue.slice(offset, start)), el('mark', '', textValue.slice(start, end))); offset = end;
-      });
-      parent.append(doc.createTextNode(textValue.slice(offset)));
-    }
-
     function updateBulkbar() {
       const bar = host?.querySelector('[data-favorite-bulkbar]'); const count = host?.querySelector('[data-favorite-bulk-count]');
       if (!bar) return; bar.hidden = !state.bulk.size && !host.querySelector('[data-favorite-bulk-toggle]')?.classList.contains('is-active');
+      host.classList.toggle('is-bulk', !bar.hidden);
       if (count) count.textContent = String(state.bulk.size);
       host.querySelectorAll('[data-favorite-manage]').forEach(node => { node.checked = state.bulk.has(node.dataset.favoriteManage); });
     }
@@ -674,7 +540,7 @@
       const selected = allSelectedIds();
       host.querySelectorAll('[data-favorite-select]').forEach(node => {
         const id = node.dataset.favoriteSelect; const active = selected.has(id); node.setAttribute('aria-pressed', String(active));
-        node.closest('[data-favorite-entry], [data-favorite-search-result]')?.classList.toggle('is-selected', active);
+        node.closest('[data-favorite-entry]')?.classList.toggle('is-selected', active);
       });
     }
     function updateHistory() {
@@ -692,14 +558,13 @@
       sectionRows(series.value).forEach(row => section.append(optionNode(row.id, string(row.name, row.id)))); section.value = selectedSectionId || '';
     }
     function currentVisibleIds() {
-      if (state.query) return state.searchHits.map(hit => hit.entryId || hit.id);
       return [...host.querySelectorAll('[data-favorite-entry]')].map(node => node.dataset.favoriteEntry);
     }
     async function openCreate(value = {}) {
       ensureShell();
       const order = currentVisibleIds();
       if (state.editor && !await flushEdits()) return false;
-      const firstSeries = value.seriesId || seriesRows()[0]?.id || '';
+      const firstSeries = value.seriesId || state.seriesId || seriesRows()[0]?.id || '';
       const rawText = string(value.rawText); const kind = value.kind === 'bundle' ? 'bundle' : 'tag';
       state.returnFocus = doc.activeElement;
       state.editor = { session: ++state.editorSession, version: rawText ? 1 : 0, savePromise: null, id: null, creating: true, dirty: Boolean(rawText), saved: null, order, historyKey: `favorite-create-${Date.now()}`, draft: {
@@ -828,15 +693,6 @@
         host.querySelectorAll(`[data-favorite-entry="${cssEscape(id)}"]`).forEach(node => {
           if (!entry) node.remove(); else node.replaceWith(renderEntry(entry, selected.has(id)));
         });
-        const hitIndex = state.searchHits.findIndex(hit => (hit.entryId || hit.id) === id);
-        host.querySelectorAll(`[data-favorite-search-result="${cssEscape(id)}"]`).forEach(node => {
-          if (!entry) node.remove();
-          else {
-            const hit = hitIndex >= 0 ? { ...state.searchHits[hitIndex], ...entry, entryId: id } : { ...entry, entryId: id, matches: [] };
-            if (hitIndex >= 0) state.searchHits[hitIndex] = hit;
-            node.replaceWith(renderSearchHit(hit));
-          }
-        });
       });
     }
 
@@ -857,41 +713,30 @@
     }
     function cssEscape(value) { return win?.CSS?.escape ? win.CSS.escape(value) : String(value).replace(/[^a-zA-Z0-9_-]/g, '\\$&'); }
 
-    function focusEntry(entryId) {
-      if (state.query) state.searchContext = { query: state.query, scope: state.scope, kind: state.kind, seriesId: state.seriesId, sectionId: state.sectionId, recent: state.recent, scrollTop: host.querySelector('[data-favorite-scroll]')?.scrollTop || 0, collapsedSections: [...state.prefs.collapsedSections] };
-      state.query = ''; state.seriesId = ''; state.sectionId = ''; state.kind = 'all'; state.recent = false;
-      const search = host.querySelector('[data-favorite-search]'); const kind = host.querySelector('[data-favorite-kind]'); const series = host.querySelector('[data-favorite-series-filter]'); const recent = host.querySelector('[data-favorite-recent]');
-      if (search) search.value = ''; if (kind) kind.value = 'all'; if (series) series.value = ''; if (recent) recent.classList.remove('is-active'); renderFilters();
-      const entry = safeCall('getEntry', entryId);
-      if (entry?.sectionId && state.prefs.collapsedSections.includes(entry.sectionId)) savePreferences({ collapsedSections: state.prefs.collapsedSections.filter(id => id !== entry.sectionId) });
-      renderShelf(); renderAnchors(); const shelf = host.querySelector('[data-favorite-shelf]'); const results = host.querySelector('[data-favorite-search-results]'); shelf.hidden = false; results.hidden = true;
-      let target = host.querySelector(`[data-favorite-entry="${cssEscape(entryId)}"]`);
-      if (!target) {
-        if (entry) { state.loadedColumns.add(entry.seriesId); state.columnLimits.set(entry.seriesId, Number.MAX_SAFE_INTEGER); }
-        renderShelf(); target = host.querySelector(`[data-favorite-entry="${cssEscape(entryId)}"]`);
-      }
+    async function focusEntry(entryId) {
+      const entry = safeCall('getEntry', entryId); if (!entry || (entry.nsfw && !includeAdult())) return false;
+      if (!await finishEditorBeforeMutation()) return false;
+      state.seriesId = entry.seriesId; state.recent = false; state.bulk.clear(); savePreferences({ activeSeriesId: entry.seriesId });
+      const sectionId = entry.sectionId || 'root'; const hidden = hiddenSections(); hidden.delete(sectionId); saveHiddenSections(hidden);
+      const key = columnKey(entry.seriesId, sectionId); state.loadedColumns.add(key);
+      // Load only as far as the target's page, without expanding unrelated columns.
+      const siblings = readEntries(entry.seriesId, entry.sectionId, Number.MAX_SAFE_INTEGER).items;
+      const index = siblings.findIndex(row => row.id === entryId);
+      state.columnLimits.set(key, Math.max(state.columnLimits.get(key) || INITIAL_COLUMN_BATCH, Math.ceil((index + 1) / COLUMN_BATCH) * COLUMN_BATCH));
+      render();
+      const target = host.querySelector('[data-favorite-entry="' + cssEscape(entryId) + '"]');
       target?.scrollIntoView?.({ behavior: 'smooth', block: 'center', inline: 'center' }); target?.classList.add('is-located'); target?.querySelector('[data-favorite-select]')?.focus();
       if (target) win?.setTimeout?.(() => target.classList.remove('is-located'), 1200); return Boolean(target);
-    }
-    function returnSearch() {
-      if (!state.searchContext) return;
-      Object.assign(state, state.searchContext); state.searchContext = null; const search = host.querySelector('[data-favorite-search]'); if (search) search.value = state.query;
-      savePreferences({ collapsedSections: [...(state.collapsedSections || state.prefs.collapsedSections)] }); renderFilters();
-      const scope = host.querySelector('[data-favorite-scope]'); const kind = host.querySelector('[data-favorite-kind]'); const series = host.querySelector('[data-favorite-series-filter]'); const section = host.querySelector('[data-favorite-section-filter]');
-      if (scope) scope.value = state.scope; if (kind) kind.value = state.kind; if (series) series.value = state.seriesId; if (section) section.value = state.sectionId;
-      host.querySelector('[data-favorite-recent]')?.classList.toggle('is-active', state.recent);
-      renderSearch(); renderAnchors(); const scroll = host.querySelector('[data-favorite-scroll]'); if (scroll) scroll.scrollTop = state.scrollTop || 0;
     }
     function setZoom(value) { const zoom = Math.round(number(value, state.prefs.zoom, 75, 150)); savePreferences({ zoom }); return zoom; }
 
     async function applyBulk(action) {
-      const ids = [...state.bulk]; if (!ids.length && action !== 'all-results' && action !== 'visible') return;
+      const ids = [...state.bulk]; if (!ids.length && action !== 'visible') return;
       let result;
       if (action === 'visible') {
-        const visible = state.query ? state.searchHits.map(hit => hit.entryId || hit.id) : [...host.querySelectorAll('[data-favorite-entry]')].map(node => node.dataset.favoriteEntry);
+        const visible = currentVisibleIds();
         visible.forEach(id => state.bulk.add(id)); updateBulkbar(); return;
       }
-      if (action === 'all-results') { (await collectAllSearchIds()).forEach(id => state.bulk.add(id)); updateBulkbar(); return; }
       if (action === 'clear-bulk') { state.bulk.clear(); updateBulkbar(); return; }
       if (action === 'copy-selected') {
         if (!await flushEdits()) return;
@@ -917,23 +762,12 @@
     }
     async function orderedBulkIds(ids) {
       const chosen = new Set(ids); const order = [];
-      if (state.query) return (await collectAllSearchIds()).filter(id => chosen.has(id));
       let offset = 0, hasMore = true;
       while (hasMore) {
         const result = safeCall('list', { includeAdult: true, offset, limit: 500, view: 'shelf' }); const rows = Array.isArray(result?.items) ? result.items : [];
         order.push(...rows.map(row => row.id).filter(id => chosen.has(id))); offset += rows.length; hasMore = Boolean(result?.hasMore) && rows.length > 0;
       }
       return order;
-    }
-    async function collectAllSearchIds() {
-      if (!state.query) return [];
-      const ids = []; let offset = 0; let hasMore = true;
-      while (hasMore) {
-        const result = safeCall('search', state.query, { scope: 'internal', seriesId: state.seriesId || undefined, ...(state.sectionId ? { sectionId: state.sectionId } : {}), kind: state.kind, includeAdult: includeAdult(), offset, limit: 500 });
-        const rows = Array.isArray(result?.items) ? result.items : [];
-        ids.push(...rows.map(hit => hit.entryId || hit.id).filter(id => state.scope !== 'global' || safeCall('getEntry', id)?.globalSearchable)); offset += rows.length; hasMore = Boolean(result?.hasMore) && rows.length > 0;
-      }
-      return unique(ids);
     }
     async function reorderEntry(id, direction) {
       if (!await finishEditorBeforeMutation()) return false;
@@ -952,8 +786,11 @@
     async function openImport() {
       if (!await flushEdits()) return false;
       const panel = host.querySelector('[data-favorite-transfer]'); if (panel) panel.hidden = false;
+      const fresh = !state.transferOpen && !host.querySelector('[data-favorite-import-text]')?.value;
       state.transferOpen = true;
-      renderFilters(); renderImportSections();
+      renderFilters();
+      if (fresh) { host.querySelector('[data-favorite-import-series]').value = state.seriesId; invalidateImportPreview(); }
+      renderImportSections();
       const format = host.querySelector('[data-favorite-import-format]'); const mode = host.querySelector('[data-favorite-import-mode]');
       if (mode) mode.disabled = format?.value !== 'json';
       return true;
@@ -1031,7 +868,14 @@
     }
 
     async function structureAction(action, target) {
-      if (action === 'new-series') return openNameDialog(() => label('favorites.seriesName', '系列名称'), '', name => safeCall('saveSeries', { name }), target);
+      if (action === 'new-series') {
+        if (state.editor && !await finishEditorBeforeMutation()) return false;
+        return openNameDialog(() => label('favorites.seriesName', '系列名称'), '', name => {
+          const result = safeCall('saveSeries', { name });
+          if (result?.ok) { state.seriesId = result.data.id; state.bulk.clear(); state.recent = false; savePreferences({ activeSeriesId: state.seriesId }); }
+          return result;
+        }, target);
+      }
       if (action === 'rename-series') {
         const row = seriesRows().find(item => item.id === target.dataset.seriesId); if (!row) return false;
         return openNameDialog(() => label('favorites.seriesName', '系列名称'), row.name || '', name => safeCall('saveSeries', { id: row.id, name }), target);
@@ -1074,18 +918,16 @@
       if (action === 'dialog-cancel') { closeNameDialog(); return; }
       if (action === 'dialog-confirm') { submitNameDialog(); return; }
       if (['new-series', 'rename-series', 'new-section', 'rename-section', 'delete-section', 'delete-series', 'delete-series-all'].includes(action)) return void structureAction(action, target);
-      if (action === 'new-tag') return void openCreate({ kind: 'tag', seriesId: state.seriesId || undefined });
+      if (action === 'new-tag') return void openCreate({ kind: 'tag', seriesId: target.dataset.seriesId || state.seriesId, sectionId: target.dataset.sectionId === 'root' ? null : target.dataset.sectionId });
       if (action === 'new-bundle') return void openCreate({ kind: 'bundle', seriesId: state.seriesId || undefined });
-      if (action === 'clear-search') { clearSearch(); return; }
       if (action === 'undo' || action === 'redo') { if (!await finishEditorBeforeMutation()) return; safeCall(action); render(); return; }
       if (action === 'recent') { state.recent = !state.recent; target.classList.toggle('is-active', state.recent); renderShelf(); return; }
-      if (action === 'bulk') { target.classList.toggle('is-active'); updateBulkbar(); return; }
+      if (action === 'bulk') { target.classList.toggle('is-active'); if (!target.classList.contains('is-active')) { state.bulk.clear(); state.bulkSeries.clear(); renderAnchors(); } updateBulkbar(); return; }
       if (action === 'zoom-out') return void setZoom(state.prefs.zoom - 10);
       if (action === 'zoom-in') return void setZoom(state.prefs.zoom + 10);
       if (action === 'zoom-reset') return void setZoom(100);
-      if (action === 'anchor-series') { hydrateSeries(target.dataset.seriesId); const node = host.querySelector(`[data-favorite-series="${cssEscape(target.dataset.seriesId)}"]`); node?.scrollIntoView?.({ behavior: 'smooth', block: 'start', inline: 'start' }); node?.querySelector('h3')?.focus?.(); renderSubanchors(target.dataset.seriesId); return; }
-      if (action === 'anchor-section') { const node = host.querySelector(`[data-favorite-section="${cssEscape(target.dataset.sectionId)}"]`); node?.scrollIntoView?.({ behavior: 'smooth', block: 'start', inline: 'center' }); node?.querySelector('h4')?.focus(); return; }
-      if (action === 'return-search') return void returnSearch();
+      if (action === 'select-series') return void selectSeries(target.dataset.seriesId);
+      if (action === 'toggle-all-sections') return void toggleAllSections();
       if (action === 'editor-prev') return void navigateEditor(-1);
       if (action === 'editor-next') return void navigateEditor(1);
       if (action === 'editor-close') { if (await flushEdits()) discardEditor(); return; }
@@ -1098,13 +940,12 @@
       if (action === 'move-series-down') return void reorderStructure('series', target.dataset.seriesId, 1, null);
       if (action === 'move-section-up') return void reorderStructure('section', target.dataset.sectionId, -1, target.dataset.seriesId);
       if (action === 'move-section-down') return void reorderStructure('section', target.dataset.sectionId, 1, target.dataset.seriesId);
-      if (action === 'toggle-section') {
-        const id = target.dataset.sectionId; const collapsed = new Set(state.prefs.collapsedSections); collapsed.has(id) ? collapsed.delete(id) : collapsed.add(id);
-        savePreferences({ collapsedSections: [...collapsed] }); renderShelf(); return;
+      if (action === 'load-section') return void hydrateSection(target.dataset.seriesId, target.dataset.sectionId);
+      if (action === 'load-column') {
+        const key = columnKey(target.dataset.seriesId, target.dataset.sectionId); state.columnLimits.set(key, (state.columnLimits.get(key) || INITIAL_COLUMN_BATCH) + COLUMN_BATCH);
+        const node = target.closest('[data-favorite-section]'); const series = seriesRows().find(row => row.id === target.dataset.seriesId); const section = columnsFor(series.id).find(row => row.id === target.dataset.sectionId);
+        if (node && series && section) node.replaceWith(renderColumn(series, section, allSelectedIds())); return;
       }
-      if (action === 'load-search') { state.searchOffset += PAGE_SIZE; renderSearch(); return; }
-      if (action === 'load-series') { hydrateSeries(target.dataset.seriesId); return; }
-      if (action === 'load-column') { const key = target.dataset.seriesId; state.columnLimits.set(key, (state.columnLimits.get(key) || INITIAL_COLUMN_BATCH) + COLUMN_BATCH); const node = host.querySelector(`[data-favorite-series="${cssEscape(key)}"]`); const series = seriesRows().find(row => row.id === key); if (node && series) node.replaceWith(renderSeries(series, allSelectedIds(), false)); return; }
       if (action === 'auto-color') { safeCall('setSeriesColors', state.bulkSeries.size ? [...state.bulkSeries] : [target.dataset.seriesId], { mode: 'auto' }); render(); return; }
       if (action === 'open-import') return void openImport();
       if (action === 'close-import') { host.querySelector('[data-favorite-transfer]').hidden = true; state.transferOpen = false; return; }
@@ -1112,28 +953,28 @@
       if (action === 'preview-import') return void previewImport();
       if (action === 'confirm-import') return void confirmImport();
       if (action === 'export') return void exportFavorites();
-      if (['visible', 'all-results', 'clear-bulk', 'pin-selected', 'unpin-selected', 'searchable-on', 'searchable-off', 'duplicate-selected', 'delete-selected'].includes(action)) return void applyBulk(action);
+      if (['visible', 'copy-selected', 'clear-bulk', 'pin-selected', 'unpin-selected', 'searchable-on', 'searchable-off', 'duplicate-selected', 'delete-selected'].includes(action)) return void applyBulk(action);
     }
     function handleSubmit(event) {
       if (!event.target.matches('[data-favorite-dialog-form]')) return;
       event.preventDefault(); submitNameDialog();
     }
-    function renderSubanchors(seriesId) {
-      const nav = host.querySelector('[data-favorite-subanchors]'); nav.replaceChildren(); const rows = sectionRows(seriesId); nav.hidden = !rows.length;
-      rows.forEach(row => { const item = actionTextButton('anchor-section', string(row.name, row.id)); item.dataset.sectionId = row.id; nav.append(item); });
+    function renderSubanchors() {
+      const nav = host.querySelector('[data-favorite-subanchors]'); nav.replaceChildren(); nav.hidden = !state.seriesId; if (!state.seriesId) return;
+      const rows = columnsFor(state.seriesId); const hidden = hiddenSections(); const allVisible = rows.every(row => !hidden.has(row.id));
+      nav.append(actionTextButton('toggle-all-sections', allVisible ? label('favorites.deselectAllSections', '取消全选') : label('favorites.selectAllSections', '全选')));
+      rows.forEach(row => {
+        const item = el('label', 'favorite-section-choice'); const check = el('input'); check.type = 'checkbox'; check.checked = !hidden.has(row.id); check.dataset.favoriteSectionToggle = row.id;
+        item.classList.toggle('is-active', check.checked); item.append(check, doc.createTextNode(string(row.name, row.id))); nav.append(item);
+      });
     }
     function handleInput(event) {
-      if (event.target.matches('[data-favorite-search]')) { win.clearTimeout(state.searchTimer); state.searchTimer = win.setTimeout(() => { state.searchTimer = null; runSearch(); }, SEARCH_DELAY); return; }
-      if (event.target.matches('[data-favorite-anchor-search]')) {
-        state.anchorQuery = event.target.value; const needle = state.anchorQuery.trim().toLocaleLowerCase();
-        host.querySelectorAll('[data-favorite-anchors] [data-favorite-action="anchor-series"]').forEach(node => { node.hidden = Boolean(needle) && !node.textContent.toLocaleLowerCase().includes(needle); }); return;
-      }
       if (event.target.matches('[data-favorite-import-text]')) { invalidateImportPreview(); return; }
       if (event.target.matches('[data-favorite-field]')) { readDraftFromFields(event.target); scheduleSave(); }
     }
     function handleChange(event) {
       const target = event.target;
-      if (target.matches('[data-favorite-scope], [data-favorite-kind], [data-favorite-series-filter], [data-favorite-section-filter]')) { if (target.matches('[data-favorite-series-filter]')) { state.sectionId = ''; const section = host.querySelector('[data-favorite-section-filter]'); if (section) section.value = ''; } runSearch(); renderFilters(); return; }
+      if (target.matches('[data-favorite-section-toggle]')) { void setSectionVisibility(target.dataset.favoriteSectionToggle, target.checked); return; }
       if (target.matches('[data-favorite-import-file]')) { void readImportFile(target); return; }
       if (target.matches('[data-favorite-inline-field]')) { void saveInlineField(target); return; }
       if (target.matches('[data-favorite-import-series]')) { renderImportSections(); invalidateImportPreview(); return; }
@@ -1143,7 +984,7 @@
       if (target.matches('[data-favorite-series-manage]')) { target.checked ? state.bulkSeries.add(target.dataset.favoriteSeriesManage) : state.bulkSeries.delete(target.dataset.favoriteSeriesManage); return; }
       if (target.matches('[data-favorite-column-width]')) { savePreferences({ columnWidth: number(target.value, DEFAULT_VIEW.columnWidth, 220, 420) }); return; }
       if (target.matches('[data-favorite-zoom]')) { setZoom(target.value); return; }
-      if (target.matches('[data-favorite-primary]')) { savePreferences({ primary: target.value }); renderShelf(); if (state.query) renderSearch(); return; }
+      if (target.matches('[data-favorite-primary]')) { savePreferences({ primary: target.value }); renderShelf(); return; }
       if (target.matches('[data-favorite-secondary]')) { savePreferences({ showSecondary: target.checked }); renderShelf(); return; }
       if (target.matches('[data-favorite-compact]')) { savePreferences({ compact: target.checked }); return; }
       if (target.matches('[data-favorite-series-color]')) { safeCall('setSeriesColors', state.bulkSeries.size ? [...state.bulkSeries] : [target.dataset.favoriteSeriesColor], { mode: 'custom', color: target.value }); render(); return; }
@@ -1152,15 +993,14 @@
     }
     function handleCompositionStart(event) { if (event.target.matches('[data-favorite-field]')) { state.composing = true; win.clearTimeout(state.saveTimer); state.saveTimer = null; } }
     function handleCompositionEnd(event) { if (event.target.matches('[data-favorite-field]')) { state.composing = false; readDraftFromFields(event.target); scheduleSave(); } }
-    function handleFocusIn(event) { const entry = event.target.closest?.('[data-favorite-entry]'); if (entry) state.lastShelfFocus = entry.dataset.favoriteEntry || ''; }
     function handleFocusOut(event) { if (event.target.matches?.('[data-favorite-field]') && !event.relatedTarget?.matches?.('[data-favorite-field]')) endEditorTransaction(); }
     async function handleKeydown(event) {
       if (!state.active || state.destroyed) return;
       if (state.dialog && event.key === 'Enter' && event.target.matches?.('[data-favorite-dialog-input]')) { event.preventDefault(); submitNameDialog(); return; }
       const editable = event.target.matches?.('input, textarea, select, [contenteditable="true"]');
-      if (event.key === 'Escape') { if (state.dialog) { event.preventDefault(); closeNameDialog(); } else if (state.transferOpen) { event.preventDefault(); host.querySelector('[data-favorite-transfer]').hidden = true; state.transferOpen = false; } else if (state.editor) { event.preventDefault(); discardEditor(); } else if (state.query) { event.preventDefault(); host.querySelector('[data-favorite-action="clear-search"]').click(); } return; }
-      if (event.key === 'F2') { const entry = event.target.closest?.('[data-favorite-entry], [data-favorite-search-result]'); if (entry) { event.preventDefault(); openEditor(entry.dataset.favoriteEntry || entry.dataset.favoriteSearchResult); } return; }
-      if ((event.ctrlKey || event.metaKey) && !editable && event.key.toLowerCase() === 'c' && !win.getSelection?.()?.toString()) { const entry = event.target.closest?.('[data-favorite-entry], [data-favorite-search-result]'); if (entry) { event.preventDefault(); copyEntry(entry.dataset.favoriteEntry || entry.dataset.favoriteSearchResult, false); } }
+      if (event.key === 'Escape') { if (state.dialog) { event.preventDefault(); closeNameDialog(); } else if (state.transferOpen) { event.preventDefault(); host.querySelector('[data-favorite-transfer]').hidden = true; state.transferOpen = false; } else if (state.editor) { event.preventDefault(); discardEditor(); } return; }
+      if (event.key === 'F2') { const entry = event.target.closest?.('[data-favorite-entry]'); if (entry) { event.preventDefault(); openEditor(entry.dataset.favoriteEntry); } return; }
+      if ((event.ctrlKey || event.metaKey) && !editable && event.key.toLowerCase() === 'c' && !win.getSelection?.()?.toString()) { const entry = event.target.closest?.('[data-favorite-entry]'); if (entry) { event.preventDefault(); copyEntry(entry.dataset.favoriteEntry, false); } }
       if ((event.ctrlKey || event.metaKey) && !editable && event.key.toLowerCase() === 'z') { event.preventDefault(); if (await finishEditorBeforeMutation()) { safeCall(event.shiftKey ? 'redo' : 'undo'); render(); } }
       if ((event.ctrlKey || event.metaKey) && !editable && event.key.toLowerCase() === 'y') { event.preventDefault(); if (await finishEditorBeforeMutation()) { safeCall('redo'); render(); } }
     }
@@ -1176,13 +1016,13 @@
     function bind() {
       if (!host || state.bound || state.destroyed) return;
       ensureShell(); state.bound = true;
-      host.addEventListener('click', handleClick); host.addEventListener('input', handleInput); host.addEventListener('change', handleChange); host.addEventListener('submit', handleSubmit); host.addEventListener('focusin', handleFocusIn); host.addEventListener('focusout', handleFocusOut);
+      host.addEventListener('click', handleClick); host.addEventListener('input', handleInput); host.addEventListener('change', handleChange); host.addEventListener('submit', handleSubmit); host.addEventListener('focusout', handleFocusOut);
       host.addEventListener('compositionstart', handleCompositionStart); host.addEventListener('compositionend', handleCompositionEnd);
       host.addEventListener('keydown', handleKeydown); host.addEventListener('dragstart', handleDragStart); host.addEventListener('dragover', handleDragOver); host.addEventListener('drop', handleDrop); host.addEventListener('scroll', handleShelfScroll, true);
       state.unsubscribe = favorites?.subscribe?.((event = {}) => {
         if (state.destroyed || !state.active) return;
         if (event.structureChanged) {
-          if (state.editor) { state.pendingRender = true; updateHistory(); return; }
+          if (state.editor) { updateHistory(); return; }
           render(); return;
         }
         refreshChangedEntries(event.changedEntryIds || []); renderHealth(); updateHistory();
@@ -1199,9 +1039,7 @@
         text: host.querySelector('[data-favorite-import-text]')?.value || '', preview: host.querySelector('[data-favorite-import-preview]')?.textContent || ''
       } : null;
       host.replaceChildren(); delete host.dataset.favoritesReady; ensureShell(); render();
-      const search = host.querySelector('[data-favorite-search]'); const scope = host.querySelector('[data-favorite-scope]'); const kind = host.querySelector('[data-favorite-kind]');
-      if (search) search.value = state.query; if (scope) scope.value = state.scope; if (kind) kind.value = state.kind;
-      renderFilters(); if (state.query) renderSearch(); if (state.editor) renderEditor();
+      renderFilters(); if (state.editor) renderEditor();
       if (transferSnapshot) {
         host.querySelector('[data-favorite-transfer]').hidden = false;
         const format = host.querySelector('[data-favorite-import-format]'); const mode = host.querySelector('[data-favorite-import-mode]'); const kindControl = host.querySelector('[data-favorite-import-kind]'); const series = host.querySelector('[data-favorite-import-series]');
@@ -1218,7 +1056,7 @@
     }
     async function leave() {
       const saved = await flushEdits(); if (!saved) return false;
-      state.active = false; win.clearTimeout(state.searchTimer); state.searchTimer = null; state.renderToken += 1; cancelColumnLoading(); return true;
+      state.active = false; cancelColumnLoading(); return true;
     }
     function cancelColumnLoading() {
       state.columnObserver?.disconnect?.(); state.columnObserver = null;
@@ -1226,8 +1064,8 @@
     }
     function destroy() {
       if (!host || state.destroyed) return;
-      state.destroyed = true; state.active = false; win.clearTimeout(state.searchTimer); win.clearTimeout(state.saveTimer); state.searchTimer = state.saveTimer = null;
-      host.removeEventListener('click', handleClick); host.removeEventListener('input', handleInput); host.removeEventListener('change', handleChange); host.removeEventListener('submit', handleSubmit); host.removeEventListener('focusin', handleFocusIn); host.removeEventListener('focusout', handleFocusOut);
+      state.destroyed = true; state.active = false; win.clearTimeout(state.saveTimer); state.saveTimer = null;
+      host.removeEventListener('click', handleClick); host.removeEventListener('input', handleInput); host.removeEventListener('change', handleChange); host.removeEventListener('submit', handleSubmit); host.removeEventListener('focusout', handleFocusOut);
       host.removeEventListener('compositionstart', handleCompositionStart); host.removeEventListener('compositionend', handleCompositionEnd);
       host.removeEventListener('keydown', handleKeydown); host.removeEventListener('dragstart', handleDragStart); host.removeEventListener('dragover', handleDragOver); host.removeEventListener('drop', handleDrop); host.removeEventListener('scroll', handleShelfScroll, true); cancelColumnLoading();
       try { state.unsubscribe?.(); } catch { /* optional subscription */ } state.unsubscribe = null;
