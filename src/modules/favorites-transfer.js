@@ -7,6 +7,7 @@ const object = value => value !== null && typeof value === 'object' && !Array.is
 const fail = (code, message, data) => ({ ok: false, error: { code, message }, ...(data ? { data } : {}) });
 const ok = data => ({ ok: true, data });
 const hex = value => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value);
+const SECTION_PALETTE = Object.freeze(['#287EA4', '#C75450', '#5A8F50', '#B67823', '#7256A8', '#00897B', '#B04A7A', '#65737E', '#8B6F47', '#446CB3']);
 const integer = value => Number.isInteger(value) && value >= 0;
 const lineBreakCount = value => (String(value).match(/\r\n|\r|\n/g) || []).length;
 const leadingLineBreakCount = value => {
@@ -45,8 +46,10 @@ function validateFavoriteBundle(input) {
     seen.add(row.id);
   }
   const seriesIds = new Set(value.series.map(row => row.id));
-  for (const row of value.sections) {
+  for (const [index, row] of value.sections.entries()) {
     if (!object(row) || typeof row.id !== 'string' || !row.id || typeof row.seriesId !== 'string' || typeof row.name !== 'string' || !row.name.trim() || !integer(row.order)) return fail('INVALID_SECTION', '子分类记录无效');
+    if (row.color === undefined) row.color = SECTION_PALETTE[index % SECTION_PALETTE.length];
+    if (!hex(row.color)) return fail('INVALID_SECTION', '子分类颜色无效');
     if (seen.has(row.id)) return fail('DUPLICATE_ID', `重复 ID: ${row.id}`);
     if (!seriesIds.has(row.seriesId)) return fail('SERIES_NOT_FOUND', `系列不存在: ${row.seriesId}`);
     seen.add(row.id);

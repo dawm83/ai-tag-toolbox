@@ -33,10 +33,10 @@
     const host = doc?.querySelector?.('#favoritesView');
     const state = {
       bound: false, active: false, destroyed: false, composing: false,
-      seriesId: '',
+      seriesId: '', sectionId: '',
       recent: false, expanded: new Set(), bulk: new Set(), bulkSeries: new Set(), columnLimits: new Map(), loadedColumns: new Set(),
       prefs: readPreferences(), editor: null, saveTimer: null, transferOpen: false,
-      unsubscribe: null, draggedId: '', returnFocus: null, dialog: null, editorSession: 0, columnObserver: null, scrollFrame: null
+      quickEditor: null, contextTarget: null, draggedId: '', draggedStructure: null, returnFocus: null, dialog: null, editorSession: 0, columnObserver: null, scrollFrame: null, initializing: false
     };
 
     function label(key, fallback) { return string(localize(key, fallback), fallback); }
@@ -170,9 +170,61 @@
       const body = el('div', 'favorites-body');
       const scroll = el('div', 'favorites-scroll'); scroll.dataset.favoriteScroll = '';
       const shelf = el('div', 'favorites-shelf'); shelf.dataset.favoriteShelf = '';
-      scroll.append(shelf); body.append(scroll, createEditor(), createTransferPanel());
-      host.append(anchors, seriesControls, toolbar, subanchors, bulkbar, health, body, createDialog());
+      scroll.append(shelf); body.append(scroll, createEditor(), createQuickEditor(), createTransferPanel());
+      host.append(anchors, seriesControls, toolbar, subanchors, bulkbar, health, body, createContextMenu(), createDialog());
       applyPreferences();
+    }
+
+    function createQuickEditor() {
+      const panel = el('aside', 'favorite-quick-editor'); panel.dataset.favoriteQuickEditor = ''; panel.hidden = true;
+      const head = el('div', 'favorite-editor-head'); head.append(el('h3', '', label('favorites.quickCreate', '新增标签')), button('x', label('favorites.closeEditor', '关闭'), 'quick-close'));
+      const raw = el('input'); raw.type = 'text'; raw.dataset.favoriteQuickRaw = ''; raw.placeholder = label('favorites.rawText', 'Tag 原文');
+      const title = el('input'); title.type = 'text'; title.dataset.favoriteQuickTitle = ''; title.placeholder = label('favorites.entryTitle', '名称或中文');
+      const note = el('textarea'); note.dataset.favoriteQuickNote = ''; note.placeholder = label('favorites.noteOptional', '备注（可选）');
+      const actions = el('div', 'favorite-editor-actions'); actions.append(actionTextButton('quick-cancel', label('favorites.cancel', '取消')), actionTextButton('quick-save', label('favorites.save', '保存'), 'primary'));
+      panel.append(head, raw, title, note, actions); return panel;
+    }
+    function createContextMenu() {
+      const menu = el('div', 'favorite-context-menu'); menu.dataset.favoriteContextMenu = ''; menu.hidden = true;
+      menu.append(actionTextButton('context-rename', label('favorites.rename', '重命名')), actionTextButton('context-edit', label('favorites.edit', '编辑')), actionTextButton('context-delete', label('favorites.delete', '删除'), 'danger'));
+      const color = el('input', 'favorite-context-color'); color.type = 'color'; color.dataset.favoriteContextColor = ''; color.title = label('favorites.seriesColor', '颜色'); color.setAttribute('aria-label', color.title); menu.append(color);
+      return menu;
+    }
+    function openQuickEditor(seriesId, sectionId) {
+      state.quickEditor = { seriesId, sectionId };
+      const panel = host.querySelector('[data-favorite-quick-editor]'); if (!panel) return false;
+      panel.hidden = false; panel.querySelector('[data-favorite-quick-raw]').value = ''; panel.querySelector('[data-favorite-quick-title]').value = ''; panel.querySelector('[data-favorite-quick-note]').value = '';
+      panel.querySelector('[data-favorite-quick-raw]').focus(); return true;
+    }
+    function closeQuickEditor() { state.quickEditor = null; const panel = host.querySelector('[data-favorite-quick-editor]'); if (panel) panel.hidden = true; }
+    async function saveQuickEditor() {
+      const panel = host.querySelector('[data-favorite-quick-editor]'); const draft = state.quickEditor; if (!panel || !draft) return false;
+      const rawText = string(panel.querySelector('[data-favorite-quick-raw]')?.value).trim();
+      if (!rawText) { notify(label('favorites.rawRequired', '原文不能为空')); panel.querySelector('[data-favorite-quick-raw]')?.focus(); return false; }
+      const result = safeCall('saveEntry', { kind: 'tag', seriesId: draft.seriesId, sectionId: draft.sectionId === 'root' ? null : draft.sectionId, title: string(panel.querySelector('[data-favorite-quick-title]')?.value).trim(), rawText, zh: string(panel.querySelector('[data-favorite-quick-title]')?.value).trim(), note: string(panel.querySelector('[data-favorite-quick-note]')?.value) });
+      if (!result?.ok) { notify(result?.error?.message || label('favorites.saveFailed', '保存失败')); return false; }
+      await safeCall('flush'); closeQuickEditor(); render(); return true;
+    }
+    function openContextMenu(kind, id, event) {
+      const menu = host.querySelector('[data-favorite-context-menu]'); if (!menu) return;
+      state.contextTarget = { kind, id, seriesId: event.currentTarget?.dataset?.seriesId || state.seriesId };
+      menu.style.left = `${Math.max(4, event.clientX || 0)}px`; menu.style.top = `${Math.max(4, event.clientY || 0)}px`; menu.hidden = false;
+      const color = menu.querySelector('[data-favorite-context-color]');
+      const row = kind === 'series' ? seriesRows().find(item => item.id === id) : sectionRows(state.seriesId).find(item => item.id === id);
+      if (color) color.value = row?.color || '#287EA4';
+    }
+    function closeContextMenu() { state.contextTarget = null; host.querySelector('[data-favorite-context-menu]')?.setAttribute('hidden', ''); }
+    function contextRename() {
+      const target = state.contextTarget; if (!target) return false;
+      const row = target.kind === 'series' ? seriesRows().find(item => item.id === target.id) : sectionRows(target.seriesId).find(item => item.id === target.id); if (!row) return false;
+      closeContextMenu(); return openNameDialog(() => label('favorites.namePrompt', '输入名称'), row.name, name => safeCall(target.kind === 'series' ? 'saveSeries' : 'saveSection', target.kind === 'series' ? { id: row.id, name } : { id: row.id, seriesId: row.seriesId, name }), doc.activeElement);
+    }
+    async function contextDelete() {
+      const target = state.contextTarget; if (!target) return false; closeContextMenu();
+      if (typeof win?.confirm === 'function' && !win.confirm(label(target.kind === 'series' ? 'favorites.confirmDeleteSeries' : 'favorites.confirmDeleteSection', '确定删除吗？'))) return false;
+      if (!await finishEditorBeforeMutation()) return false;
+      const result = target.kind === 'series' ? safeCall('deleteSeries', target.id, { mode: 'delete' }) : safeCall('deleteSection', target.id);
+      if (result?.ok) { if (target.id === state.seriesId) state.seriesId = ''; render(); } else notify(result?.error?.message || label('favorites.operationFailed', '操作失败')); return Boolean(result?.ok);
     }
 
     function actionTextButton(action, textValue, extra = '') {
@@ -293,11 +345,32 @@
     function render() {
       if (!host || state.destroyed) return;
       ensureShell();
+      ensureWorkspace();
       const rows = seriesRows();
       if (!rows.some(row => row.id === state.seriesId)) state.seriesId = rows.find(row => row.id === state.prefs.activeSeriesId)?.id || rows[0]?.id || '';
+      const sections = sectionRows(state.seriesId);
+      if (!sections.some(row => row.id === state.sectionId)) state.sectionId = sections[0]?.id || '';
       renderFilters(); renderAnchors(); renderSeriesControls(); renderSubanchors(); renderHealth(); renderShelf();
       updateBulkbar(); updateHistory(); applyPreferences();
       host.querySelector('[data-favorite-recent]')?.classList.toggle('is-active', state.recent);
+    }
+    function ensureWorkspace() {
+      if (state.initializing) return;
+      const snapshot = safeCall('snapshot'); if (snapshot?.loadError) return;
+      let rows = seriesRows();
+      if (!rows.length) {
+        state.initializing = true;
+        const created = safeCall('saveSeries', { name: label('favorites.newPage', '新建收藏页') });
+        state.initializing = false; rows = seriesRows();
+        if (created?.ok) { state.seriesId = created.data.id; savePreferences({ activeSeriesId: state.seriesId }); }
+      }
+      const active = rows.find(row => row.id === state.seriesId) || rows.find(row => row.id === state.prefs.activeSeriesId) || rows[0];
+      if (!active) return;
+      if (!sectionRows(active.id).length) {
+        state.initializing = true;
+        const created = safeCall('saveSection', { seriesId: active.id, name: label('favorites.newSectionTab', '新建标签栏') });
+        state.initializing = false; if (created?.ok) state.sectionId = created.data.id;
+      }
     }
     function renderFilters() {
       const rows = seriesRows();
@@ -316,13 +389,12 @@
       anchors.replaceChildren();
       seriesRows().forEach(row => {
         const tab = el('span', 'favorite-series-tab'); tab.style.setProperty('--favorite-accent', string(row.color, 'var(--pri)'));
-        const manage = el('input', 'favorite-series-manage'); manage.type = 'checkbox'; manage.checked = state.bulkSeries.has(row.id); manage.dataset.favoriteSeriesManage = row.id;
-        manage.setAttribute('aria-label', label('favorites.selectSeries', '选择系列以批量改色') + '：' + row.name);
+        tab.dataset.favoriteSeriesTab = row.id; tab.dataset.seriesId = row.id; tab.draggable = true;
         const item = actionTextButton('select-series', string(row.name, row.id)); item.dataset.seriesId = row.id;
-        item.classList.toggle('is-active', row.id === state.seriesId); item.setAttribute('aria-pressed', String(row.id === state.seriesId));
-        tab.append(manage, item); anchors.append(tab);
+        item.classList.toggle('is-active', row.id === state.seriesId); tab.classList.toggle('is-active', row.id === state.seriesId); item.setAttribute('aria-pressed', String(row.id === state.seriesId));
+        tab.append(item); anchors.append(tab);
       });
-      anchors.append(button('folder-plus', label('favorites.newSeries', '新增系列'), 'new-series'));
+      anchors.append(button('plus', label('favorites.newSeries', '新建收藏页'), 'new-series-tab'));
     }
     function renderSeriesControls() {
       const hostControls = host.querySelector('[data-favorite-series-controls]'); hostControls.replaceChildren();
@@ -332,7 +404,7 @@
       const rename = button('pencil', label('favorites.renameSeries', '重命名系列'), 'rename-series'); rename.dataset.seriesId = series.id;
       const color = el('input', 'favorite-color-input'); color.type = 'color'; color.value = series.color || '#5e6ad2'; color.dataset.favoriteSeriesColor = series.id;
       color.title = label('favorites.seriesColor', '系列颜色'); color.setAttribute('aria-label', color.title);
-      const newSection = actionTextButton('new-section', label('favorites.newSection', '新增子分类')); newSection.dataset.seriesId = series.id;
+      const newSection = actionTextButton('new-section', label('favorites.newSection', '新增标签栏')); newSection.dataset.seriesId = series.id;
       const menu = el('details', 'favorite-series-menu'); const summary = el('summary', '', '⋯'); summary.title = label('favorites.seriesActions', '系列操作'); summary.setAttribute('aria-label', summary.title);
       const menuBody = el('div', 'favorite-series-menu-body');
       const actions = [
@@ -358,7 +430,7 @@
     async function selectSeries(id) {
       if (id === state.seriesId) return true;
       if (!seriesRows().some(row => row.id === id) || !await finishEditorBeforeMutation()) return false;
-      state.seriesId = id; state.bulk.clear(); state.recent = false; savePreferences({ activeSeriesId: id }); render();
+      state.seriesId = id; state.sectionId = ''; state.bulk.clear(); state.recent = false; savePreferences({ activeSeriesId: id }); render();
       const scroll = host.querySelector('[data-favorite-scroll]'); scroll.scrollTop = 0; scroll.scrollLeft = 0;
       host.querySelector('[data-favorite-action="select-series"][data-series-id="' + cssEscape(id) + '"]')?.focus(); return true;
     }
@@ -394,9 +466,9 @@
       if (!series) { shelf.append(el('p', 'favorites-empty', label('favorites.empty', '还没有收藏系列'))); return; }
       const content = el('section', 'favorite-series'); content.dataset.favoriteSeries = series.id;
       content.style.setProperty('--favorite-accent', string(series.color, 'var(--pri)')); content.setAttribute('aria-label', series.name);
-      const selected = allSelectedIds(); const hidden = hiddenSections(); const columns = columnsFor(series.id).filter(row => !hidden.has(row.id));
-      columns.forEach((section, index) => content.append(renderColumn(series, section, selected, index >= INITIAL_COLUMNS && !state.loadedColumns.has(columnKey(series.id, section.id)))));
-      if (!columns.length) content.append(el('p', 'favorites-empty', label('favorites.allSectionsHidden', '当前子分类已全部隐藏，可在上方选择要显示的子分类')));
+      const selected = allSelectedIds(); const columns = columnsFor(series.id);
+      columns.forEach(section => content.append(renderColumn(series, section, selected, false)));
+      if (!columns.length) content.append(el('p', 'favorites-empty', label('favorites.emptySection', '此收藏页暂无标签栏')));
       shelf.append(content); setupColumnLoading();
     }
     function renderColumn(series, section, selected, lazy = false) {
@@ -415,6 +487,11 @@
         if (total > rows.total) group.append(el('p', 'favorite-adult-hidden', label('favorites.adultHidden', '已隐藏成人内容') + '：' + (total - rows.total)));
       }
       return group;
+    }
+    function renderQuickBlank(series, section) {
+      const blank = el('button', 'favorite-quick-new', label('favorites.clickToAdd', '点击新增标签')); blank.type = 'button';
+      blank.dataset.favoriteQuickNew = ''; blank.dataset.sectionId = section.id; blank.dataset.seriesId = series.id;
+      return blank;
     }
     function setupColumnLoading() {
       state.columnObserver?.disconnect?.(); state.columnObserver = null;
@@ -449,10 +526,12 @@
       return { items, total, hasMore: items.length < total };
     }
     function renderSection(series, section, rows, selected) {
-      const group = el('section', 'favorite-section'); group.dataset.favoriteSection = section.id; group.dataset.seriesId = series.id;
-      const head = el('div', 'favorite-section-head'); const title = el('h4', '', string(section.name, section.id)); title.tabIndex = -1;
+      const group = el('section', 'favorite-section'); group.dataset.favoriteSection = section.id; group.dataset.seriesId = series.id; group.style.setProperty('--favorite-accent', string(section.color, '#287EA4'));
+      const head = el('div', 'favorite-section-head'); head.dataset.favoriteSectionHead = section.id; head.dataset.seriesId = series.id; head.draggable = true;
+      const title = el('button', 'favorite-section-title', string(section.name, section.id)); title.type = 'button'; title.dataset.favoriteAction = 'select-section'; title.dataset.sectionId = section.id; title.dataset.seriesId = series.id;
       const add = button('plus', label('favorites.newTag', '新增单标签'), 'new-tag'); add.dataset.seriesId = series.id; add.dataset.sectionId = section.id;
-      head.append(title, el('span', 'favorite-section-count', rows.total), add);
+      const color = el('input', 'favorite-section-color'); color.type = 'color'; color.value = /^#[0-9a-f]{6}$/i.test(section.color || '') ? section.color : '#287EA4'; color.dataset.favoriteSectionColor = section.id; color.dataset.seriesId = series.id; color.title = label('favorites.sectionColor', '标签栏颜色'); color.setAttribute('aria-label', color.title);
+      head.append(title, el('span', 'favorite-section-count', rows.total), color, add);
       if (section.id !== 'root') {
         const menu = el('details', 'favorite-series-menu'); const summary = el('summary', '', '⋯'); summary.title = label('favorites.sectionActions', '子分类操作'); summary.setAttribute('aria-label', summary.title);
         const menuBody = el('div', 'favorite-series-menu-body');
@@ -466,8 +545,7 @@
         menu.append(summary, menuBody); head.append(menu);
       }
       group.append(head);
-      const list = el('div', 'favorite-entry-list'); rows.items.forEach(entry => list.append(renderEntry(entry, selected.has(entry.id)))); group.append(list);
-      if (!rows.total) list.append(el('p', 'favorites-empty-column', state.recent ? label('favorites.noRecent', '还没有最近复制记录') : label('favorites.emptySection', '此子分类暂无收藏')));
+      const list = el('div', 'favorite-entry-list'); rows.items.forEach(entry => list.append(renderEntry(entry, selected.has(entry.id)))); list.append(renderQuickBlank(series, section)); group.append(list);
       if (rows.hasMore) { const more = actionTextButton('load-column', label('favorites.loadMore', '加载更多')); more.dataset.seriesId = series.id; more.dataset.sectionId = section.id; group.append(more); }
       return group;
     }
@@ -512,6 +590,7 @@
       const down = button('arrow-down', label('favorites.moveDown', '下移'), 'move-down'); down.dataset.entryId = entry.id;
       const grip = button('grip-vertical', label('favorites.drag', '拖动排序'), '', 'favorite-drag-handle'); grip.tabIndex = -1;
       actions.append(copyButton, edit, expand, up, down, grip); item.append(manage, main, actions);
+      if (entry.note) item.append(el('span', 'favorite-note-popover', entry.note));
       if (state.expanded.has(entry.id)) {
         const detail = el('div', 'favorite-entry-detail');
         const inlineTitle = el('input'); inlineTitle.type = 'text'; inlineTitle.value = string(entry.title); inlineTitle.placeholder = label('favorites.entryTitle', '名称'); inlineTitle.dataset.favoriteInlineField = 'title'; inlineTitle.dataset.entryId = entry.id;
@@ -868,6 +947,18 @@
     }
 
     async function structureAction(action, target) {
+      if (action === 'new-series-tab') {
+        if (!await finishEditorBeforeMutation()) return false;
+        const result = safeCall('saveSeries', { name: `${label('favorites.newPage', '新建收藏页')} ${seriesRows().length + 1}` });
+        if (result?.ok) { state.seriesId = result.data.id; state.sectionId = ''; savePreferences({ activeSeriesId: state.seriesId }); render(); }
+        return Boolean(result?.ok);
+      }
+      if (action === 'new-section-tab') {
+        if (!await finishEditorBeforeMutation()) return false;
+        const seriesId = target.dataset.seriesId || state.seriesId; const result = safeCall('saveSection', { seriesId, name: `${label('favorites.newSectionTab', '新建标签栏')} ${sectionRows(seriesId).length + 1}` });
+        if (result?.ok) { state.seriesId = seriesId; state.sectionId = result.data.id; render(); }
+        return Boolean(result?.ok);
+      }
       if (action === 'new-series') {
         if (state.editor && !await finishEditorBeforeMutation()) return false;
         return openNameDialog(() => label('favorites.seriesName', '系列名称'), '', name => {
@@ -908,15 +999,24 @@
     }
 
     async function handleClick(event) {
-      const target = event.target.closest?.('[data-favorite-action], [data-favorite-copy], [data-favorite-edit], [data-favorite-expand], [data-favorite-select], [data-favorite-locate]'); if (!target || !host.contains(target)) return;
+      const target = event.target.closest?.('[data-favorite-action], [data-favorite-copy], [data-favorite-edit], [data-favorite-expand], [data-favorite-select], [data-favorite-locate], [data-favorite-quick-new]'); if (!target || !host.contains(target)) return;
       if (target.dataset.favoriteCopy) return void copyEntry(target.dataset.favoriteCopy, false);
       if (target.dataset.favoriteEdit) return void openEditor(target.dataset.favoriteEdit);
       if (target.dataset.favoriteExpand) { const id = target.dataset.favoriteExpand; state.expanded.has(id) ? state.expanded.delete(id) : state.expanded.add(id); render(); return; }
       if (target.dataset.favoriteSelect) return void copyEntry(target.dataset.favoriteSelect, true);
       if (target.dataset.favoriteLocate) return void focusEntry(target.dataset.favoriteLocate);
       const action = target.dataset.favoriteAction;
+      if (Object.prototype.hasOwnProperty.call(target.dataset, 'favoriteQuickNew')) return void openQuickEditor(target.dataset.seriesId, target.dataset.sectionId);
+      if (action === 'quick-close' || action === 'quick-cancel') { closeQuickEditor(); return; }
+      if (action === 'quick-save') return void saveQuickEditor();
+      if (action === 'context-rename') return void contextRename();
+      if (action === 'context-delete') return void contextDelete();
+      if (action === 'context-edit') { const targetContext = state.contextTarget; closeContextMenu(); if (targetContext?.kind === 'series') return void structureAction('rename-series', { dataset: { seriesId: targetContext.id } }); return; }
       if (action === 'dialog-cancel') { closeNameDialog(); return; }
       if (action === 'dialog-confirm') { submitNameDialog(); return; }
+      if (action === 'new-series-tab') return void structureAction('new-series-tab', target);
+      if (action === 'new-section-tab') return void structureAction('new-section-tab', target);
+      if (action === 'select-section') { state.sectionId = target.dataset.sectionId; renderSubanchors(); renderShelf(); host.querySelector(`[data-favorite-section="${cssEscape(state.sectionId)}"]`)?.scrollIntoView?.({ behavior: 'smooth', inline: 'center' }); return; }
       if (['new-series', 'rename-series', 'new-section', 'rename-section', 'delete-section', 'delete-series', 'delete-series-all'].includes(action)) return void structureAction(action, target);
       if (action === 'new-tag') return void openCreate({ kind: 'tag', seriesId: target.dataset.seriesId || state.seriesId, sectionId: target.dataset.sectionId === 'root' ? null : target.dataset.sectionId });
       if (action === 'new-bundle') return void openCreate({ kind: 'bundle', seriesId: state.seriesId || undefined });
@@ -961,20 +1061,30 @@
     }
     function renderSubanchors() {
       const nav = host.querySelector('[data-favorite-subanchors]'); nav.replaceChildren(); nav.hidden = !state.seriesId; if (!state.seriesId) return;
-      const rows = columnsFor(state.seriesId); const hidden = hiddenSections(); const allVisible = rows.every(row => !hidden.has(row.id));
-      nav.append(actionTextButton('toggle-all-sections', allVisible ? label('favorites.deselectAllSections', '取消全选') : label('favorites.selectAllSections', '全选')));
+      const rows = columnsFor(state.seriesId);
       rows.forEach(row => {
-        const item = el('label', 'favorite-section-choice'); const check = el('input'); check.type = 'checkbox'; check.checked = !hidden.has(row.id); check.dataset.favoriteSectionToggle = row.id;
-        item.classList.toggle('is-active', check.checked); item.append(check, doc.createTextNode(string(row.name, row.id))); nav.append(item);
+        const item = actionTextButton('select-section', string(row.name, row.id)); item.dataset.sectionId = row.id; item.dataset.seriesId = state.seriesId; item.dataset.favoriteSectionTab = row.id; item.draggable = true; item.classList.toggle('is-active', row.id === state.sectionId); item.style.setProperty('--favorite-accent', string(row.color, '#287EA4')); nav.append(item);
       });
+      const plus = button('plus', label('favorites.newSection', '新建标签栏'), 'new-section-tab'); plus.dataset.seriesId = state.seriesId; nav.append(plus);
     }
     function handleInput(event) {
       if (event.target.matches('[data-favorite-import-text]')) { invalidateImportPreview(); return; }
       if (event.target.matches('[data-favorite-field]')) { readDraftFromFields(event.target); scheduleSave(); }
     }
+    function handleContextMenu(event) {
+      const series = event.target.closest?.('[data-favorite-series-tab]'); const section = event.target.closest?.('[data-favorite-section-tab], [data-favorite-section-head]');
+      if (!series && !section) return;
+      event.preventDefault(); openContextMenu(series ? 'series' : 'section', series?.dataset.seriesId || section?.dataset.sectionId || section?.dataset.favoriteSectionHead, event);
+    }
     function handleChange(event) {
       const target = event.target;
-      if (target.matches('[data-favorite-section-toggle]')) { void setSectionVisibility(target.dataset.favoriteSectionToggle, target.checked); return; }
+      if (target.matches('[data-favorite-section-color]')) { safeCall('saveSection', { id: target.dataset.favoriteSectionColor, seriesId: target.dataset.seriesId, name: sectionRows(target.dataset.seriesId).find(row => row.id === target.dataset.favoriteSectionColor)?.name || '', color: target.value }); render(); return; }
+      if (target.matches('[data-favorite-context-color]')) {
+        const context = state.contextTarget; if (!context) return;
+        if (context.kind === 'series') safeCall('setSeriesColors', [context.id], { mode: 'custom', color: target.value });
+        else { const row = sectionRows(context.seriesId).find(item => item.id === context.id); if (row) safeCall('saveSection', { id: row.id, seriesId: row.seriesId, name: row.name, color: target.value }); }
+        closeContextMenu(); render(); return;
+      }
       if (target.matches('[data-favorite-import-file]')) { void readImportFile(target); return; }
       if (target.matches('[data-favorite-inline-field]')) { void saveInlineField(target); return; }
       if (target.matches('[data-favorite-import-series]')) { renderImportSections(); invalidateImportPreview(); return; }
@@ -987,7 +1097,7 @@
       if (target.matches('[data-favorite-primary]')) { savePreferences({ primary: target.value }); renderShelf(); return; }
       if (target.matches('[data-favorite-secondary]')) { savePreferences({ showSecondary: target.checked }); renderShelf(); return; }
       if (target.matches('[data-favorite-compact]')) { savePreferences({ compact: target.checked }); return; }
-      if (target.matches('[data-favorite-series-color]')) { safeCall('setSeriesColors', state.bulkSeries.size ? [...state.bulkSeries] : [target.dataset.favoriteSeriesColor], { mode: 'custom', color: target.value }); render(); return; }
+      if (target.matches('[data-favorite-series-color]')) { safeCall('setSeriesColors', [target.dataset.favoriteSeriesColor], { mode: 'custom', color: target.value }); render(); return; }
       if (target.matches('[data-favorite-bulk-move]') && target.value) { applyBulk('move-selected'); return; }
       if (target.matches('[data-favorite-field="seriesId"]')) { readDraftFromFields(target); editorSeriesOptions(target.value, null); readDraftFromFields(host.querySelector('[data-favorite-field="sectionId"]')); scheduleSave(); }
     }
@@ -1004,9 +1114,26 @@
       if ((event.ctrlKey || event.metaKey) && !editable && event.key.toLowerCase() === 'z') { event.preventDefault(); if (await finishEditorBeforeMutation()) { safeCall(event.shiftKey ? 'redo' : 'undo'); render(); } }
       if ((event.ctrlKey || event.metaKey) && !editable && event.key.toLowerCase() === 'y') { event.preventDefault(); if (await finishEditorBeforeMutation()) { safeCall('redo'); render(); } }
     }
-    function handleDragStart(event) { const entry = event.target.closest?.('[data-favorite-entry]'); state.draggedId = entry?.dataset.favoriteEntry || ''; event.dataTransfer?.setData?.('text/plain', state.draggedId); }
-    function handleDragOver(event) { if (event.target.closest?.('[data-favorite-entry]')) event.preventDefault(); }
+    function handleDragStart(event) {
+      const entry = event.target.closest?.('[data-favorite-entry]');
+      const section = event.target.closest?.('[data-favorite-section-head], [data-favorite-section-tab]');
+      const series = event.target.closest?.('[data-favorite-series-tab]');
+      if (section) state.draggedStructure = { kind: 'section', id: section.dataset.sectionId || section.dataset.favoriteSectionHead, seriesId: section.dataset.seriesId };
+      else if (series) state.draggedStructure = { kind: 'series', id: series.dataset.seriesId };
+      else state.draggedId = entry?.dataset.favoriteEntry || '';
+      event.dataTransfer?.setData?.('text/plain', state.draggedId || state.draggedStructure?.id || '');
+    }
+    function handleDragOver(event) { if (event.target.closest?.('[data-favorite-entry], [data-favorite-section-head], [data-favorite-section-tab], [data-favorite-series-tab]')) event.preventDefault(); }
     async function handleDrop(event) {
+      const structureTarget = event.target.closest?.('[data-favorite-section-head], [data-favorite-section-tab], [data-favorite-series-tab]');
+      if (structureTarget && state.draggedStructure) {
+        event.preventDefault(); const kind = state.draggedStructure.kind; const targetId = structureTarget.dataset.sectionId || structureTarget.dataset.favoriteSectionHead || structureTarget.dataset.seriesId;
+        if (targetId && targetId !== state.draggedStructure.id && (kind === 'series' || structureTarget.dataset.seriesId === state.draggedStructure.seriesId)) {
+          const rows = kind === 'series' ? seriesRows() : sectionRows(state.draggedStructure.seriesId); const ids = rows.map(row => row.id); const from = ids.indexOf(state.draggedStructure.id); const to = ids.indexOf(targetId);
+          if (from >= 0 && to >= 0) { ids.splice(from, 1); ids.splice(to, 0, state.draggedStructure.id); safeCall('reorder', { kind, parentId: kind === 'series' ? null : state.draggedStructure.seriesId, ids }); render(); }
+        }
+        state.draggedStructure = null; return;
+      }
       const target = event.target.closest?.('[data-favorite-entry]'); const sourceId = state.draggedId || event.dataTransfer?.getData?.('text/plain'); if (!target || !sourceId || target.dataset.favoriteEntry === sourceId) return;
       event.preventDefault(); const source = safeCall('getEntry', sourceId); const destination = safeCall('getEntry', target.dataset.favoriteEntry); if (!source || !destination || source.seriesId !== destination.seriesId || source.sectionId !== destination.sectionId) return;
       if (!await finishEditorBeforeMutation()) return;
@@ -1016,7 +1143,7 @@
     function bind() {
       if (!host || state.bound || state.destroyed) return;
       ensureShell(); state.bound = true;
-      host.addEventListener('click', handleClick); host.addEventListener('input', handleInput); host.addEventListener('change', handleChange); host.addEventListener('submit', handleSubmit); host.addEventListener('focusout', handleFocusOut);
+      host.addEventListener('click', handleClick); host.addEventListener('contextmenu', handleContextMenu); host.addEventListener('input', handleInput); host.addEventListener('change', handleChange); host.addEventListener('submit', handleSubmit); host.addEventListener('focusout', handleFocusOut);
       host.addEventListener('compositionstart', handleCompositionStart); host.addEventListener('compositionend', handleCompositionEnd);
       host.addEventListener('keydown', handleKeydown); host.addEventListener('dragstart', handleDragStart); host.addEventListener('dragover', handleDragOver); host.addEventListener('drop', handleDrop); host.addEventListener('scroll', handleShelfScroll, true);
       state.unsubscribe = favorites?.subscribe?.((event = {}) => {
@@ -1065,7 +1192,7 @@
     function destroy() {
       if (!host || state.destroyed) return;
       state.destroyed = true; state.active = false; win.clearTimeout(state.saveTimer); state.saveTimer = null;
-      host.removeEventListener('click', handleClick); host.removeEventListener('input', handleInput); host.removeEventListener('change', handleChange); host.removeEventListener('submit', handleSubmit); host.removeEventListener('focusout', handleFocusOut);
+      host.removeEventListener('click', handleClick); host.removeEventListener('contextmenu', handleContextMenu); host.removeEventListener('input', handleInput); host.removeEventListener('change', handleChange); host.removeEventListener('submit', handleSubmit); host.removeEventListener('focusout', handleFocusOut);
       host.removeEventListener('compositionstart', handleCompositionStart); host.removeEventListener('compositionend', handleCompositionEnd);
       host.removeEventListener('keydown', handleKeydown); host.removeEventListener('dragstart', handleDragStart); host.removeEventListener('dragover', handleDragOver); host.removeEventListener('drop', handleDrop); host.removeEventListener('scroll', handleShelfScroll, true); cancelColumnLoading();
       try { state.unsubscribe?.(); } catch { /* optional subscription */ } state.unsubscribe = null;

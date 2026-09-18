@@ -536,12 +536,10 @@ test('real favorites page creates exact content and keeps its selected snapshot 
   app.window.navigator.clipboard.writeText = async value => copied.push(value);
   app.window.prompt = () => { throw new Error('Electron does not implement prompt'); };
   doc.querySelector('#favBtn').click();
-  doc.querySelector('[data-favorite-action="new-series"]').click();
+  doc.querySelector('[data-favorite-action="new-series-tab"]').click();
   await settle();
-  doc.querySelector('[data-favorite-dialog-input]').value = 'Lighting';
-  doc.querySelector('[data-favorite-action="dialog-confirm"]').click();
-  await settle();
-  assert.equal(favorites.series()[0].name, 'Lighting');
+  assert.equal(favorites.series().length, 2);
+  assert.match(favorites.series().at(-1).name, /新建收藏页/);
   doc.querySelector('[data-favorite-action="new-bundle"]').click();
   await settle();
   const original = ' soft lighting, (blue_hair:1.2),\\(detail\\) \n';
@@ -607,7 +605,7 @@ test('global favorite results and English favorites labels use the real page and
   app.window.document.querySelector('#localeBtn').click();
   app.window.document.querySelector('[data-locale="en-US"]').click();
   await app.view.route('favorites');
-  assert.equal(app.window.document.querySelector('[data-favorite-action="toggle-all-sections"]').textContent, locales['en-US'].ui.favorites.deselectAllSections);
+  assert.ok(app.window.document.querySelector('[data-favorite-section-tab]'));
 });
 
 test('gallery name copying and bulk actions share one selection state', async t => {

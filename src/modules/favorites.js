@@ -267,12 +267,17 @@ function createFavorites(options = {}) {
       const row = candidate.sections.find(item => item.id === id);
       if (!row) return errorResult('SECTION_NOT_FOUND', '子分类不存在');
       row.seriesId = seriesId; row.name = patch.name.trim();
+      if (patch.color !== undefined) {
+        if (typeof patch.color !== 'string' || !/^#[0-9a-f]{6}$/i.test(patch.color)) return errorResult('INVALID_SECTION', '子分类颜色无效');
+        row.color = patch.color;
+      }
       candidate.entries.filter(entry => entry.sectionId === id).forEach(entry => { entry.seriesId = seriesId; });
     } else {
       id = makeId('section', candidate);
       const peers = candidate.sections.filter(row => row.seriesId === seriesId);
       const order = peers.length ? Math.max(...peers.map(row => row.order)) + 1 : 0;
-      candidate.sections.push({ id, seriesId, name: patch.name.trim(), order });
+      const color = typeof patch.color === 'string' && /^#[0-9a-f]{6}$/i.test(patch.color) ? patch.color : PALETTE[peers.length % PALETTE.length];
+      candidate.sections.push({ id, seriesId, name: patch.name.trim(), order, color });
     }
     return commit(candidate, doc => doc.sections.find(row => row.id === id));
   }
