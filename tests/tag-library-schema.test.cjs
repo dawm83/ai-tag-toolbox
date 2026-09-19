@@ -2,7 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { makeRecord, makeBase, emptyUserDocument } = require('./fixtures/tag-library.cjs');
-const { validateTag, validateLibraryDocument, validateCommand, validateBase } = require('../src/modules/tag-library/schema');
+const { validateTag, validateLibraryDocument, validateLibraryDocumentStructure, validateCommand, validateBase } = require('../src/modules/tag-library/schema');
 
 test('content is editable independently of immutable identity and is never normalized', () => {
   const record = makeRecord({ content: ' (blue hair:1.2)\nLong_Hair\\(x\\) ', kind: 'bundle', displayName: '', aliases: [], note: '' });
@@ -128,4 +128,53 @@ test('character overrides only edit existing base identities and cannot invent s
   doc.characterOverrides[0].generalTagIds = ['long_hair'];
   doc.selection = [{ kind: 'character', characterId: 'alice', includeSeries: false, generalTagIds: ['long_hair'], specificTagIds: [] }];
   assert.equal(validateLibraryDocument(doc, base).ok, true);
+});
+
+test('structural document validation is shared while reference checks still require the base', () => {
+  const base = makeBase();
+  const valid = emptyUserDocument(base);
+  assert.equal(validateLibraryDocumentStructure(valid).ok, true);
+  assert.equal(validateLibraryDocument(valid, base).ok, true);
+
+  const malformed = [
+    d => d.customTags.push(makeRecord({ id: 'custom', source: { kind: 'custom', key: null }, aliases: ['same', 'same'] })),
+    d => d.customTags.push(makeRecord({ id: 'custom', source: { kind: 'custom', key: null }, createdAt: 2, updatedAt: 1 })),
+    d => { d.favoritePages[0].name = 'n'.repeat(81); },
+    d => { d.unresolved = [{ id: 'u', sourceKey: 'legacy', sourceId: null, reason: 'invalid', payload: Object.create({ inherited: true }) }]; }
+  ];
+  for (const mutate of malformed) {
+    const document = emptyUserDocument(base); mutate(document);
+    const structure = validateLibraryDocumentStructure(document);
+    const complete = validateLibraryDocument(document, base);
+    assert.equal(structure.ok, false, mutate.toString());
+    assert.equal(complete.ok, false, mutate.toString());
+    assert.equal(structure.error.code, complete.error.code, mutate.toString());
+    assert.deepEqual(structure.error.fields, complete.error.fields, mutate.toString());
+  }
+
+  let getterCalls = 0;
+  const accessor = {};
+  Object.defineProperty(accessor, 'secret', { enumerable: true, get() { getterCalls += 1; throw new Error('secret-value'); } });
+  const accessorDocument = emptyUserDocument(base);
+  accessorDocument.unresolved = [{ id: 'u', sourceKey: 'legacy', sourceId: null, reason: 'invalid', payload: accessor }];
+  for (const validate of [validateLibraryDocumentStructure, value => validateLibraryDocument(value, base)]) {
+    const checked = validate(accessorDocument);
+    assert.equal(checked.ok, false);
+    assert.doesNotMatch(JSON.stringify(checked), /secret-value/);
+  }
+  assert.equal(getterCalls, 0);
+
+  const cyclic = {}; cyclic.self = cyclic;
+  const sparse = []; sparse.length = 1;
+  for (const payload of [cyclic, { value: 1n }, { value: undefined }, { value: NaN }, { value: () => true }, sparse]) {
+    const unsafe = emptyUserDocument(base);
+    unsafe.unresolved = [{ id: 'u', sourceKey: 'legacy', sourceId: null, reason: 'invalid', payload }];
+    assert.equal(validateLibraryDocumentStructure(unsafe).error.code, 'INVALID_DOCUMENT');
+    assert.equal(validateLibraryDocument(unsafe, base).error.code, 'INVALID_DOCUMENT');
+  }
+
+  const dangling = emptyUserDocument(base);
+  dangling.memberships = [{ id: 'm', tagId: 'missing', groupId: 'daily', order: 0, pinned: false }];
+  assert.equal(validateLibraryDocumentStructure(dangling).ok, true);
+  assert.equal(validateLibraryDocument(dangling, base).error.code, 'UNRESOLVED_REFERENCE');
 });

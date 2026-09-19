@@ -41,6 +41,15 @@ test('read distinguishes malformed JSON, unsupported schema, malformed v2 shape,
   await fs.writeFile(filePath, JSON.stringify(missingField), 'utf8');
   await assert.rejects(createLibraryRepository({ filePath, backupDir }).read(), error => error.code === 'INVALID_DOCUMENT');
 
+  const malformedNested = structuredClone(document);
+  malformedNested.customTags.push({
+    id: 'custom', kind: 'tag', content: 'custom', displayName: '', aliases: ['same', 'same'], note: '', adult: false,
+    searchable: true, categoryId: 'hair', subcategoryId: 'color', usages: ['general'], source: { kind: 'custom', key: null },
+    revision: 0, createdAt: 0, updatedAt: 0
+  });
+  await fs.writeFile(filePath, JSON.stringify(malformedNested), 'utf8');
+  await assert.rejects(createLibraryRepository({ filePath, backupDir }).read(), error => error.code === 'INVALID_DOCUMENT');
+
   const denied = Object.assign(new Error('private path and sk-secret-value'), { code: 'EACCES' });
   const unreadable = createLibraryRepository({ filePath, backupDir, fsImpl: injected({ readFile: async () => { throw denied; } }) });
   await assert.rejects(unreadable.read(), error => {
@@ -225,12 +234,18 @@ test('backup and temporary paths cannot escape the host-supplied library directo
 test('backupLegacy uses an exclusive content-addressed backup and excludes unrelated secrets', async t => {
   const { backupDir, filePath } = await fixture(t);
   const repo = createLibraryRepository({ filePath, backupDir });
+  const keys = [
+    'favorites_shelf_v1', 'favorites_selection_v1', 'favorites_recent_v1', 'rewrite_favorites',
+    'rewrite_character_selection_v1', 'rewrite_character_edits_v1', 'rewrite_character_edit_history_v1',
+    'rewrite_tag_edit_history_v1', 'rewrite_custom_tags', 'rewrite_selected'
+  ];
+  const storedKeys = keys.map((key, index) => index % 2 ? `ai-tag-toolbox-rewrite:app:${key}` : key);
   const legacy = {
     version: 1,
     values: {
-      favorites_shelf_v1: { entries: ['blue hair'] },
-      'ai-tag-toolbox-rewrite:app:rewrite_character_edits_v1': { alice: { nameZh: '爱丽丝' } },
+      ...Object.fromEntries(storedKeys.map((key, index) => [key, { revision: index }])),
       settings: { apiKey: 'sk-do-not-copy' },
+      api_key: 'sk-also-do-not-copy',
       sessions: [{ private: 'do-not-copy' }],
       debug_log: 'private log'
     }
@@ -241,12 +256,20 @@ test('backupLegacy uses an exclusive content-addressed backup and excludes unrel
   const bytes = await fs.readFile(path.join(backupDir, first.id));
   assert.equal(crypto.createHash('sha256').update(bytes).digest('hex'), first.sha256);
   const saved = JSON.parse(bytes);
-  assert.deepEqual(Object.keys(saved.values).sort(), [
-    'ai-tag-toolbox-rewrite:app:rewrite_character_edits_v1',
-    'favorites_shelf_v1'
-  ]);
-  assert.doesNotMatch(bytes.toString('utf8'), /sk-do-not-copy|do-not-copy|private log/);
-  assert.equal((await fs.readdir(backupDir)).filter(name => name.startsWith('legacy-v1-')).length, 1);
+  assert.deepEqual(Object.keys(saved.values).sort(), storedKeys.sort());
+  assert.doesNotMatch(bytes.toString('utf8'), /sk-do-not-copy|sk-also-do-not-copy|do-not-copy|private log/);
+
+  const customChanged = structuredClone(legacy);
+  customChanged.values.rewrite_custom_tags = { revision: 999 };
+  const selectedKey = 'ai-tag-toolbox-rewrite:app:rewrite_selected';
+  const selectedChanged = structuredClone(legacy);
+  selectedChanged.values[selectedKey] = { revision: 999 };
+  const customBackup = await repo.backupLegacy(customChanged);
+  const selectedBackup = await repo.backupLegacy(selectedChanged);
+  assert.notEqual(customBackup.sha256, first.sha256);
+  assert.notEqual(selectedBackup.sha256, first.sha256);
+  assert.notEqual(customBackup.sha256, selectedBackup.sha256);
+  assert.equal((await fs.readdir(backupDir)).filter(name => name.startsWith('legacy-v1-')).length, 3);
 });
 
 test('a partial exclusive legacy backup is removed so the same backup can be retried', async t => {

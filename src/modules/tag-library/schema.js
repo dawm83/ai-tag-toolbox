@@ -28,6 +28,25 @@ function result(data, fn) {
     return { ok: false, error: { code: error.code, message: '标签库数据校验失败', fields: [error.path] } };
   }
 }
+function jsonSafe(value, path, ancestors = new WeakSet(), depth = 0) {
+  if (depth > 100) fail(path, 'INVALID_DOCUMENT');
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return;
+  if (typeof value === 'number' && Number.isFinite(value)) return;
+  if (typeof value !== 'object' || ancestors.has(value)) fail(path, 'INVALID_DOCUMENT');
+  const isArray = Array.isArray(value);
+  if (!isArray && !object(value)) fail(path, 'INVALID_DOCUMENT');
+  const keys = Reflect.ownKeys(value);
+  if (isArray && keys.length !== value.length + 1) fail(path, 'INVALID_DOCUMENT');
+  ancestors.add(value);
+  for (const key of keys) {
+    if (isArray && key === 'length') continue;
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (typeof key !== 'string' || !descriptor.enumerable || !own(descriptor, 'value')) fail(path, 'INVALID_DOCUMENT');
+    if (isArray && (!/^(0|[1-9]\d*)$/.test(key) || Number(key) >= value.length)) fail(path, 'INVALID_DOCUMENT');
+    jsonSafe(descriptor.value, path, ancestors, depth + 1);
+  }
+  ancestors.delete(value);
+}
 function patch(p, path, allowed = PATCH_FIELDS) {
   shape(p, [], allowed, path);
   for (const [k, v] of Object.entries(p)) {
@@ -92,9 +111,13 @@ function linkReferences(characters, tags) {
     if (ref(tags, tagId, 'characterLinks').kind !== 'tag') fail('characterLinks', 'TAG_IN_USE');
   }
 }
-function mapReferences(value, map, path) {
+function idMap(value, path) {
   if (!object(value)) fail(path);
-  for (const [key, target] of Object.entries(value)) { id(key, path); id(target, path); ref(map, target, path); }
+  for (const [key, target] of Object.entries(value)) { id(key, path); id(target, path); }
+}
+function mapReferences(value, map, path) {
+  idMap(value, path);
+  for (const target of Object.values(value)) ref(map, target, path);
 }
 function baseIndexes(base) {
   shape(base, ['tags', 'categories', 'subcategories', 'characterLinks', 'legacyIds', 'fingerprint'], ['metadataById', 'characterInfo'], 'base');
@@ -132,53 +155,76 @@ function baseIndexes(base) {
   return { tags, categories, subs, characters };
 }
 const DOCUMENT_FIELDS = ['schemaVersion', 'libraryId', 'revision', 'baseFingerprint', 'customTags', 'tagOverrides', 'customCategories', 'customSubcategories', 'categoryOverrides', 'subcategoryOverrides', 'favoritePages', 'favoriteGroups', 'memberships', 'characterOverrides', 'selection', 'recentTagIds', 'migration', 'unresolved'];
-function document(doc, base) {
+function documentStructure(doc) {
   if (!object(doc)) fail('document', 'INVALID_DOCUMENT');
+  jsonSafe(doc, 'document');
   if (doc.schemaVersion !== 2) fail('schemaVersion', 'UNSUPPORTED_VERSION');
   shape(doc, DOCUMENT_FIELDS, [], 'document'); id(doc.libraryId, 'libraryId'); integer(doc.revision, 'revision'); str(doc.baseFingerprint, 'baseFingerprint');
-  const { tags, categories, subs, characters } = baseIndexes(base);
-  if (doc.baseFingerprint !== base.fingerprint) fail('baseFingerprint', 'INVALID_DOCUMENT');
-  function append(rows, map, validator, field) { const added = indexed(rows, validator, field); for (const [key, row] of added) { if (map.has(key)) fail(field); map.set(key, row); } }
-  append(doc.customCategories, categories, category, 'customCategories');
-  append(doc.customSubcategories, subs, (v, p) => category(v, p, true), 'customSubcategories');
+  const customCategories = indexed(doc.customCategories, category, 'customCategories');
+  const customSubcategories = indexed(doc.customSubcategories, (v, p) => category(v, p, true), 'customSubcategories');
   for (const c of doc.customCategories) if (c.source !== 'custom') fail('customCategories.source');
   for (const s of doc.customSubcategories) if (s.source !== 'custom') fail('customSubcategories.source');
-  append(doc.customTags, tags, tag, 'customTags');
+  const customTags = indexed(doc.customTags, tag, 'customTags');
   for (const t of doc.customTags) if (t.source.kind === 'bundled') fail('customTags.source');
-  for (const [field, map] of [['categoryOverrides', categories], ['subcategoryOverrides', subs]]) {
-    const overrides = indexed(doc[field], (o, p) => { shape(o, ['id'], ['name', 'order'], p); id(o.id, p); if (own(o, 'name')) str(o.name, p, LIMITS.structureName); if (own(o, 'order')) integer(o.order, p); }, field);
-    for (const [key, o] of overrides) map.set(key, { ...ref(map, key, field), ...o });
-  }
-  const overrides = indexed(doc.tagOverrides, (o, p) => { shape(o, ['tagId', 'patch', 'revision', 'updatedAt'], [], p); id(o.tagId, p); patch(o.patch, p); integer(o.revision, p); integer(o.updatedAt, p); }, 'tagOverrides', 'tagId');
-  for (const [key, o] of overrides) { const next = { ...ref(tags, key, 'tagOverrides.tagId'), ...o.patch, revision: o.revision, updatedAt: o.updatedAt }; tag(next, 'tagOverrides'); tags.set(key, next); }
-  taxonomy(tags, categories, subs);
+  const structureOverride = (o, p) => { shape(o, ['id'], ['name', 'order'], p); id(o.id, p); if (own(o, 'name')) str(o.name, p, LIMITS.structureName); if (own(o, 'order')) integer(o.order, p); };
+  const categoryOverrides = indexed(doc.categoryOverrides, structureOverride, 'categoryOverrides');
+  const subcategoryOverrides = indexed(doc.subcategoryOverrides, structureOverride, 'subcategoryOverrides');
+  const tagOverrides = indexed(doc.tagOverrides, (o, p) => { shape(o, ['tagId', 'patch', 'revision', 'updatedAt'], [], p); id(o.tagId, p); patch(o.patch, p); integer(o.revision, p); integer(o.updatedAt, p); }, 'tagOverrides', 'tagId');
   const pages = indexed(doc.favoritePages, (p, field) => { shape(p, ['id', 'name', 'order', 'color', 'colorMode'], [], field); id(p.id, field); str(p.name, field, LIMITS.structureName); integer(p.order, field); color(p.color, field); enumeration(p.colorMode, ['auto', 'custom'], field); }, 'favoritePages');
-  const groups = indexed(doc.favoriteGroups, (g, field) => { shape(g, ['id', 'pageId', 'name', 'order', 'color'], [], field); id(g.id, field); id(g.pageId, field); str(g.name, field, LIMITS.structureName); integer(g.order, field); color(g.color, field); ref(pages, g.pageId, field); }, 'favoriteGroups');
+  const groups = indexed(doc.favoriteGroups, (g, field) => { shape(g, ['id', 'pageId', 'name', 'order', 'color'], [], field); id(g.id, field); id(g.pageId, field); str(g.name, field, LIMITS.structureName); integer(g.order, field); color(g.color, field); }, 'favoriteGroups');
   const pairs = new Map();
   const memberships = indexed(doc.memberships, (m, field) => {
-    shape(m, ['id', 'tagId', 'groupId', 'order', 'pinned'], [], field); id(m.id, field); id(m.tagId, field); id(m.groupId, field); integer(m.order, field); boolean(m.pinned, field); ref(tags, m.tagId, field); ref(groups, m.groupId, field);
+    shape(m, ['id', 'tagId', 'groupId', 'order', 'pinned'], [], field); id(m.id, field); id(m.tagId, field); id(m.groupId, field); integer(m.order, field); boolean(m.pinned, field);
     if (!pairs.has(m.groupId)) pairs.set(m.groupId, new Set()); const set = pairs.get(m.groupId); if (set.has(m.tagId)) fail(field); set.add(m.tagId);
   }, 'memberships');
   orders(pages, null, 'favoritePages.order'); orders(groups, 'pageId', 'favoriteGroups.order'); orders(memberships, 'groupId', 'memberships.order');
   const charOverrides = indexed(doc.characterOverrides, links, 'characterOverrides', 'characterId');
-  for (const [key, l] of charOverrides) {
-    ref(characters, key, 'characterOverrides.characterId');
-    characters.set(key, l);
-  }
-  linkReferences(characters, tags);
   array(doc.selection, 'selection'); const selected = new Set();
   for (const s of doc.selection) {
     selection(s, 'selection'); const key = JSON.stringify([s.kind, s.tagId || s.characterId || s.id]); if (selected.has(key)) fail('selection'); selected.add(key);
-    if (s.kind === 'tag') ref(tags, s.tagId, 'selection.tagId');
-    if (s.kind === 'character') { const l = ref(characters, s.characterId, 'selection.characterId'); for (const field of ['generalTagIds', 'specificTagIds']) { const available = new Set(l[field]); for (const v of s[field]) if (!available.has(v)) fail(`selection.${field}`, 'UNRESOLVED_REFERENCE'); } }
   }
-  ids(doc.recentTagIds, 'recentTagIds'); for (const v of doc.recentTagIds) ref(tags, v, 'recentTagIds');
+  ids(doc.recentTagIds, 'recentTagIds');
   indexed(doc.unresolved, (u, p) => { shape(u, ['id', 'sourceKey', 'sourceId', 'reason', 'payload'], [], p); id(u.id, p); str(u.sourceKey, p); if (u.sourceId !== null) id(u.sourceId, p); str(u.reason, p); }, 'unresolved');
   if (doc.migration !== null) {
     const m = doc.migration; shape(m, ['id', 'sourceFingerprint', 'completedAt', 'tagIdMap', 'favoriteIdMap', 'characterIdMap', 'counts'], [], 'migration');
     id(m.id, 'migration.id'); str(m.sourceFingerprint, 'migration.sourceFingerprint'); integer(m.completedAt, 'migration.completedAt');
-    mapReferences(m.tagIdMap, tags, 'migration.tagIdMap'); mapReferences(m.favoriteIdMap, memberships, 'migration.favoriteIdMap'); mapReferences(m.characterIdMap, characters, 'migration.characterIdMap');
+    idMap(m.tagIdMap, 'migration.tagIdMap'); idMap(m.favoriteIdMap, 'migration.favoriteIdMap'); idMap(m.characterIdMap, 'migration.characterIdMap');
     const counts = ['sourceTags', 'sourceFavorites', 'linkedFavorites', 'independentFavorites', 'unresolved']; shape(m.counts, counts, [], 'migration.counts'); for (const k of counts) integer(m.counts[k], 'migration.counts');
+  }
+  return { customCategories, customSubcategories, customTags, categoryOverrides, subcategoryOverrides, tagOverrides, pages, groups, memberships, charOverrides };
+}
+function document(doc, base) {
+  const structure = documentStructure(doc);
+  const { tags, categories, subs, characters } = baseIndexes(base);
+  if (doc.baseFingerprint !== base.fingerprint) fail('baseFingerprint', 'INVALID_DOCUMENT');
+  function append(added, map, field) { for (const [key, row] of added) { if (map.has(key)) fail(field); map.set(key, row); } }
+  append(structure.customCategories, categories, 'customCategories');
+  append(structure.customSubcategories, subs, 'customSubcategories');
+  append(structure.customTags, tags, 'customTags');
+  for (const [field, map, overrides] of [['categoryOverrides', categories, structure.categoryOverrides], ['subcategoryOverrides', subs, structure.subcategoryOverrides]]) {
+    for (const [key, override] of overrides) map.set(key, { ...ref(map, key, field), ...override });
+  }
+  for (const [key, override] of structure.tagOverrides) {
+    const next = { ...ref(tags, key, 'tagOverrides.tagId'), ...override.patch, revision: override.revision, updatedAt: override.updatedAt };
+    tag(next, 'tagOverrides'); tags.set(key, next);
+  }
+  taxonomy(tags, categories, subs);
+  for (const group of structure.groups.values()) ref(structure.pages, group.pageId, 'favoriteGroups');
+  for (const membership of structure.memberships.values()) { ref(tags, membership.tagId, 'memberships'); ref(structure.groups, membership.groupId, 'memberships'); }
+  for (const [key, linksValue] of structure.charOverrides) { ref(characters, key, 'characterOverrides.characterId'); characters.set(key, linksValue); }
+  linkReferences(characters, tags);
+  for (const selected of doc.selection) {
+    if (selected.kind === 'tag') ref(tags, selected.tagId, 'selection.tagId');
+    if (selected.kind === 'character') {
+      const character = ref(characters, selected.characterId, 'selection.characterId');
+      for (const field of ['generalTagIds', 'specificTagIds']) { const available = new Set(character[field]); for (const value of selected[field]) if (!available.has(value)) fail(`selection.${field}`, 'UNRESOLVED_REFERENCE'); }
+    }
+  }
+  for (const value of doc.recentTagIds) ref(tags, value, 'recentTagIds');
+  if (doc.migration !== null) {
+    mapReferences(doc.migration.tagIdMap, tags, 'migration.tagIdMap');
+    mapReferences(doc.migration.favoriteIdMap, structure.memberships, 'migration.favoriteIdMap');
+    mapReferences(doc.migration.characterIdMap, characters, 'migration.characterIdMap');
   }
 }
 function choice(c, path) {
@@ -229,6 +275,7 @@ module.exports = {
   LIMITS,
   validateTag: value => result(value, () => tag(value, 'tag')),
   validateBase: value => result(value, () => baseIndexes(value)),
+  validateLibraryDocumentStructure: value => result(value, () => documentStructure(value)),
   validateLibraryDocument: (value, base) => result(value, () => document(value, base)),
   validateCommand: value => result(value, () => command(value))
 };
