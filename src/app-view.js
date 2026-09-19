@@ -2289,7 +2289,26 @@
       const messageText = doc.createElement("p");
       messageText.textContent = pending?.message || "生成任务需要补充信息后继续";
       notice.appendChild(messageText);
-      if (pending?.kind !== "character") return notice;
+      if (pending?.kind !== "character") {
+        if (['connection', 'workflow'].includes(pending?.kind) && message.result?.stopReason !== 'COMFY_SUBMISSION_UNKNOWN') {
+          const resume = doc.createElement('button'); resume.type = 'button'; resume.className = 'generation-resume-connection btn btn-secondary';
+          resume.textContent = localized('ui.ai.resumeDrawing', '恢复原任务');
+          resume.onclick = async () => {
+            if (resume.disabled || assistant?.snapshot?.().busy) return;
+            if (settings().comfyOn !== true) return notify(localized('ui.ai.enableDrawingToResume', '请先确认连接并开启绘图，再恢复原任务'));
+            resume.disabled = true;
+            const label = $("#talkSendBtn")?.textContent || "📤 发送";
+            setTalkBusy(true, label);
+            try {
+              const result = await assistant?.continueGeneration?.(message.id, '', '', { resumeOnly: true, onEvent: handleTalkToolEvent });
+              if (result?.ok === false) notify(result.error?.message || '恢复失败');
+            } catch (error) { notify(error?.message || '恢复失败'); }
+            finally { setTalkBusy(false, label); renderTalk(); refreshCapabilitiesStatus(); }
+          };
+          notice.append(resume);
+        }
+        return notice;
+      }
       const hint = doc.createElement("p");
       hint.className = "muted";
       hint.textContent = `待确认：${str(pending.query)}。已有作品角色可点击候选或重新搜索；原创人物可直接继续。`;
@@ -3202,6 +3221,7 @@
       renderTalk();
       put("#talkStatus", result?.ok === false ? compactTalkStatus(result, "发送失败") : result?.data?.status === "needs_input" ? "等待补充信息" : result?.data?.status === "awaiting_feedback" ? "本轮完成，等待点评" : "完成");
       setTalkBusy(false, label);
+      if (result?.data?.needsInput?.kind === 'connection' || result?.data?.needsInput?.kind === 'workflow') refreshCapabilitiesStatus();
     }
     function confirmClearConversation() {
       const session = assistant?.currentSession?.();

@@ -224,6 +224,7 @@ function createGenerationOrchestrator(options = {}) {
       stopReason: text(source.stopReason),
       events: Array.isArray(source.events) ? clone(source.events).slice(-96) : [],
       errors: Array.isArray(source.errors) ? clone(source.errors).slice(-32) : [],
+      pendingRender: object(source.pendingRender) && text(source.pendingRender.promptId) ? clone(source.pendingRender) : null,
       patchWarnings: Array.isArray(source.patchWarnings) ? clone(source.patchWarnings).slice(-32) : [],
       createdAt: Number(source.createdAt) || Date.now(),
       updatedAt: Number(source.updatedAt) || Date.now()
@@ -296,7 +297,8 @@ function createGenerationOrchestrator(options = {}) {
       rounds: clone(job.rounds),
       stopReason: job.stopReason,
       comparison: job.comparison || null,
-      error: job.error || null
+      error: job.error || null,
+      pendingRender: job.pendingRender || null
     });
   }
   function uiSnapshot(jobId) {
@@ -525,7 +527,7 @@ function createGenerationOrchestrator(options = {}) {
   }
   async function checkPreflight(job, context) {
     if (getSettings()?.comfy?.enabled === false) return needsInput(job, context, { kind: 'workflow', message: '绘图已关闭，已生成的 Tag 可以直接使用；开启绘图后可继续。' });
-    const value = unwrap(await preflight(clone({ mode: job.mode, sourceImageId: job.sourceImageId, workflowProfileId: job.workflowProfileId }), context));
+    const value = unwrap(await preflight(clone({ mode: job.mode, sourceImageId: job.sourceImageId, workflowProfileId: job.workflowProfileId, pendingRender: job.pendingRender }), context));
     if (value?.ready === false || value?.connected === false) return needsInput(job, context, { kind: 'workflow', message: text(value?.error, value?.connected === false ? 'ComfyUI 未连接' : '当前工作流不可用'), workflowProfileId: text(value?.workflowProfileId) });
     job.workflowProfileId = text(value?.workflowProfileId, job.workflowProfileId);
     job.workflowRevision = text(value?.workflowRevision, job.workflowRevision);
@@ -638,7 +640,7 @@ function createGenerationOrchestrator(options = {}) {
   }
   async function renderRound(job, context) {
     if (!renderCandidate) throw failure('COMFY_UNAVAILABLE', 'ComfyUI 渲染器不可用');
-    while (job.renderAttempts < job.policy.maxRenderAttempts) {
+    while (job.pendingRender || job.renderAttempts < job.policy.maxRenderAttempts) {
       guard(job, context);
       const promptKey = promptFingerprint(job.positiveTags, job.negativeTags);
       if (job.lastSubmittedPromptKey && job.lastSubmittedPromptKey === promptKey) {
@@ -648,7 +650,7 @@ function createGenerationOrchestrator(options = {}) {
         return null;
       }
       transition(job, 'rendering');
-      job.renderAttempts += 1;
+      if (!job.pendingRender) job.renderAttempts += 1;
       const roundIndex = job.successfulRounds + 1;
       const roundId = `round-${roundIndex}`;
       emit(job, context, 'candidate.rendering', { roundId, roundIndex, iteration: job.candidates.length + 1, attempt: job.renderAttempts, imagesPerRound: job.policy.imagesPerRound });
@@ -665,14 +667,22 @@ function createGenerationOrchestrator(options = {}) {
           positiveTags: job.positiveTags.slice(),
           negativeTags: job.negativeTags.slice(),
           workflowProfileId: job.workflowProfileId,
-          recreationMode: job.recreationMode
-        }, context);
+          recreationMode: job.recreationMode,
+          pendingRender: job.pendingRender ? clone(job.pendingRender) : null
+        }, { ...context, onEvent: event => {
+          if (event?.type === 'comfy.submitted' && event.promptId) {
+            job.pendingRender = clone({ promptId: event.promptId, base: event.base, workflowHash: event.workflowHash, changedBindings: event.changedBindings, parameters: event.parameters, workflowProfileId: event.workflowProfileId, workflowRevision: event.workflowRevision, recreationMode: event.recreationMode, aspectRatioMode: event.aspectRatioMode });
+            persist(job);
+          }
+          context.onEvent?.(event);
+        } });
         guard(job, context);
       } catch (error) {
         if (context.signal.aborted || error?.code === 'CANCELLED') throw error;
         const value = errorValue(error);
         job.errors.push({ stage: 'render', attempt: job.renderAttempts, ...value, at: Date.now() });
         emit(job, context, 'candidate.failed', { attempt: job.renderAttempts, error: value });
+        if (job.pendingRender || ['COMFY_CONNECTION', 'COMFY_TIMEOUT', 'COMFY_HTTP_ERROR', 'COMFY_DISABLED', 'COMFY_SUBMISSION_UNKNOWN'].includes(value.code)) throw error;
         continue;
       }
       const artifacts = normalizeArtifactRows(rendered).slice(0, job.policy.imagesPerRound);
@@ -683,6 +693,7 @@ function createGenerationOrchestrator(options = {}) {
         continue;
       }
       job.lastSubmittedPromptKey = promptKey;
+      job.pendingRender = null;
       const candidateIds = [];
       if (job.mode === 'recreate') {
         job.recreationMode = text(rendered?.recreationMode, job.recreationMode || 'text_approximation');
@@ -729,7 +740,7 @@ function createGenerationOrchestrator(options = {}) {
   }
   async function renderLoop(job, context) {
     const roundsThisRun = job.policy.autoRun ? Math.max(0, job.policy.maxAutoRounds - job.successfulRounds) : 1;
-    for (let index = 0; index < roundsThisRun && job.renderAttempts < job.policy.maxRenderAttempts; index += 1) {
+    for (let index = 0; index < roundsThisRun && (job.pendingRender || job.renderAttempts < job.policy.maxRenderAttempts); index += 1) {
       const rendered = await renderRound(job, context);
       if (!rendered) break;
       if (!job.policy.autoRun) {
@@ -831,6 +842,10 @@ function createGenerationOrchestrator(options = {}) {
         return result(job);
       }
       job.error = errorValue(error);
+      if (job.pendingRender || ['COMFY_CONNECTION', 'COMFY_TIMEOUT', 'COMFY_HTTP_ERROR', 'COMFY_DISABLED', 'COMFY_SUBMISSION_UNKNOWN'].includes(job.error.code)) {
+        job.stopReason = job.error.code;
+        return needsInput(job, context, { kind: 'connection', message: job.error.message + (job.pendingRender ? ' 已保留任务编号，恢复时只查询原任务。' : ''), promptId: job.pendingRender?.promptId || '' });
+      }
       job.status = 'failed';
       job.stopReason = job.stopReason || 'failed';
       job.outcome = 'failed';
@@ -877,6 +892,7 @@ function createGenerationOrchestrator(options = {}) {
     if (!job) throw failure('JOB_NOT_FOUND', '没有找到生成任务');
     if (job.sessionId && context.sessionId && text(context.sessionId) !== job.sessionId) throw failure('SESSION_UNAVAILABLE', '当前会话无权恢复这个生成任务');
     if (TERMINAL_STATES.has(job.status)) return result(job);
+    if (job.stopReason === 'COMFY_SUBMISSION_UNKNOWN') return result(job);
     if (active.has(job.jobId)) throw failure('JOB_BUSY', '生成任务仍在执行中');
     if (job.status === 'awaiting_feedback') {
       if (input.action !== 'continue') throw failure('INVALID_INPUT', '手动任务需要明确的 continue 操作');

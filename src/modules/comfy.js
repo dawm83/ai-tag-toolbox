@@ -586,12 +586,14 @@ function createComfy(options = {}) {
       // Abort is handled by wait()/the caller so a user stop remains concise.
       if (init.signal?.aborted) throw error;
       const detail = asText(error?.message || error);
+      if (pathname === '/prompt' && init.method === 'POST') throw Object.assign(new Error(`ComfyUI 提交结果未知${detail ? `：${detail}` : ''}。请先检查 ComfyUI 队列，本任务不会自动重复提交。`), { code: 'COMFY_SUBMISSION_UNKNOWN', retryable: false });
       throw Object.assign(new Error(`ComfyUI 连接失败${detail ? `：${detail}` : ''}。请确认 ComfyUI 已启动，并检查「API 设置 → ComfyUI 地址」`), { code: error?.code === 'ETIMEDOUT' ? 'COMFY_TIMEOUT' : 'COMFY_CONNECTION', retryable: false });
     }
     if (!response.ok) {
       let detail = '';
       try { detail = (await response.text()).slice(0, 300); } catch { /* ignore */ }
       detail = detail.replace(/<[^>]*>/g, ' ').replace(/&#x20;|&#32;/gi, ' ').replace(/\s+/g, ' ').trim();
+      if (pathname === '/prompt' && init.method === 'POST' && response.status >= 500) throw Object.assign(new Error(`ComfyUI 提交结果未知（HTTP ${response.status}），请先检查 ComfyUI 队列。${detail}`), { code: 'COMFY_SUBMISSION_UNKNOWN', retryable: false });
       const hint = response.status === 404
         ? '请检查「API 设置 → ComfyUI 地址」是否正确，并确认 ComfyUI 服务已启动'
         : response.status >= 500
@@ -626,7 +628,7 @@ function createComfy(options = {}) {
     try { system = await probeSystem(options2.signal); } catch (error) { if (options2.signal?.aborted) throw error; connectionError = error; }
     const connected = Boolean(system);
     let queue = null;
-    if (connected) { try { queue = await (await request('/queue', { signal: options2.signal })).json(); } catch { queue = null; } }
+    if (connected) { try { queue = await (await request('/queue', { signal: options2.signal, timeoutMs: 5000 })).json(); } catch { queue = null; } }
     return {
       enabled,
       connected,
@@ -731,7 +733,7 @@ function createComfy(options = {}) {
       }
       await sleep(Number(options2.intervalMs) || 1200, options2.signal);
     }
-    throw new Error('ComfyUI 生成超时，请检查队列和模型加载状态；必要时减少步数或迭代次数后重试');
+    throw Object.assign(new Error('ComfyUI 等待结果超时，已保留任务编号；可恢复查询原任务。'), { code: 'COMFY_TIMEOUT', retryable: false });
   }
   async function render(params = {}) {
     if (!params.workflow && !activeProfile()?.workflow && !workflow) throw new Error('尚未设置 ComfyUI 工作流，请到「API 设置 → ComfyUI」上传或粘贴 API 格式工作流');
@@ -756,9 +758,10 @@ function createComfy(options = {}) {
       body: JSON.stringify({ prompt: built, client_id: clientId }),
       signal: params.signal
     });
-    const result = await response.json();
-    if (result?.error) throw new Error(`ComfyUI 错误：${JSON.stringify(result.error).slice(0, 300)}。请检查工作流节点、模型文件和参数后重试`);
-    if (!result?.prompt_id) throw new Error('ComfyUI 没有返回任务编号，请查看 ComfyUI 控制台日志并确认服务正常');
+    let result;
+    try { result = await response.json(); } catch { throw Object.assign(new Error('ComfyUI 提交结果未知：未能读取任务编号，请先检查 ComfyUI 队列。'), { code: 'COMFY_SUBMISSION_UNKNOWN' }); }
+    if (result?.error) throw Object.assign(new Error(`ComfyUI 错误：${JSON.stringify(result.error).slice(0, 300)}。请检查工作流节点、模型文件和参数后重试`), { code: 'COMFY_HTTP_ERROR' });
+    if (!result?.prompt_id) throw Object.assign(new Error('ComfyUI 提交结果未知：没有返回任务编号，请先检查 ComfyUI 队列。'), { code: 'COMFY_SUBMISSION_UNKNOWN' });
     try { params.onSubmitted?.({ promptId: result.prompt_id, workflowHash, changedBindings: [...new Set(changedBindings)], parameters }); } catch { /* diagnostics are optional */ }
     const output = await wait(result.prompt_id, params);
     return { ...output, workflowHash, changedBindings: [...new Set(changedBindings)], parameters };

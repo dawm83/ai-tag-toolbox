@@ -401,6 +401,8 @@
       "generationControls": "自动候选生成设置",
       "comfyMaster": "启用绘图",
       "comfyRefresh": "重新检测连接",
+      "resumeDrawing": "恢复原任务",
+      "enableDrawingToResume": "请先确认连接并开启绘图，再恢复原任务",
       "comfyDisconnectedTags": "未连接 · 当前仅生成 Tag",
       "comfyWorkflowMissing": "已连接 · 工作流未就绪",
       "comfyDrawingReady": "已连接 · 绘图已启用",

@@ -1041,3 +1041,20 @@ test('disconnected drawing controls stay off and automatic iteration is hidden',
   assert.equal(doc.querySelector('#generationAutoRun').closest('label').hidden, true);
   assert.match(doc.querySelector('#comfyStatus').textContent, /仅生成 Tag/);
 });
+
+
+test('paused ComfyUI task resumes directly from its notice without sending another AI prompt', async t => {
+  const app = boot({ initialMessages: [{ id: 'paused-image', role: 'assistant', text: '', status: 'done', result: { jobId: 'job-pending', outputType: 'images', status: 'needs_input', prompt: 'portrait', positiveTags: ['portrait'], pendingRender: { promptId: 'accepted' }, needsInput: { kind: 'connection', message: '连接中断' } } }] });
+  t.after(() => app.dom.window.close());
+  const calls = [];
+  app.assistant.continueGeneration = async (...args) => { calls.push(args); return { ok: true, data: { status: 'awaiting_feedback' } }; };
+  app.view.route('ai'); app.view.showAi('talk');
+  const button = app.window.document.querySelector('.generation-resume-connection');
+  assert(button, 'a paused request must have a direct recovery action');
+  button.click();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][0], 'paused-image');
+  assert.equal(calls[0][3].resumeOnly, true);
+  assert.equal(app.getRunCount(), 0);
+});

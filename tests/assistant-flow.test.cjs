@@ -155,6 +155,7 @@ async function testHighLevelGenerationPersistsCandidatesAndSelection() {
       return { text: '{"positiveTags":["1girl","blue hair"]}' };
     } }
   });
+  await assistant.refreshCapabilities();
   const result = await assistant.run({ text: '画一个蓝发女孩', requestId: 'assistant-generation-root' });
   assert.equal(result.ok, true, JSON.stringify(result.error));
   assert.equal(renderCount, 1);

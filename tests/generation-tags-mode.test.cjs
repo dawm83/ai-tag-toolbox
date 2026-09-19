@@ -6,11 +6,11 @@ const { createAssistant } = require('../src/modules/assistant');
 const { createStorage } = require('../src/modules/storage');
 const { createGenerationOrchestrator } = require('../src/modules/generation-orchestrator');
 
-test('the default assistant delivers and persists Tags without contacting ComfyUI', async () => {
+for (const savedDrawing of [false, true]) test(`drawing is unavailable before probing (saved=${savedDrawing}); Tags still complete without ComfyUI`, async () => {
   const storage = createStorage();
   let networkCalls = 0;
   let toolReply;
-  const assistant = createAssistant({ storage,
+  const assistant = createAssistant({ storage, settings: { comfy: { enabled: savedDrawing } },
     comfy: { status: async () => { networkCalls++; throw new Error('ComfyUI is offline'); }, render: async () => { networkCalls++; throw new Error('Unexpected render'); } },
     primaryGateway: { complete: async messages => {
       if (messages.at(-1).role === 'tool') { toolReply = JSON.parse(messages.at(-1).content); return { text: 'Tag 已生成。' }; }

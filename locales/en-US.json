@@ -427,6 +427,8 @@
       "generationControls": "Automatic candidate generation settings",
       "comfyMaster": "Enable drawing",
       "comfyRefresh": "Check connection again",
+      "resumeDrawing": "Resume original task",
+      "enableDrawingToResume": "Check the connection and enable drawing before resuming",
       "comfyDisconnectedTags": "Disconnected · Tags only",
       "comfyWorkflowMissing": "Connected · Workflow not ready",
       "comfyDrawingReady": "Connected · Drawing enabled",

@@ -104,6 +104,7 @@ test('render progress polling events are deduped and excluded from message task 
     images: { get: () => null, add: async value => ({ id: value.id || value.imageId || 'img-1', imageId: value.imageId || value.id || 'img-1', ...value }) },
     imageRepository: { attachToConversation: async () => ({ refId: 'r1', imageId: 'render-1' }), markSent: () => {}, authorizeVisionReference: () => null }
   });
+  await assistant.refreshCapabilities();
   const reply = await assistant.run({ text: '画一张' });
   assert.equal(reply.ok, true, JSON.stringify(reply.error || ''));
   const message = assistant.currentSession().messages.at(-1);
