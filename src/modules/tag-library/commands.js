@@ -139,15 +139,13 @@ function applyLibraryCommand(document, base, command, { ids, now } = {}) {
     }
     return { tagId, ...(c.placement?.kind === 'favorite' ? favorite(tagId, c.placement, false) : {}) };
   }
-  function ensureRelocationGroup(pageId, excludedGroups) {
-    let page = pageId ? draft.favoritePages.find(row => row.id === pageId) : draft.favoritePages.slice().sort((a, b) => a.order - b.order)[0];
-    if (!page) page = { id: saveStructure('page', { name: '收藏' }) };
-    let group = draft.favoriteGroups.filter(row => row.pageId === page.id && !excludedGroups.has(row.id)).sort((a, b) => a.order - b.order)[0];
-    if (!group) {
-      let name = '未分组', suffix = 1;
-      while (draft.favoriteGroups.some(row => row.pageId === page.id && row.name === name)) name = `未分组 ${++suffix}`;
-      group = { id: saveStructure('group', { pageId: page.id, name }) };
-    }
+  function ensureRelocationGroup() {
+    // Deleted structures have already left the candidate, including a deleted
+    // uncategorized destination. Never fall back to another user-owned location.
+    let page = draft.favoritePages.find(row => normalizedName(row.name) === '未分类');
+    if (!page) page = { id: saveStructure('page', { name: '未分类' }) };
+    let group = draft.favoriteGroups.find(row => row.pageId === page.id && normalizedName(row.name) === '未分类');
+    if (!group) group = { id: saveStructure('group', { pageId: page.id, name: '未分类' }) };
     return group.id;
   }
   function deleteStructure(c) {
@@ -155,12 +153,14 @@ function applyLibraryCommand(document, base, command, { ids, now } = {}) {
     const target = projection()[isPage ? 'pages' : 'groups'].get(isPage ? c.pageId : c.groupId);
     if (!target) reject('INVALID_PARENT', '位置不存在');
     const groupIds = new Set(isPage ? draft.favoriteGroups.filter(row => row.pageId === c.pageId).map(row => row.id) : [c.groupId]);
-    const affected = draft.memberships.filter(row => groupIds.has(row.groupId));
+    const groupOrders = new Map(draft.favoriteGroups.map(row => [row.id, row.order]));
+    const affected = draft.memberships.filter(row => groupIds.has(row.groupId))
+      .sort((a, b) => groupOrders.get(a.groupId) - groupOrders.get(b.groupId) || a.order - b.order);
     if (isPage) remove('favoritePages', row => row.id === c.pageId);
     remove('favoriteGroups', row => groupIds.has(row.id));
     remove('memberships', row => groupIds.has(row.groupId));
     if (c.mode === 'relocate' && affected.length) {
-      const groupId = ensureRelocationGroup(isPage ? null : target.pageId, groupIds);
+      const groupId = ensureRelocationGroup();
       for (const row of affected) {
         const existing = draft.memberships.find(value => value.tagId === row.tagId && value.groupId === groupId);
         if (existing) { if (row.pinned && !existing.pinned) put('memberships', { ...existing, pinned: true }); }
@@ -175,7 +175,9 @@ function applyLibraryCommand(document, base, command, { ids, now } = {}) {
   function perform(c) {
     switch (c.type) {
       case 'saveTag': return saveTag(c);
-      case 'favoriteTag': return { tagId: c.tagId, ...favorite(c.tagId, c.placement, false) };
+      case 'favoriteTag':
+        if (Object.hasOwn(c.placement, 'membershipId')) reject('INVALID_FIELD', '添加收藏不能指定已有归属 ID，请使用移动命令');
+        return { tagId: c.tagId, ...favorite(c.tagId, c.placement, false) };
       case 'unfavorite': remove('memberships', row => c.membershipIds.includes(row.id)); return {};
       case 'move': {
         findTag(c.tagId);
