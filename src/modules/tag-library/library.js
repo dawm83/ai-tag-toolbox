@@ -5,6 +5,7 @@ const { clone, createProjection } = require('./projection');
 const { applyLibraryCommand } = require('./commands');
 const { applyHistory, changeFor } = require('./history');
 const { resolveSelection } = require('./selection');
+const { prepareLegacyMigration, fingerprintLegacy, filteredInput } = require('./migration');
 
 const fail = (code, message) => ({ ok: false, error: { code, message } });
 function freeze(value) {
@@ -23,33 +24,69 @@ function emptyDocument(base, ids) {
 }
 
 /** One authoritative, queued, durable user overlay over a private immutable base. */
-function createTagLibrary({ base, repository, ids = prefix => `${prefix}:${randomUUID()}`, now = Date.now }) {
+function createTagLibrary({ base, repository, legacyInput, ids = prefix => `${prefix}:${randomUUID()}`, now = Date.now }) {
   const immutableBase = freeze(clone(base));
   let current = null, projection = null, queue = Promise.resolve(), initialized = false, closing = false, disposed = false, statusError = null;
   let lastWriteSucceeded = true;
   let validateDocument;
   const listeners = new Set(), operations = new Map(), undo = [], redo = [];
-  const initialization = (async () => {
+  let recoveryAttempts = 0, recoveryPending = false;
+  const readLegacy = async () => filteredInput(typeof legacyInput === 'function' ? await legacyInput() : legacyInput);
+  async function initialize() {
     const validBase = createLibraryDocumentValidator(immutableBase);
     if (!validBase.ok) { statusError = validBase.error; return validBase; }
     validateDocument = validBase.data;
     try {
       const loaded = await repository.read();
-      const candidate = loaded === null ? emptyDocument(immutableBase, ids) : clone(loaded);
+      let candidate = loaded === null ? emptyDocument(immutableBase, ids) : clone(loaded), source = null;
+      if (loaded === null && legacyInput !== undefined) {
+        source = await readLegacy();
+        await repository.backupLegacy(clone(source));
+        const prepared = prepareLegacyMigration({ base: immutableBase, legacy: source, ids, now });
+        if (!prepared.ok) { statusError = prepared.error; return prepared; }
+        candidate = prepared.data.document;
+      }
       const checked = validateDocument(candidate);
       if (!checked.ok) { statusError = checked.error; return checked; }
       if (loaded === null) {
-        try { await repository.save(clone(candidate)); }
-        catch { lastWriteSucceeded = false; statusError = fail('STORAGE_WRITE_FAILED', '标签库初始化保存失败').error; return { ok: false, error: statusError }; }
+        const beforeCommit = source ? async () => {
+          if (fingerprintLegacy(await readLegacy()) !== candidate.migration.sourceFingerprint) {
+            const error = new Error('迁移期间旧数据发生变化，请关闭旧版后重试'); error.code = 'LEGACY_CHANGED_DURING_MIGRATION'; throw error;
+          }
+        } : undefined;
+        if (beforeCommit) await beforeCommit();
+        await repository.save(clone(candidate), { expectMissing: true, beforeCommit });
       }
       current = candidate; projection = createProjection(current, immutableBase); initialized = true;
+      statusError = null; lastWriteSucceeded = true;
       return { ok: true, data: { migration: clone(current.migration) }, revision: current.revision };
     } catch (error) {
-      const code = ['INVALID_DOCUMENT', 'UNSUPPORTED_VERSION', 'STORAGE_READ_FAILED'].includes(error?.code) ? error.code : 'STORAGE_READ_FAILED';
-      statusError = fail(code, '无法读取标签库，请检查文件或恢复备份').error;
+      const code = ['INVALID_DOCUMENT', 'UNSUPPORTED_VERSION', 'STORAGE_READ_FAILED', 'INVALID_LEGACY_INPUT', 'LEGACY_READ_FAILED', 'LEGACY_CHANGED_DURING_MIGRATION', 'INITIALIZATION_CONFLICT', 'STORAGE_WRITE_FAILED'].includes(error?.code) ? error.code : 'STORAGE_WRITE_FAILED';
+      lastWriteSucceeded = false; statusError = fail(code, '标签库初始化未完成，请检查来源或恢复备份').error;
       return { ok: false, error: statusError };
     }
-  })();
+  }
+  let initialization = initialize();
+  async function recover(mode) {
+    if (recoveryPending) return fail('RECOVERY_IN_PROGRESS', '正在恢复标签库');
+    if (closing || disposed) return fail('NOT_READY', '标签库已关闭');
+    recoveryPending = true;
+    try {
+      await initialization; await queue;
+      if (initialized) return mode === 'retry' ? clone(await initialization) : fail('RECOVERY_NOT_ALLOWED', '有效标签库不能用备份覆盖');
+      if (recoveryAttempts >= 3) return fail('RECOVERY_RETRY_LIMIT', '已达到本次启动的恢复上限，请修复后重新启动');
+      recoveryAttempts++;
+      if (mode === 'backup') {
+        if (!validateDocument || typeof repository.recoverBackup !== 'function') return fail('RECOVERY_NOT_AVAILABLE', '此存储不支持备份恢复');
+        try { await repository.recoverBackup({ validate: validateDocument }); }
+        catch (e) {
+          const code = ['INVALID_DOCUMENT', 'UNSUPPORTED_VERSION', 'RECOVERY_NOT_ALLOWED', 'RECOVERY_SOURCE_CHANGED', 'STORAGE_WRITE_FAILED'].includes(e?.code) ? e.code : 'STORAGE_WRITE_FAILED';
+          statusError = fail(code, '备份恢复未完成，原文件已保留').error; return { ok: false, error: clone(statusError) };
+        }
+      }
+      initialization = initialize(); return clone(await initialization);
+    } finally { recoveryPending = false; }
+  }
   function state() { return { ready: initialized && !disposed, writable: initialized && !closing && !disposed, error: clone(statusError) }; }
   const revision = () => current?.revision ?? 0;
   function publish(change) {
@@ -143,6 +180,7 @@ function createTagLibrary({ base, repository, ids = prefix => `${prefix}:${rando
   const sorted = rows => clone([...rows].sort((a, b) => a.order - b.order));
   return Object.freeze({
     ready: async () => clone(await initialization), status: state, revision,
+    retryInitialization: () => recover('retry'), recoverBackup: () => recover('backup'),
     getTag: id => projection ? clone(projection.view(id)) : null,
     listTags: options => queryPage(options), search: (query, options) => queryPage(options, query),
     getCategories: () => sorted(projection?.categories.values() || []),

@@ -36,6 +36,7 @@ function failure(code, causeCode) {
 
 function wrap(error, code) {
   if (error instanceof LibraryRepositoryError) return error;
+  if (['LEGACY_CHANGED_DURING_MIGRATION', 'INVALID_LEGACY_INPUT', 'LEGACY_READ_FAILED'].includes(error?.code)) return new LibraryRepositoryError(error.code);
   return new LibraryRepositoryError(code, error?.code);
 }
 
@@ -140,13 +141,14 @@ function createLibraryRepository({ filePath, backupDir, fsImpl } = {}) {
     return Buffer.from(bytes);
   }
 
-  async function saveBytes(bytes) {
+  async function saveBytes(bytes, options = {}) {
     let staged = uniqueTemp(libraryDir, path.basename(filename));
     let backupTemp = null;
     try {
       await io.mkdir(libraryDir, { recursive: true });
       await writeSynced(io, staged, bytes);
       const previous = await readCurrentBytes();
+      if (options.expectMissing && previous) failure('INITIALIZATION_CONFLICT');
       if (previous) {
         await io.mkdir(backups, { recursive: true });
         backupTemp = uniqueTemp(backups, `${path.basename(filename)}.bak`);
@@ -154,7 +156,13 @@ function createLibraryRepository({ filePath, backupDir, fsImpl } = {}) {
         await io.rename(backupTemp, backupPath);
         backupTemp = null;
       }
-      await io.rename(staged, filename);
+      if (options.beforeCommit) await options.beforeCommit();
+      if (options.expectMissing) {
+        // Exclusive creation also prevents a concurrently created valid v2 from being replaced.
+        try { await io.link(staged, filename); }
+        catch (error) { if (error?.code === 'EEXIST') failure('INITIALIZATION_CONFLICT'); throw error; }
+        await removeOwnTemp(staged, libraryDir);
+      } else await io.rename(staged, filename);
       staged = null;
     } catch (error) {
       throw wrap(error, 'STORAGE_WRITE_FAILED');
@@ -219,11 +227,36 @@ function createLibraryRepository({ filePath, backupDir, fsImpl } = {}) {
       }
       return parseDocument(bytes);
     },
-    save(document) {
+    save(document, options = {}) {
       let bytes;
       try { bytes = serialize(document); }
       catch (error) { return Promise.reject(wrap(error, 'INVALID_DOCUMENT')); }
-      return enqueue(() => saveBytes(bytes));
+      return enqueue(() => saveBytes(bytes, options));
+    },
+    recoverBackup({ validate } = {}) {
+      if (typeof validate !== 'function') return Promise.reject(new LibraryRepositoryError('INVALID_FIELD'));
+      return enqueue(async () => {
+        let staged = null;
+        try {
+          const original = Buffer.from(await io.readFile(filename));
+          let existing;
+          try { existing = parseDocument(original); }
+          catch (e) { if (e.code === 'UNSUPPORTED_VERSION') throw e; if (e.code !== 'INVALID_DOCUMENT') throw e; }
+          if (existing && validate(existing).ok) failure('RECOVERY_NOT_ALLOWED');
+          const bytes = Buffer.from(await io.readFile(backupPath)), candidate = parseDocument(bytes);
+          const checked = validate(candidate);
+          if (!checked.ok) failure('INVALID_DOCUMENT');
+          // Preserve the bad original before replacing it; the last good .bak stays intact.
+          const id = `corrupt-v2-${crypto.createHash('sha256').update(original).digest('hex')}.bin`;
+          await writeLegacyBackup(original, id);
+          staged = uniqueTemp(libraryDir, path.basename(filename));
+          await writeSynced(io, staged, bytes);
+          if (!Buffer.from(await io.readFile(filename)).equals(original)) failure('RECOVERY_SOURCE_CHANGED');
+          await io.rename(staged, filename); staged = null;
+          return { document: candidate, preservedOriginalId: id };
+        } catch (e) { throw wrap(e, 'STORAGE_WRITE_FAILED'); }
+        finally { await removeOwnTemp(staged, libraryDir); }
+      });
     },
     backupLegacy(input) {
       let bytes;
@@ -236,4 +269,4 @@ function createLibraryRepository({ filePath, backupDir, fsImpl } = {}) {
   });
 }
 
-module.exports = { createLibraryRepository, LibraryRepositoryError };
+module.exports = { createLibraryRepository, LibraryRepositoryError, LEGACY_KEYS: Object.freeze([...LEGACY_KEYS]) };

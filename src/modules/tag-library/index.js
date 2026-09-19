@@ -9,4 +9,4 @@ function loadBundledBase() {
   // Callers receive their own working copy, never Node's shared JSON module cache.
   return { ok: true, data: structuredClone(base) };
 }
-module.exports = { ...schema, ...require('./library'), ...require('./commands'), ...require('./selection'), ...require('./repository'), loadBundledBase };
+module.exports = { ...schema, ...require('./library'), ...require('./commands'), ...require('./selection'), ...require('./repository'), ...require('./migration'), loadBundledBase };
