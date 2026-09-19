@@ -519,7 +519,7 @@
         const title = doc.createElement("span"); title.className = "en";
         title.textContent = hit.title || hit.rawText;
         const detail = doc.createElement("span"); detail.className = "zh";
-        detail.textContent = [hit.kind === "bundle" ? localized("ui.favorites.bundle", "标签组") : localized("ui.favorites.tag", "单标签"), hit.seriesName, hit.sectionName].filter(Boolean).join(" · ");
+        detail.textContent = ["Tag", hit.seriesName, hit.sectionName].filter(Boolean).join(" · ");
         button.append(title, detail);
         button.onclick = async () => {
           const chosen = favorites.setSelected(hit.entryId, !selectedFavorites().some(item => item.entryId === hit.entryId));
@@ -650,7 +650,7 @@
         const summary = doc.createElement("summary");
         const icon = doc.createElementNS("http://www.w3.org/2000/svg", "svg"); icon.classList.add("favorite-icon"); icon.setAttribute("aria-hidden", "true");
         const use = doc.createElementNS("http://www.w3.org/2000/svg", "use");
-        use.setAttribute("href", `../assets/icons/favorites.svg#${item.kind === "bundle" ? "layers" : "tag"}`); icon.append(use);
+        use.setAttribute("href", "../assets/icons/favorites.svg#tag"); icon.append(use);
         const title = doc.createElement("span"); title.textContent = item.title || item.rawText; title.title = item.rawText;
         const raw = doc.createElement("pre"); raw.textContent = item.rawText;
         summary.append(icon, title); details.append(summary, raw);

@@ -184,7 +184,6 @@
 }
 .favorite-entry:hover{border-color:color-mix(in srgb,var(--favorite-accent,var(--pri)) 68%,var(--border));background:var(--chip-h)}
 .favorite-entry.is-legacy-invalid{border-color:var(--neg);background:var(--neg-bg)}
-.favorite-entry-bundle{background:color-mix(in srgb,var(--favorite-accent,var(--pri)) 8%,var(--chip))}
 .favorite-entry.is-selected{box-shadow:inset 0 0 0 1px var(--pri);background:var(--pri-bg)}
 .favorite-entry.is-located{animation:favorite-locate 1.2s ease}
 @keyframes favorite-locate{0%,100%{box-shadow:none}25%,70%{box-shadow:0 0 0 3px color-mix(in srgb,var(--favorite-accent,var(--pri)) 35%,transparent)}}
@@ -212,13 +211,8 @@
 .favorite-entry-actions{display:flex;align-items:center;flex-wrap:wrap;max-width:85px;gap:2px;padding:5px 4px 0 0}
 .favorite-entry-actions .favorite-icon-button,.favorite-drag-handle{width:25px;min-height:25px;border-color:transparent;background:transparent}
 .favorite-drag-handle{cursor:grab;color:var(--muted)}
-.favorite-entry-detail{grid-column:1/-1;padding:8px 10px;border-top:1px dashed var(--border2);color:var(--muted)}
-.favorite-entry-detail pre{max-height:190px;overflow:auto;color:var(--text);font:12px/1.55 Consolas,"Cascadia Code",monospace;white-space:pre-wrap;overflow-wrap:anywhere}
-.favorite-entry-detail p{margin-top:6px;white-space:pre-wrap;overflow-wrap:anywhere}
 .favorite-note-popover{position:absolute;left:calc(100% + 8px);top:7px;z-index:10;display:none;width:190px;padding:8px 10px;border:1px solid var(--border2);border-radius:7px;background:var(--card);box-shadow:var(--pop-shadow);color:var(--text);font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere}
 .favorite-entry:hover .favorite-note-popover{display:block}
-.favorite-entry-detail input{width:100%;min-height:30px;margin-bottom:5px;padding:5px 7px;border:1px solid var(--input-border);border-radius:6px;background:var(--input-bg);color:var(--text)}
-.favorite-legacy-warning{color:var(--neg)}
 #favoritesView.is-compact.is-bulk .favorite-entry{grid-template-columns:18px minmax(0,1fr) auto}
 #favoritesView.is-compact .favorite-entry-main{min-height:32px;padding:4px 2px}
 #favoritesView.is-compact .favorite-entry-secondary,#favoritesView.is-compact .favorite-entry-meta{display:none}
@@ -254,7 +248,6 @@
 }
 .favorite-field textarea{min-height:72px;resize:vertical;white-space:pre-wrap}
 .favorite-field textarea[data-favorite-field="rawText"]{min-height:120px;font:12px/1.55 Consolas,"Cascadia Code",monospace}
-.favorite-editor-check{padding:2px 0;color:var(--text)}
 .favorite-save-status{flex:none;min-height:30px;padding:6px 12px;border-top:1px solid var(--border);color:var(--muted);font-size:12px}
 .favorite-save-status[data-status="failed"],.favorite-save-status[data-status="invalid"]{color:var(--neg)}
 .favorite-save-status[data-status="saved"]{color:var(--cp)}

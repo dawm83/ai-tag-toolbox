@@ -560,7 +560,7 @@ test('real favorites page creates exact content and keeps its selected snapshot 
   assert.ok(detail);
   detail.open = true;
   assert.equal(detail.querySelector('pre').textContent, original);
-  assert.ok(detail.querySelector('use').getAttribute('href').endsWith('#layers'));
+  assert.ok(detail.querySelector('use').getAttribute('href').endsWith('#tag'));
   favorites.saveEntry({ id: entry.id, rawText: 'new value' });
   assert.equal(doc.querySelector('#preview').textContent, original);
   doc.querySelector('#copyAll').click();

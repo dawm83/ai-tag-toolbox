@@ -233,3 +233,43 @@ test('shared edit form preserves pending color through locale refresh and cancel
   assert.equal(app.$('[data-favorite-dialog]').hidden, false);
   assert.deepEqual(app.favorites.exportBundle(), original);
 });
+
+
+test('one editor accepts both a Tag and a comma collection with only Tag, name and note content fields', async t => {
+  const app = workbookFixture(t);
+  const page = app.favorites.series()[0];
+  const section = app.favorites.sections(page.id)[0];
+  const entry = app.favorites.saveEntry({ kind: 'bundle', seriesId: page.id, sectionId: section.id, rawText: 'blue hair, soft light', title: '', zh: '旧名称', note: '原备注' }).data;
+  await app.view.openEditor(entry.id);
+  const form = app.$('[data-favorite-editor-form]');
+  assert.deepEqual([...form.querySelectorAll('input,textarea')].map(field => field.dataset.favoriteField), ['rawText', 'title', 'note']);
+  assert.equal(app.$('[data-favorite-field="title"]').value, '旧名称');
+  assert.equal(form.querySelector('[data-favorite-field="kind"]'), null);
+  assert.equal(app.$('[data-favorite-expand]'), null);
+  const raw = app.$('[data-favorite-field="rawText"]');
+  raw.value = '  blue hair, (soft light:1.2)\n';
+  raw.dispatchEvent(new app.dom.window.Event('input', { bubbles: true }));
+  const title = app.$('[data-favorite-field="title"]'); title.value = '';
+  title.dispatchEvent(new app.dom.window.Event('input', { bubbles: true }));
+  await app.click('[data-favorite-action="editor-save"]');
+  assert.equal(app.$('[data-favorite-editor]').hidden, true);
+  assert.equal(app.favorites.getEntry(entry.id).rawText, '  blue hair, (soft light:1.2)\n');
+  assert.equal(app.favorites.getEntry(entry.id).note, '原备注');
+});
+
+test('save closes the editor only after storage succeeds and retains an invalid draft', async t => {
+  const app = workbookFixture(t);
+  const page = app.favorites.series()[0];
+  const section = app.favorites.sections(page.id)[0];
+  const entry = app.favorites.saveEntry({ seriesId: page.id, sectionId: section.id, rawText: 'before' }).data;
+  await app.view.openEditor(entry.id);
+  const raw = app.$('[data-favorite-field="rawText"]'); raw.value = ' ';
+  raw.dispatchEvent(new app.dom.window.Event('input', { bubbles: true }));
+  await app.click('[data-favorite-action="editor-save"]');
+  assert.equal(app.$('[data-favorite-editor]').hidden, false);
+  assert.equal(app.favorites.getEntry(entry.id).rawText, 'before');
+  raw.value = 'after'; raw.dispatchEvent(new app.dom.window.Event('input', { bubbles: true }));
+  await app.click('[data-favorite-action="editor-save"]');
+  assert.equal(app.$('[data-favorite-editor]').hidden, true);
+  assert.equal(app.favorites.getEntry(entry.id).rawText, 'after');
+});

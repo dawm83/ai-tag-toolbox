@@ -34,7 +34,7 @@
     const state = {
       bound: false, active: false, destroyed: false, composing: false,
       seriesId: '', sectionId: '',
-      recent: false, expanded: new Set(), bulk: new Set(), bulkSeries: new Set(), columnLimits: new Map(), loadedColumns: new Set(),
+      recent: false, bulk: new Set(), bulkSeries: new Set(), columnLimits: new Map(), loadedColumns: new Set(),
       prefs: readPreferences(), editor: null, saveTimer: null, transferOpen: false,
       quickEditor: null, contextTarget: null, draggedId: '', draggedStructure: null, returnFocus: null, dialog: null, editorSession: 0, columnObserver: null, scrollFrame: null, initializing: false
     };
@@ -130,7 +130,7 @@
     function createQuickEditor() {
       const panel = el('aside', 'favorite-quick-editor'); panel.dataset.favoriteQuickEditor = ''; panel.hidden = true;
       const head = el('div', 'favorite-editor-head'); head.append(el('h3', '', label('favorites.quickCreate', '新增标签')), button('x', label('favorites.closeEditor', '关闭'), 'quick-close'));
-      const raw = el('input'); raw.type = 'text'; raw.dataset.favoriteQuickRaw = ''; raw.placeholder = label('favorites.rawText', 'Tag 原文');
+      const raw = el('input'); raw.type = 'text'; raw.dataset.favoriteQuickRaw = ''; raw.placeholder = 'Tag';
       const title = el('input'); title.type = 'text'; title.dataset.favoriteQuickTitle = ''; title.placeholder = label('favorites.entryTitle', '名称或中文');
       const note = el('textarea'); note.dataset.favoriteQuickNote = ''; note.placeholder = label('favorites.noteOptional', '备注（可选）');
       const actions = el('div', 'favorite-editor-actions'); actions.append(actionTextButton('quick-cancel', label('favorites.cancel', '取消')), actionTextButton('quick-save', label('favorites.save', '保存'), 'primary'));
@@ -272,16 +272,11 @@
       const location = el('div', 'favorite-editor-location'); location.dataset.favoriteEditorLocation = '';
       const form = el('form', 'favorite-editor-form'); form.dataset.favoriteEditorForm = '';
       form.append(
-        editorSelect('kind', label('favorites.kind', '类型'), [['tag', label('favorites.kindTag', '单标签')], ['bundle', label('favorites.kindBundle', '标签组')]]),
-        editorSelect('seriesId', label('favorites.series', '系列'), []),
-        editorSelect('sectionId', label('favorites.section', '子分类'), []),
+        editorSelect('seriesId', label('favorites.page', '收藏页'), []),
+        editorSelect('sectionId', label('favorites.column', '标签栏'), []),
+        editorTextarea('rawText', 'Tag', true),
         editorInput('title', label('favorites.entryTitle', '名称')),
-        editorTextarea('rawText', label('favorites.rawText', '原文'), true),
-        editorInput('zh', label('favorites.zh', '中文说明')),
-        editorInput('aliases', label('favorites.aliases', '别名（逗号分隔）')),
-        editorTextarea('note', label('favorites.note', '备注')),
-        editorCheck('globalSearchable', label('favorites.globalSearchable', '允许参与全局查询')),
-        editorCheck('nsfw', label('favorites.adult', '成人内容'))
+        editorTextarea('note', label('favorites.note', '备注'))
       );
       const status = el('div', 'favorite-save-status'); status.dataset.favoriteSaveStatus = ''; status.setAttribute('aria-live', 'polite');
       const actions = el('div', 'favorite-editor-actions');
@@ -299,9 +294,6 @@
     }
     function editorSelect(name, title, values) {
       const field = el('select'); field.dataset.favoriteField = name; values.forEach(([value, textValue]) => field.append(optionNode(value, textValue))); return editorFieldShell(title, field);
-    }
-    function editorCheck(name, title) {
-      const wrapper = el('label', 'favorite-check-control favorite-editor-check'); const field = el('input'); field.type = 'checkbox'; field.dataset.favoriteField = name; wrapper.append(field, doc.createTextNode(title)); return wrapper;
     }
     function createTransferPanel() {
       const panel = el('aside', 'favorite-transfer'); panel.dataset.favoriteTransfer = ''; panel.hidden = true;
@@ -496,19 +488,10 @@
       return group;
     }
 
-    function displayText(entry) {
-      if (entry.kind === 'bundle') return string(entry.title || entry.zh, label('favorites.untitledBundle', '未命名组合'));
-      const choices = state.prefs.primary === 'zh' ? [entry.zh, entry.title, entry.rawText] : state.prefs.primary === 'title' ? [entry.title, entry.zh, entry.rawText] : [entry.rawText, entry.title, entry.zh];
-      return string(choices.find(Boolean), label('favorites.untitled', '未命名收藏'));
-    }
-    function secondaryText(entry) {
-      if (!state.prefs.showSecondary) return '';
-      if (entry.kind === 'bundle') return string(entry.rawText || entry.zh, '');
-      const primary = displayText(entry);
-      return string([entry.title, entry.zh, entry.rawText].find(value => value && String(value) !== primary), '');
-    }
+    function displayText(entry) { return string(entry.rawText, label('favorites.untitled', '未命名收藏')); }
+    function secondaryText(entry) { return string(entry.title || entry.zh); }
     function renderEntry(entry, selected = false) {
-      const item = el('article', `favorite-entry favorite-entry-${entry.kind || 'tag'}${selected ? ' is-selected' : ''}${entry.pinned ? ' is-pinned' : ''}`);
+      const item = el('article', `favorite-entry favorite-entry-tag${selected ? ' is-selected' : ''}${entry.pinned ? ' is-pinned' : ''}`);
       item.dataset.favoriteEntry = entry.id; item.draggable = true;
       const invalidLegacy = entry.legacyInvalid === true && !string(entry.rawText).trim();
       if (invalidLegacy) item.classList.add('is-legacy-invalid');
@@ -517,35 +500,20 @@
       main.disabled = invalidLegacy;
       main.setAttribute('aria-pressed', String(selected));
       const top = el('span', 'favorite-entry-title');
-      if (entry.kind === 'bundle') top.append(icon('layers'), el('span', '', displayText(entry)));
-      else top.textContent = displayText(entry);
+      top.textContent = displayText(entry);
       const secondary = secondaryText(entry); main.append(top); if (secondary) main.append(el('span', 'favorite-entry-secondary', secondary));
       const meta = el('span', 'favorite-entry-meta');
       if (entry.pinned) meta.append(icon('pin'));
-      if (entry.kind === 'bundle') {
-        const count = safeCall('favoriteMemberCount', entry);
-        meta.append(el('span', '', Number.isInteger(count) ? `${count} ${label('favorites.members', '项')}` : label('favorites.bundle', '组合')));
-      }
       main.append(meta);
       const actions = el('div', 'favorite-entry-actions');
       const copyButton = button('copy', label('favorites.copy', '复制'), 'copy'); copyButton.dataset.favoriteCopy = entry.id;
       copyButton.disabled = invalidLegacy;
       const edit = button('pencil', label('favorites.edit', '编辑'), 'edit'); edit.dataset.favoriteEdit = entry.id;
-      const expand = button(state.expanded.has(entry.id) ? 'chevron-up' : 'chevron-down', label('favorites.expand', '展开'), 'expand'); expand.dataset.favoriteExpand = entry.id;
       const up = button('arrow-up', label('favorites.moveUp', '上移'), 'move-up'); up.dataset.entryId = entry.id;
       const down = button('arrow-down', label('favorites.moveDown', '下移'), 'move-down'); down.dataset.entryId = entry.id;
       const grip = button('grip-vertical', label('favorites.drag', '拖动排序'), '', 'favorite-drag-handle'); grip.tabIndex = -1;
-      actions.append(copyButton, edit, expand, up, down, grip); item.append(manage, main, actions);
+      actions.append(copyButton, edit, up, down, grip); item.append(manage, main, actions);
       if (entry.note) item.append(el('span', 'favorite-note-popover', entry.note));
-      if (state.expanded.has(entry.id)) {
-        const detail = el('div', 'favorite-entry-detail');
-        const inlineTitle = el('input'); inlineTitle.type = 'text'; inlineTitle.value = string(entry.title); inlineTitle.placeholder = label('favorites.entryTitle', '名称'); inlineTitle.dataset.favoriteInlineField = 'title'; inlineTitle.dataset.entryId = entry.id;
-        const inlineZh = el('input'); inlineZh.type = 'text'; inlineZh.value = string(entry.zh); inlineZh.placeholder = label('favorites.zh', '中文说明'); inlineZh.dataset.favoriteInlineField = 'zh'; inlineZh.dataset.entryId = entry.id;
-        detail.append(inlineTitle, inlineZh, el('pre', '', string(entry.rawText)));
-        if (entry.note) detail.append(el('p', '', string(entry.note)));
-        if (entry.legacyInvalid) detail.append(el('p', 'favorite-legacy-warning', label('favorites.legacyInvalid', '旧收藏内容无效，请补充原文后保存')));
-        item.append(detail);
-      }
       return item;
     }
     function icon(id) {
@@ -590,10 +558,10 @@
       const order = currentVisibleIds();
       if (state.editor && !await flushEdits()) return false;
       const firstSeries = value.seriesId || state.seriesId || seriesRows()[0]?.id || '';
-      const rawText = string(value.rawText); const kind = value.kind === 'bundle' ? 'bundle' : 'tag';
+      const rawText = string(value.rawText); const kind = 'tag';
       state.returnFocus = doc.activeElement;
       state.editor = { session: ++state.editorSession, version: rawText ? 1 : 0, savePromise: null, id: null, creating: true, dirty: Boolean(rawText), saved: null, order, historyKey: `favorite-create-${Date.now()}`, draft: {
-        kind, seriesId: firstSeries, sectionId: value.sectionId || null, title: string(value.title, kind === 'bundle' && rawText ? label('favorites.defaultBundleTitle', '收藏组合') : ''), rawText, zh: string(value.zh), aliases: Array.isArray(value.aliases) ? [...value.aliases] : [], note: string(value.note), globalSearchable: value.globalSearchable !== false, nsfw: value.nsfw === true
+        kind, seriesId: firstSeries, sectionId: value.sectionId || null, title: string(value.title || value.zh), rawText, zh: string(value.zh), aliases: Array.isArray(value.aliases) ? [...value.aliases] : [], note: string(value.note), globalSearchable: value.globalSearchable !== false, nsfw: value.nsfw === true
       } };
       renderEditor(); return state.editor;
     }
@@ -604,7 +572,7 @@
       if (state.editor && !await flushEdits()) return false;
       const entry = safeCall('getEntry', entryId); if (!entry) { notify(label('favorites.notFound', '收藏不存在')); return false; }
       if (!preserveOrder) state.returnFocus = doc.activeElement;
-      state.editor = { session: ++state.editorSession, version: 0, savePromise: null, id: entry.id, creating: false, dirty: false, saved: { ...entry, aliases: [...(entry.aliases || [])] }, order: order.includes(entry.id) ? order : [...order, entry.id], historyKey: `favorite-edit-${entry.id}-${Date.now()}`, draft: { ...entry, aliases: [...(entry.aliases || [])] } };
+      state.editor = { session: ++state.editorSession, version: 0, savePromise: null, id: entry.id, creating: false, dirty: false, saved: { ...entry, aliases: [...(entry.aliases || [])] }, order: order.includes(entry.id) ? order : [...order, entry.id], historyKey: `favorite-edit-${entry.id}-${Date.now()}`, draft: { ...entry, title: string(entry.title || entry.zh), aliases: [...(entry.aliases || [])] } };
       renderEditor(); return true;
     }
     function renderEditor() {
@@ -629,7 +597,7 @@
         if (field.type === 'checkbox') state.editor.draft[key] = field.checked;
         else if (key === 'aliases') state.editor.draft.aliases = field.value.split(/[,，\n]/).map(value => value.trim()).filter(Boolean);
         else if (key === 'sectionId') state.editor.draft[key] = field.value || null;
-        else state.editor.draft[key] = field.value;
+        else { state.editor.draft[key] = field.value; if (key === 'title') state.editor.draft.zh = field.value; }
       });
       state.editor.version += 1; state.editor.dirty = true; setSaveStatus('editing', label('favorites.editing', '编辑中'));
     }
@@ -652,7 +620,6 @@
           const version = editor.version;
           const patch = { ...editor.draft, aliases: [...(editor.draft.aliases || [])] };
           if (!string(patch.rawText).trim()) { setSaveStatus('invalid', label('favorites.rawRequired', '原文不能为空')); return false; }
-          if (patch.kind === 'bundle' && !string(patch.title).trim()) { setSaveStatus('invalid', label('favorites.bundleTitleRequired', '标签组名称不能为空')); return false; }
           if (!patch.seriesId) { setSaveStatus('invalid', label('favorites.seriesRequired', '请选择系列')); return false; }
           if (editor.id) patch.id = editor.id; else delete patch.id;
           setSaveStatus('saving', label('favorites.saving', '保存中'));
@@ -682,22 +649,12 @@
     }
     async function saveEditorTransaction() {
       if (!await flushEdits()) return false;
-      endEditorTransaction(); return true;
+      endEditorTransaction(); discardEditor(); return true;
     }
     async function finishEditorBeforeMutation() {
       if (!state.editor) return true;
       if (!await flushEdits()) return false;
       discardEditor(); return true;
-    }
-    async function saveInlineField(field) {
-      const id = field.dataset.entryId; const key = field.dataset.favoriteInlineField;
-      if (!id || !['title', 'zh'].includes(key)) return false;
-      if (state.editor && !await finishEditorBeforeMutation()) return false;
-      const current = safeCall('getEntry', id);
-      if (current?.kind === 'bundle' && key === 'title' && !string(field.value).trim()) { notify(label('favorites.bundleTitleRequired', '标签组名称不能为空')); field.value = string(current.title); return false; }
-      const result = safeCall('saveEntry', { id, [key]: field.value }, { historyKey: `favorite-inline-${id}-${key}` });
-      if (!result?.ok) { notify(result?.error?.message || label('favorites.saveFailed', '保存失败')); return false; }
-      const persisted = Boolean(await safeCall('flush')); if (!persisted) notify(label('favorites.saveFailed', '保存失败')); return persisted;
     }
     async function navigateEditor(direction) {
       if (!state.editor || !await flushEdits()) return false;
@@ -945,10 +902,9 @@
 
     async function handleClick(event) {
       dismissContextMenu(event);
-      const target = event.target.closest?.('[data-favorite-action], [data-favorite-copy], [data-favorite-edit], [data-favorite-expand], [data-favorite-select], [data-favorite-locate], [data-favorite-quick-new]'); if (!target || !host.contains(target)) return;
+      const target = event.target.closest?.('[data-favorite-action], [data-favorite-copy], [data-favorite-edit], [data-favorite-select], [data-favorite-locate], [data-favorite-quick-new]'); if (!target || !host.contains(target)) return;
       if (target.dataset.favoriteCopy) return void copyEntry(target.dataset.favoriteCopy, false);
       if (target.dataset.favoriteEdit) return void openEditor(target.dataset.favoriteEdit);
-      if (target.dataset.favoriteExpand) { const id = target.dataset.favoriteExpand; state.expanded.has(id) ? state.expanded.delete(id) : state.expanded.add(id); render(); return; }
       if (target.dataset.favoriteSelect) return void copyEntry(target.dataset.favoriteSelect, true);
       if (target.dataset.favoriteLocate) return void focusEntry(target.dataset.favoriteLocate);
       const action = target.dataset.favoriteAction;
@@ -1024,7 +980,6 @@
     function handleChange(event) {
       const target = event.target;
       if (target.matches('[data-favorite-import-file]')) { void readImportFile(target); return; }
-      if (target.matches('[data-favorite-inline-field]')) { void saveInlineField(target); return; }
       if (target.matches('[data-favorite-import-series]')) { renderImportSections(); invalidateImportPreview(); return; }
       if (target.matches('[data-favorite-import-format]')) { const json = target.value === 'json'; const mode = host.querySelector('[data-favorite-import-mode]'); const kind = host.querySelector('[data-favorite-import-kind]'); const section = host.querySelector('[data-favorite-import-section]'); if (mode) mode.disabled = !json; if (kind) kind.disabled = json; if (section) section.disabled = json; invalidateImportPreview(); return; }
       if (target.matches('[data-favorite-import-kind], [data-favorite-import-section], [data-favorite-import-mode]')) { invalidateImportPreview(); return; }
