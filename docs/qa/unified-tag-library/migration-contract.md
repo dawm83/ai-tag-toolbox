@@ -45,7 +45,7 @@ Task 9 的 catalog/host adapter 应只转发 `status`、`ready`、`retryInitiali
 相关键：rewrite_custom_tags、rewrite_selected、rewrite_tag_edit_history_v1、favorites_shelf_v1、favorites_selection_v1、favorites_recent_v1、rewrite_favorites、rewrite_character_edits_v1、rewrite_character_selection_v1、rewrite_character_edit_history_v1。
 
 - 先调用现有 repository.backupLegacy 完整保存提取后的十键，再生成候选。旧键永不删除/回写；新文档是唯一完成标记。迁移前备份为内容寻址的 `legacy-v1-<sha256>.json`。它保存解码后的 JSON 值，不保存旧 root 的无意义缩进/属性排列或无关设置。
-- 普通自定义/覆盖保持明确空名称与空别名；source 与 usages 来自 base。新 taxonomy 只在该条完整校验成功时保留。无效、超限、空内容、缺引用及重复 ID 都保留完整 JSON payload 于 unresolved，失败行不发布收据映射。
+- 普通自定义/覆盖保持明确空名称与空别名；source 与 usages 来自 base。新 taxonomy 只在该条字段和引用校验成功时保留；没有 taxonomy 的独立收藏复用或创建名为“未分类”的 category 及其“未分类” subcategory，不使用首个内置分类。无效、超限、空内容、缺引用及重复 ID 都保留完整 JSON payload 于 unresolved，失败行不发布收据映射。
 - ordinary、characters、series、specific 各自使用种子映射；characters 的值是 identityTagId。收据 characterIdMap 的值是已有稳定 characterId；未知角色不创建。旧 fallback 角色已由 base.characterLinks 建立，按同一规则处理。
 - 角色编辑的 nameZh/aliases 等写身份 Tag；关系写 characterOverrides。共享覆盖与角色覆盖冲突时，只有明确较新的角色 editedAt/历史时间才能覆盖共享值；时间缺失、相同或较旧时保留共享值，并把角色差异记为 IDENTITY_EDIT_CONFLICT。trigger、seriesName、第二名称等无 v2 权威字段进入 CHARACTER_METADATA_ARCHIVE，完整输入还在备份。
 - 收藏页/组保留合法 ID、颜色和顺序；同 ID 冲突拒绝覆盖并归档冲突行。根部条目只在需要时建立该页“未分类”组，排在已有组之后。
@@ -55,10 +55,10 @@ Task 9 的 catalog/host adapter 应只转发 `status`、`ready`、`retryInitiali
 - 收藏选择内容/名称/成人/类型与现值不同，保留 legacySnapshot；超限快照进入 unresolved。角色选择分别映射 general/specific 命名空间。最近使用 ID 按收藏映射，未知 ID 保留记录。
 - 两个编辑历史键完整存入 HISTORY_ARCHIVE，不伪造成 v2 撤销操作。archive 也计入 unresolved，因此该计数不是“损坏行数量”。
 
-收据 sourceTags 是输入 custom 行数；sourceFavorites 包括活跃 shelf 行和旧一代行；linked/independent 是成功转换的收藏来源行数，合并归属也计原行。tagIdMap 包含种子 namespace:oldId 映射、ordinary 原 ID、自定义原 ID、favorite:entryId 到 Tag；favoriteIdMap 是 entryId 到 membershipId；characterIdMap 是旧角色到现有稳定角色。未解决 ID 以 unresolved.sourceId/payload 和原始备份保留，不伪造有效目标。创建时校验目标存在；之后删除引用或自定义标签不会因历史映射失效而被阻止。
+收据 sourceTags 是输入 custom 行数；sourceFavorites 包括活跃 shelf 行和旧一代行；linked/independent 是成功转换的收藏来源行数，合并归属也计原行。tagIdMap 只记录本次实际在旧用户编辑、关系、收藏、选择、最近使用及历史档案中遇到且能解析的旧 ID：namespace:oldId、ordinary 原 ID、自定义原 ID、favorite:entryId 到 Tag；完整静态映射仍只位于 seed/manifest，不复制进用户收据；favoriteIdMap 是 entryId 到 membershipId；characterIdMap 只记录实际遇到的旧角色到现有稳定角色。空来源的三个映射均为空。未解决 ID 以 unresolved.sourceId/payload 和原始备份保留，不伪造有效目标。创建时校验目标存在；之后删除引用或自定义标签不会因历史映射失效而被阻止。
 
 ## 已知边界
 
 源指纹在最终文件创建前重新计算，但两个不同旧/新进程间没有跨格式事务锁；读后到提交仍存在极短竞争窗口。最终启动仍需既定单实例保护并关闭旧版，不能据此声称允许两版同时编辑。恢复的字节重检同样不替代单实例约束。
 
-转换逐行完整校验及回滚优先保证保留正确性，未做海量用户迁移耗时承诺。真实 Electron 启动/恢复面板、真实用户迁移、桌面候选版和人工验证不属于本次执行证据。未解决内容的修复/导出由后续 UI/transfer 任务消费；此处只建立可审计原档和启动恢复边界。
+转换建立 base/有效 Tag、内容、角色、taxonomy、页组、归属、顺序索引。逐行复用 `validateLibraryRow(kind,value)` 的 schema 字段形状校验，加本地引用、唯一 ID、父子关系、顺序检查；本行变更日志覆盖记录、收据、内容索引、顺序及默认父结构，异常时反向撤回，不复制全库或累积文档。最终只做一次候选完整 base/reference 校验。`validateLibraryRow` 导出的是纯行形状验证器，kind 为 tag/category/subcategory/page/group/membership/links/selection；它不替代完整文档引用验证，也不新增写入口。真实 Electron 启动/恢复面板、真实用户迁移、桌面候选版和人工验证不属于本次执行证据。未解决内容的修复/导出由后续 UI/transfer 任务消费；此处只建立可审计原档和启动恢复边界。

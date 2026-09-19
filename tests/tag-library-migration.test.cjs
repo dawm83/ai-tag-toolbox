@@ -188,3 +188,47 @@ test('malformed explicit favorite metadata stays unresolved rather than becoming
   assert.equal(r.ok, true); assert.equal(r.data.document.memberships.length, 0);
   assert.ok(r.data.document.unresolved.some(u => u.payload?.aliases === null));
 });
+
+test('empty migration receipt never copies static seed mappings and encountered namespaced references are audited', () => {
+  const b = makeBase(); b.legacyIds.ordinary.blue_hair = 'blue_hair'; b.legacyIds.ordinary.long_hair = 'long_hair'; b.legacyIds.characters.alice = 'alice'; b.legacyIds.characters.bob = 'bob'; b.legacyIds.specific.blue_hair = 'specific:uniform'; b.legacyIds.series.story = 'wonderland';
+  const empty = prepare({}, b); assert.equal(empty.ok, true);
+  assert.deepEqual(Object.keys(empty.data.report.tagIdMap), []); assert.deepEqual(Object.keys(empty.data.report.characterIdMap), []); assert.ok(JSON.stringify(empty.data.document).length < 1500);
+  const r = prepare({ rewrite_character_edits_v1: { alice: { seriesId: 'story', tagIds: ['blue_hair'], specificTagIds: ['blue_hair'] } }, rewrite_character_selection_v1: [{ id: 'alice', includeSeries: true, generalTagIds: ['blue_hair'], specificTagIds: ['blue_hair'] }] }, b);
+  assert.equal(r.ok, true); const m = r.data.report;
+  assert.equal(m.tagIdMap['ordinary:blue_hair'], 'blue_hair'); assert.equal(m.tagIdMap['specific:blue_hair'], 'specific:uniform'); assert.equal(m.tagIdMap['series:story'], 'wonderland'); assert.equal(m.tagIdMap['characters:alice'], 'alice');
+  assert.deepEqual(Object.keys(m.characterIdMap), ['alice']); assert.equal(m.tagIdMap.long_hair, undefined); assert.equal(m.tagIdMap['characters:bob'], undefined);
+});
+test('independent favorites reuse or create uncategorized taxonomy instead of the first base category', () => {
+  const first = prepare({ favorites_shelf_v1: shelf([entry({ rawText: 'independent one' }), entry({ id: 'f2', order: 1, rawText: 'independent two' })]) });
+  assert.equal(first.ok, true); const d = first.data.document;
+  assert.equal(d.customCategories.length, 1); assert.equal(d.customCategories[0].name, '未分类'); assert.equal(d.customSubcategories.length, 1); assert.equal(d.customSubcategories[0].name, '未分类');
+  assert.ok(d.customTags.every(t => t.categoryId === d.customCategories[0].id && t.subcategoryId === d.customSubcategories[0].id));
+  const b = makeBase(); b.categories.push({ id: 'uncat', name: '未分类', order: 1, source: 'bundled' }); b.subcategories.push({ id: 'uncat-child', categoryId: 'uncat', name: '未分类', order: 0, source: 'bundled' });
+  const reuse = prepare({ favorites_shelf_v1: shelf([entry({ rawText: 'independent' })]) }, b);
+  assert.equal(reuse.ok, true); assert.equal(reuse.data.document.customTags[0].subcategoryId, 'uncat-child'); assert.equal(reuse.data.document.customCategories.length, 0); assert.equal(reuse.data.document.customSubcategories.length, 0);
+});
+test('late invalid rows roll back parents, indexes, mappings and content cache amid many valid favorites', () => {
+  const entries = Array.from({ length: 300 }, (_, i) => entry({ id: `many-${i}`, order: i, sourceTagId: null, title: '', zh: '', rawText: `whole ${i}` }));
+  entries.push(entry({ id: 'bad-tail', sectionId: null, sourceTagId: null, rawText: 'tail unique', order: 0, pinned: 'invalid' }));
+  entries.push(entry({ id: 'good-tail', sectionId: null, sourceTagId: null, title: '', zh: '', rawText: 'tail unique', order: 0 }));
+  const r = prepare({ favorites_shelf_v1: shelf(entries) }); assert.equal(r.ok, true); const d = r.data.document;
+  assert.equal(d.customTags.length, 301); assert.equal(d.memberships.length, 301); assert.equal(d.favoriteGroups.length, 2); assert.equal(d.customCategories.length, 1); assert.equal(d.customSubcategories.length, 1);
+  assert.equal(d.migration.favoriteIdMap['bad-tail'], undefined); assert.equal(d.migration.tagIdMap['favorite:bad-tail'], undefined);
+  assert.equal(d.customTags.filter(t => t.content === 'tail unique').length, 1); assert.ok(d.unresolved.some(u => u.sourceId === 'bad-tail' && u.payload.pinned === 'invalid'));
+});
+
+test('encountered custom identity edits remain selectable by legacy ID without copying other seed roles', () => {
+  const b = makeBase(); b.tags.find(t => t.id === 'alice').id = 'identity:alice'; b.characterLinks[0].identityTagId = 'identity:alice'; b.legacyIds.characters.alice = 'identity:alice'; b.legacyIds.characters.bob = 'bob';
+  const r = prepare({ rewrite_custom_tags: [{ id: 'alice', en: 'alice', zh: '名称', category: 'character_names' }], rewrite_selected: ['alice'] }, b);
+  assert.equal(r.ok, true); assert.deepEqual(r.data.document.selection, [{ kind: 'tag', tagId: 'identity:alice' }]); assert.equal(r.data.report.characterIdMap.bob, undefined);
+});
+test('failed identity relationship edits roll back the effective tag and encountered maps', () => {
+  const r = prepare({ rewrite_character_edits_v1: { alice: { nameZh: 'failed name', tagIds: ['missing'] } }, favorites_shelf_v1: shelf([entry({ sourceTagId: null, sourceCharacterId: 'alice', rawText: 'alice', title: 'alice', zh: 'alice' })]) });
+  assert.equal(r.ok, true); const d = r.data.document; assert.equal(d.tagOverrides.length, 0); assert.equal(d.characterOverrides.length, 0); assert.equal(d.customTags.length, 0); assert.equal(d.memberships[0].tagId, 'alice');
+  assert.equal(d.migration.tagIdMap['ordinary:missing'], undefined); assert.ok(d.unresolved.some(u => u.sourceKey === 'rewrite_character_edits_v1'));
+});
+test('an invalid first independent row leaves no taxonomy or default group for the next row', () => {
+  const r = prepare({ favorites_shelf_v1: shelf([entry({ id: 'bad', sectionId: null, sourceTagId: null, rawText: 'same content', pinned: 4 }), entry({ id: 'good', sectionId: null, sourceTagId: null, rawText: 'same content', order: 1 })]) });
+  assert.equal(r.ok, true); const d = r.data.document; assert.equal(d.customTags.length, 1); assert.equal(d.favoriteGroups.length, 2); assert.equal(d.customCategories.length, 1); assert.equal(d.customSubcategories.length, 1); assert.equal(d.memberships[0].id, 'good');
+  assert.equal(d.migration.tagIdMap['favorite:bad'], undefined); assert.equal(d.migration.favoriteIdMap.bad, undefined);
+});

@@ -88,6 +88,12 @@ function selection(s, path) {
   else if (s.kind === 'legacySnapshot') { shape(s, ['kind', 'id', 'content', 'displayName', 'adult'], [], path); id(s.id, path); str(s.content, path, LIMITS.content); str(s.displayName, path, LIMITS.name, false); boolean(s.adult, path); }
   else fail(path);
 }
+function favoritePage(p, field) { shape(p, ['id', 'name', 'order', 'color', 'colorMode'], [], field); id(p.id, field); str(p.name, field, LIMITS.structureName); integer(p.order, field); color(p.color, field); enumeration(p.colorMode, ['auto', 'custom'], field); }
+function favoriteGroup(g, field) { shape(g, ['id', 'pageId', 'name', 'order', 'color'], [], field); id(g.id, field); id(g.pageId, field); str(g.name, field, LIMITS.structureName); integer(g.order, field); color(g.color, field); }
+function membership(m, field) { shape(m, ['id', 'tagId', 'groupId', 'order', 'pinned'], [], field); id(m.id, field); id(m.tagId, field); id(m.groupId, field); integer(m.order, field); boolean(m.pinned, field); }
+const ROW_VALIDATORS = { tag, category, subcategory: (v, p) => category(v, p, true), page: favoritePage, group: favoriteGroup, membership, links, selection };
+/** Shared row shapes only; caller supplies live reference/uniqueness checks. */
+function validateLibraryRow(kind, value) { return result(value, () => { if (!own(ROW_VALIDATORS, kind)) fail('row'); ROW_VALIDATORS[kind](value, kind); }); }
 function indexed(rows, validate, path, key = 'id') {
   array(rows, path); const map = new Map();
   rows.forEach((row, i) => { validate(row, `${path}[${i}]`); if (map.has(row[key])) fail(path); map.set(row[key], row); });
@@ -170,11 +176,11 @@ function documentStructure(doc) {
   const categoryOverrides = indexed(doc.categoryOverrides, structureOverride, 'categoryOverrides');
   const subcategoryOverrides = indexed(doc.subcategoryOverrides, structureOverride, 'subcategoryOverrides');
   const tagOverrides = indexed(doc.tagOverrides, (o, p) => { shape(o, ['tagId', 'patch', 'revision', 'updatedAt'], [], p); id(o.tagId, p); patch(o.patch, p); integer(o.revision, p); integer(o.updatedAt, p); }, 'tagOverrides', 'tagId');
-  const pages = indexed(doc.favoritePages, (p, field) => { shape(p, ['id', 'name', 'order', 'color', 'colorMode'], [], field); id(p.id, field); str(p.name, field, LIMITS.structureName); integer(p.order, field); color(p.color, field); enumeration(p.colorMode, ['auto', 'custom'], field); }, 'favoritePages');
-  const groups = indexed(doc.favoriteGroups, (g, field) => { shape(g, ['id', 'pageId', 'name', 'order', 'color'], [], field); id(g.id, field); id(g.pageId, field); str(g.name, field, LIMITS.structureName); integer(g.order, field); color(g.color, field); }, 'favoriteGroups');
+  const pages = indexed(doc.favoritePages, favoritePage, 'favoritePages');
+  const groups = indexed(doc.favoriteGroups, favoriteGroup, 'favoriteGroups');
   const pairs = new Map();
   const memberships = indexed(doc.memberships, (m, field) => {
-    shape(m, ['id', 'tagId', 'groupId', 'order', 'pinned'], [], field); id(m.id, field); id(m.tagId, field); id(m.groupId, field); integer(m.order, field); boolean(m.pinned, field);
+    membership(m, field);
     if (!pairs.has(m.groupId)) pairs.set(m.groupId, new Set()); const set = pairs.get(m.groupId); if (set.has(m.tagId)) fail(field); set.add(m.tagId);
   }, 'memberships');
   orders(pages, null, 'favoritePages.order'); orders(groups, 'pageId', 'favoriteGroups.order'); orders(memberships, 'groupId', 'memberships.order');
@@ -284,6 +290,7 @@ function command(c, path = 'command', batch = false) {
 
 module.exports = {
   LIMITS,
+  validateLibraryRow,
   validateTag: value => result(value, () => tag(value, 'tag')),
   validateBase: value => result(value, () => baseIndexes(value)),
   validateLibraryDocumentStructure: value => result(value, () => documentStructure(value)),
