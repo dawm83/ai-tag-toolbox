@@ -24,8 +24,9 @@ function createCharacterAdapter({ library, characterSource } = {}) {
   const unsubscribe = library.subscribe(change => {
     if (change.changedCharacterIds.length) {
       for (const id of change.changedCharacterIds) recordCache.delete(id);
-      index = null; pageCache.clear();
+      index = null;
     }
+    if (change.changedCharacterIds.length || change.structureChanged) pageCache.clear();
   });
   function unresolved(characterId, tagId, field) {
     throw Object.assign(new Error(`角色引用未解析：${characterId} / ${field}`), { code: 'UNRESOLVED_REFERENCE', fields: [`character.${characterId}.${field}`], characterId, tagId });

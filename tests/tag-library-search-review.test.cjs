@@ -89,3 +89,25 @@ test('pre-ready queries never preserve an empty revision-zero translation or ada
   assert.equal(translation.translateLocal('blue hair', 'en-zh', { force: true }).text, '蓝发'); assert.equal(translation.findReferences('blue hair').length, 1);
   assert.equal(tags.page({ query: 'blue' }).total, 1); assert.ok(tags.categoryCounts().all); assert.equal(characters.page({ query: 'alice' }).total, 1); assert.equal(favorites.search('blue').total, 1); assert.equal(favorites.list().total, 1);
 });
+
+test('character broad page caches follow category and subcategory renames without rebuilding records', async t => {
+  for (const [oldName, newName, command] of [
+    ['头发', '新分类', { type: 'saveCategory', id: 'hair', name: '新分类' }],
+    ['颜色', '新子类', { type: 'saveSubcategory', id: 'color', categoryId: 'hair', name: '新子类' }]
+  ]) await t.test(command.type, async () => {
+    const h = createHarness(); await h.ready; let reads = 0, change;
+    const library = { ...h.library, getCharacterLinks: id => { reads++; return h.library.getCharacterLinks(id); } };
+    const characters = roles(library), tags = createTagAdapter({ library }), tools = createPrimaryTools({ tags, characters });
+    const query = value => characters.page({ query: value, precision: 'broad' });
+    const ai = async value => { const result = await tools.call('characters.search', { query: value, precision: 'broad' }); assert.equal(result.ok, true, JSON.stringify(result)); return result.data; };
+    assert.equal(query(oldName).total, 2); assert.equal(query(newName).total, 0);
+    assert.equal((await ai(oldName)).total, 2); assert.equal((await ai(newName)).total, 0);
+    const beforeReads = reads; h.library.subscribe(event => { change = event; });
+    assert.equal((await h.library.execute(command, { operationId: command.type })).ok, true);
+    assert.equal(change.structureChanged, true); assert.deepEqual(change.changedCharacterIds, []);
+    assert.equal(h.library.search(oldName, { scope: 'characters', precision: 'broad' }).total, 0);
+    assert.equal(query(oldName).total, 0); assert.equal(query(newName).total, 2);
+    assert.equal((await ai(oldName)).total, 0); assert.equal((await ai(newName)).total, 2);
+    assert.equal(reads, beforeReads); characters.dispose(); tags.dispose();
+  });
+});
