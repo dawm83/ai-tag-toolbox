@@ -67,7 +67,8 @@ function createTagLibrary({ base, repository, legacyInput, ids = prefix => `${pr
       return { ok: false, error: statusError };
     }
   }
-  const searchIndex = createTagSearchIndex({ getTags: () => projection?.tags() || [], getMemberships: () => current?.memberships || [], getCharacterLinks: () => projection?.characters.values() || [], getStructure: () => ({ pages: current?.favoritePages || [], groups: current?.favoriteGroups || [] }) });
+  const searchIndex = createTagSearchIndex({ getTags: () => projection?.tags() || [], getMemberships: () => current?.memberships || [], getCharacterLinks: () => projection?.characters.values() || [], getStructure: () => ({ pages: current?.favoritePages || [], groups: current?.favoriteGroups || [] }),
+    getMetadata: () => immutableBase.metadataById || {}, getTaxonomy: () => ({ categories: projection?.categories.values() || [], subcategories: projection?.subcategories.values() || [] }) });
   let initialization = initialize();
   async function recover(mode) {
     if (recoveryPending) return fail('RECOVERY_IN_PROGRESS', '正在恢复标签库');

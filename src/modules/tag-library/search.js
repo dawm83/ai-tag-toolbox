@@ -19,6 +19,7 @@ function normalized(value) {
   return { value: output.slice(start, end), map: map.slice(start, end) };
 }
 const normalize = value => String(value ?? '').normalize('NFKC').toLowerCase().replace(/_/g, ' ').replace(/\s+/gu, ' ').trim();
+const compact = value => value.replace(/[ .-]/g, '');
 const fieldsFor = tag => [['content', tag.content], ['displayName', tag.displayName], ...tag.aliases.map((value, index) => [`aliases.${index}`, value])]
   .filter(([, value]) => value).map(([field, original]) => ({ field, original, value: normalize(original) }));
 function matchFields(fields, needle, precision) {
@@ -30,13 +31,21 @@ function matchFields(fields, needle, precision) {
   if (whole) return { score: whole.value.startsWith(needle) ? 75 : 60, hits: [{ field: whole, term: needle }] };
   const hits = needle.split(' ').map(term => ({ term, field: fields.find(field => field.value.includes(term)) }));
   if (hits.every(hit => hit.field)) return { score: 40, hits };
-  if (precision === 'broad' && fields.some(field => field.value.replace(/[ .-]/g, '').includes(needle.replace(/[ .-]/g, '')))) return { score: 30, hits: [] };
+  if (precision === 'broad') {
+    const compactHits = needle.split(' ').map(compact).filter(Boolean).map(term => ({ term, compact: true, field: fields.find(field => compact(field.value).includes(term)) }));
+    if (compactHits.length && compactHits.every(hit => hit.field)) return { score: 30, hits: compactHits };
+  }
   return null;
 }
 function highlights(hits) {
   const matches = [];
-  for (const { field, term } of hits) {
-    const mapped = normalized(field.original);
+  for (const { field, term, compact: compactMatch } of hits) {
+    let mapped = normalized(field.original);
+    if (compactMatch) {
+      const result = { value: '', map: [] };
+      for (let index = 0; index < mapped.value.length; index++) if (!/[ .-]/.test(mapped.value[index])) { result.value += mapped.value[index]; result.map.push(mapped.map[index]); }
+      mapped = result;
+    }
     for (let at = mapped.value.indexOf(term); at >= 0; at = mapped.value.indexOf(term, at + term.length)) {
       const start = mapped.map[at]?.start, end = mapped.map[at + term.length - 1]?.end;
       if (start !== undefined && end !== undefined) matches.push({ field: field.field, start, end });
@@ -48,9 +57,22 @@ function highlights(hits) {
 /** Internal immutable read index. Only the library exposes cloned TagViews.
  * null query means browsing; even an empty string is discovery and checks flags.
  */
-function createTagSearchIndex({ getTags, getMemberships, getCharacterLinks, getStructure }) {
+function createTagSearchIndex({ getTags, getMemberships, getCharacterLinks, getStructure, getMetadata = () => ({}), getTaxonomy = () => ({ categories: [], subcategories: [] }) }) {
   let rows = null, relations = null, locations = null, favoriteOrder = [];
+  let broadContext = null; const broadFields = new Map();
   const results = new Map();
+  function fieldsForBroad(indexed) {
+    if (!broadContext) {
+      const taxonomy = getTaxonomy();
+      broadContext = { metadata: getMetadata(), categories: new Map([...taxonomy.categories].map(row => [row.id, row.name])), subcategories: new Map([...taxonomy.subcategories].map(row => [row.id, row.name])) };
+    }
+    if (!broadFields.has(indexed.tag.id)) {
+      const tag = indexed.tag, keywords = broadContext.metadata[tag.id]?.keywords || [];
+      const fields = [...keywords.map((value, index) => [`keywords.${index}`, value]), ['categoryId', tag.categoryId], ['categoryName', broadContext.categories.get(tag.categoryId)], ['subcategoryName', broadContext.subcategories.get(tag.subcategoryId)]];
+      broadFields.set(tag.id, [...indexed.fields, ...fields.filter(([, value]) => typeof value === 'string' && value).map(([field, original]) => ({ field, original, value: normalize(original) }))]);
+    }
+    return broadFields.get(indexed.tag.id);
+  }
   function ensure() {
     if (!rows) rows = new Map([...getTags()].map(tag => [tag.id, { tag, fields: fieldsFor(tag) }]));
     if (!relations) {
@@ -97,7 +119,7 @@ function createTagSearchIndex({ getTags, getMemberships, getCharacterLinks, getS
         if (scope === 'characterTraits' && characterId && !relations.traits.get(tag.id)?.has(characterId)) continue;
         const roleLinks = links.filter(link => (!characterId || link.characterId === characterId) && (!seriesId || link.seriesTagIds.some(id => id === seriesId && (includeAdult || !rows.get(id)?.tag.adult))));
         if (scope === 'characters' && !roleLinks.length) continue;
-        let fields = indexed.fields;
+        let fields = precision === 'broad' ? fieldsForBroad(indexed) : indexed.fields;
         if (scope === 'favorites' && matchPrivate) fields = [...fields, ...[['note', tag.note], ...places.filter(place => (!pageId || place.pageId === pageId) && (!groupId || place.groupId === groupId)).flatMap(place => [['pageName', place.pageName], ['groupName', place.groupName]])].filter(([, value]) => value).map(([field, original]) => ({ field, original, value: normalize(original) }))];
         let match, characterMatches;
         if (scope === 'characters') {
@@ -128,6 +150,7 @@ function createTagSearchIndex({ getTags, getMemberships, getCharacterLinks, getS
   }
   function invalidate(change) {
     if (!change || change.changedTagIds?.length) rows = null;
+    if (!change || change.changedTagIds?.length || change.structureChanged) { broadContext = null; broadFields.clear(); }
     if (!change || change.changedCharacterIds?.length) relations = null;
     if (!change || change.structureChanged || change.changedMembershipIds?.length) locations = null;
     if (!change || change.structureChanged || change.changedTagIds?.length || change.changedCharacterIds?.length || change.changedMembershipIds?.length) results.clear();

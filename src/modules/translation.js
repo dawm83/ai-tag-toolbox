@@ -73,7 +73,9 @@ function chineseNames(tag) {
 
 function visible(tag, options = {}) {
   if (!tag || tag.searchable === false || tag.globalSearchable === false || (tag.kind && tag.kind !== 'tag')) return false;
-  if (options.includeAdult || options.adult || options.nsfw) return true;
+  const requested = options.includeAdult ?? options.adult ?? options.nsfw;
+  const host = options.tags?.searchSettings?.().includeAdult ?? options.tags?.stateSnapshot?.().includeAdult;
+  if (host === undefined ? Boolean(requested) : Boolean(host) && requested !== false) return true;
   return !(tag && (tag.nsfw || tag.adult || tag.isAdult));
 }
 
@@ -236,12 +238,17 @@ function createTranslation(options = {}) {
   let runner = options.runner || options.localRunner || options.localModel || options.onnx || null;
   const resultCache = new BoundedCache(256);
   let cachedCatalog = null, catalogKey = null;
-  const effectiveOptions = extra => ({ ...extra, includeAdult: Boolean(extra?.includeAdult ?? tags?.searchSettings?.().includeAdult ?? tags?.stateSnapshot?.().includeAdult ?? options.includeAdult ?? false) });
+  const effectiveOptions = (extra = {}) => {
+    const host = tags?.searchSettings?.().includeAdult ?? tags?.stateSnapshot?.().includeAdult ?? options.includeAdult ?? false;
+    const requested = extra.includeAdult ?? extra.adult ?? extra.nsfw;
+    return { ...extra, includeAdult: Boolean(host) && requested !== false, adult: false, nsfw: false };
+  };
+  const readyForCatalog = () => tags?.status?.().ready ?? tags?.isLoaded?.() ?? true;
   function catalog(extra = {}) {
     const settings = effectiveOptions(extra);
     if (extra.catalog) return extra.catalog.filter(tag => visible(tag, settings));
     const revision = tags?.revision?.() ?? tags?.stateSnapshot?.().revision;
-    const key = revision === undefined ? null : JSON.stringify([revision, settings.includeAdult]);
+    const key = revision === undefined || !readyForCatalog() ? null : JSON.stringify([revision, settings.includeAdult]);
     if (key === null || catalogKey !== key || !cachedCatalog) { cachedCatalog = catalogFrom(tags, settings); catalogKey = key; }
     return cachedCatalog;
   }
@@ -288,7 +295,7 @@ function createTranslation(options = {}) {
   function translateLocal(value, requested, extra = {}) {
     const input = text(value); const dir = direction(input, requested);
     if (!input) { state.input = ''; state.output = ''; state.direction = dir; state.references = []; state.status = 'idle'; state.source = ''; return { ok: false, text: '', direction: dir, references: [], error: '请输入要翻译的内容' }; }
-    const cacheKey = `${tags?.revision?.() ?? tags?.stateSnapshot?.().revision ?? ""}|${effectiveOptions(extra).includeAdult}|${dir}|${input}`;
+    const cacheKey = `${readyForCatalog()}|${tags?.revision?.() ?? tags?.stateSnapshot?.().revision ?? ""}|${effectiveOptions(extra).includeAdult}|${dir}|${input}`;
     if (!extra.force && resultCache.has(cacheKey)) return { ...clone(resultCache.get(cacheKey)), cached: true };
     const fn = runnerMethod(runner);
     if (!fn) {
@@ -297,7 +304,7 @@ function createTranslation(options = {}) {
       return result;
     }
     try {
-      const result = fn(input, dir, extra);
+      const result = fn(input, dir, effectiveOptions(extra));
       if (result && typeof result.then === 'function') return result.then(value2 => { const done = finish(value2, input, dir, 'model', extra); resultCache.set(cacheKey, clone(done)); return done; }).catch(error => { const done = finish({ ok: false, error: text(error && error.message, String(error)) }, input, dir, 'tags', extra); resultCache.set(cacheKey, clone(done)); return done; });
       const done = finish(result, input, dir, 'model', extra); resultCache.set(cacheKey, clone(done)); return done;
     } catch (error) { const done = finish({ ok: false, error: text(error && error.message, String(error)) }, input, dir, 'tags', extra); resultCache.set(cacheKey, clone(done)); return done; }
@@ -311,7 +318,7 @@ function createTranslation(options = {}) {
     try {
       let result;
       const directOutputOptions = {
-        ...extra,
+        ...effectiveOptions(extra),
         direction: dir,
         input,
         // Translation has no tool loop and does not need incremental output.

@@ -147,7 +147,7 @@ function createPrimaryTools(options = {}) {
   const handlers = {
     'tags.search': async args => {
       if (typeof options.tags?.search !== 'function') throw failure('TOOL_UNAVAILABLE', 'Tag 模块不可用');
-      const includeAdult = args.includeAdult === true;
+      const includeAdult = (options.tags?.searchSettings?.().includeAdult ?? options.tags?.stateSnapshot?.().includeAdult ?? false) === true && args.includeAdult === true;
       const rows = await options.tags.search(args.query, { category: args.category, includeAdult, limit: args.limit || 50 });
       if (!Array.isArray(rows)) throw failure('OUTPUT_INVALID', '标签查询返回格式无效');
       const attached = new Map();
@@ -161,7 +161,7 @@ function createPrimaryTools(options = {}) {
     },
     'characters.search': args => {
       if (!options.characters?.page) throw failure('TOOL_UNAVAILABLE', '角色模块不可用');
-      const includeAdult = args.includeAdult === true;
+      const includeAdult = (options.tags?.searchSettings?.().includeAdult ?? options.tags?.stateSnapshot?.().includeAdult ?? false) === true && args.includeAdult === true;
       const page = options.characters.page({ ...args, discovery: true, includeAdult, limit: args.limit || 5 });
       return { items: page.items.map(row => options.characters.get(row.id, { includeAdult })).filter(role => role && role.searchable !== false).map(publicCharacter), total: page.total };
     },
