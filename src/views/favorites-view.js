@@ -591,7 +591,7 @@
       const rawText = string(value.rawText); const kind = 'tag';
       state.returnFocus = doc.activeElement;
       state.editor = { session: ++state.editorSession, version: rawText ? 1 : 0, savePromise: null, id: null, creating: true, dirty: Boolean(rawText), saved: null, order, historyKey: `favorite-create-${Date.now()}`, draft: {
-        kind, seriesId: firstSeries, sectionId, title: string(value.title || value.zh), rawText, zh: string(value.zh), aliases: Array.isArray(value.aliases) ? [...value.aliases] : [], note: string(value.note), globalSearchable: value.globalSearchable !== false, nsfw: value.nsfw === true
+        kind, seriesId: firstSeries, sectionId, sourceCharacterId: value.sourceCharacterId || null, title: string(value.title || value.zh), rawText, zh: string(value.zh), aliases: Array.isArray(value.aliases) ? [...value.aliases] : [], note: string(value.note), globalSearchable: value.globalSearchable !== false, nsfw: value.nsfw === true
       } };
       renderEditor(); return state.editor;
     }
