@@ -349,7 +349,7 @@ return { ok: true, data: prepared.data.result, revision: current.revision };
 
 **Interfaces:** `readLegacyInput(storageFilePath): LegacyInput` 严格解析原始文件中 `ai-tag-toolbox-rewrite:app:<key>`；`prepareLegacyMigration({base,legacy,ids,now}): Result<MigrationPlan>`；`createTagLibrary({base,repository,legacyInput?})` 的 ready 在新文件不存在时备份并保存迁移计划。存在合法 v2 时不重新迁移。
 
-- [ ] 测试关键冲突：
+- [x] 测试关键冲突：
 
 ```js
 const { makeBase } = require('./fixtures/tag-library.cjs');
@@ -374,15 +374,15 @@ test('an independently edited favorite never overwrites its source tag', () => {
 });
 ```
 
-- [ ] 覆盖全部确切旧键，包括 `rewrite_tag_edit_history_v1`。旧历史保留于备份/迁移档案，不伪造成 v2 可执行撤销操作。
-- [ ] 应用设计规范迁移决策表；冲突收藏保留独立记录，纯相同内容安全引用，损坏/无法解析/超限数据进入 unresolved；不能零条成功但丢弃来源。
-- [ ] 保留页/组颜色和顺序；旧空section转默认group，已有不同名但同ID冲突拒绝覆盖。
-- [ ] 专属词/角色身份/旧 fallback角色全部映射；旧选择快照不同于现有记录保留 legacySnapshot；不能把 sourceCharacterId 误当 tagId。
-- [ ] migrationReceipt记录计数与所有旧ID映射；备份先于保存新文档。迁移报告不输出实际用户原文到普通日志。
-- [ ] 重启幂等：相同legacy加载两次不重复新增；完成标记只来自合法v2文档，不依赖另一个可能先写成功的布尔键。
-- [ ] 新文件首次提交前对所需旧键重新计算fingerprint，变化则 `LEGACY_CHANGED_DURING_MIGRATION` 并阻止切换；测试旧版在迁移期间修改收藏的情况。
-- [ ] 测试迁移中保存失败、备份失败、未知schema、损坏旧root、重复条目、空值、成人状态、不同title/zh、组合换行、旧版本同时存在；新文件存在后不自动覆盖。
-- [ ] 运行 migration+repository+commands 测试和 `npm run check`；保存 P1 源码检查点；提交。
+- [x] 覆盖全部确切旧键，包括 `rewrite_tag_edit_history_v1`。旧历史保留于备份/迁移档案，不伪造成 v2 可执行撤销操作。
+- [x] 应用设计规范迁移决策表；冲突收藏保留独立记录，纯相同内容安全引用，损坏/无法解析/超限数据进入 unresolved；不能零条成功但丢弃来源。
+- [x] 保留页/组颜色和顺序；旧空section转默认group，已有不同名但同ID冲突拒绝覆盖。
+- [x] 专属词/角色身份/旧 fallback角色全部映射；旧选择快照不同于现有记录保留 legacySnapshot；不能把 sourceCharacterId 误当 tagId。
+- [x] migrationReceipt记录计数与所有旧ID映射；备份先于保存新文档。迁移报告不输出实际用户原文到普通日志。
+- [x] 重启幂等：相同legacy加载两次不重复新增；完成标记只来自合法v2文档，不依赖另一个可能先写成功的布尔键。
+- [x] 新文件首次提交前对所需旧键重新计算fingerprint，变化则 `LEGACY_CHANGED_DURING_MIGRATION` 并阻止切换；测试旧版在迁移期间修改收藏的情况。
+- [x] 测试迁移中保存失败、备份失败、未知schema、损坏旧root、重复条目、空值、成人状态、不同title/zh、组合换行、旧版本同时存在；新文件存在后不自动覆盖。
+- [x] 运行 migration+repository+commands 测试和 `npm run check`；保存 P1 源码检查点；提交。
 
 **验收:** 夹具迁移报告可逐条核对，没有真实用户数据写入。提交：`V1.4.317：迁移旧标签收藏并保留差异`。
 
