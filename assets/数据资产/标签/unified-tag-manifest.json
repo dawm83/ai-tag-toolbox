@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 2,
+  "fingerprint": "eca6c2cdcfa634925c6dcb4de31c6b815133a87c2ca36151b616ec1d1f06174e",
+  "sourceSha256": "23d60b7be3f45e919b56dabed3c12b0a80e5a7ba3ecd5e3c98075a4764f8045e",
+  "sources": [
+    {
+      "file": "数据资产/标签/data-tags.js",
+      "sha256": "96379e83aa5c416dbd401ed1605a5326473e399a4b6f38339198926e14b39db4"
+    },
+    {
+      "file": "数据资产/标签/extra-tags.js",
+      "sha256": "5d171eddeb6a9489605fd216545949a8123940113f6b675acf64be6630eadc77"
+    },
+    {
+      "file": "数据资产/标签/synonyms.js",
+      "sha256": "e66ca02c8a520620ef541d6291ededb2fa0444606e2a06d8a6756853573a13c9"
+    },
+    {
+      "file": "数据资产/标签/search-keywords.js",
+      "sha256": "ad62cb59933cdae766569223c498dffbd001d75e6496b364233b8c960e0542b6"
+    },
+    {
+      "file": "数据资产/标签/character-general-tags.json",
+      "sha256": "c47a935e8545559455990ffe4d971a5d4fb4765c2645d0b8e1d5f90253fd09d6"
+    },
+    {
+      "file": "模型/tags-canary.json",
+      "sha256": "bab0450af2311b5350c267cd4c8749dd11e9ccbfd9db1385aab1ef348d52cec7"
+    },
+    {
+      "file": "数据资产/角色/characters.json",
+      "sha256": "fb73d688a6cd15c27b71a3c33f317c4fbcd7d680d95c9e4dce3a5a412f2d7e48"
+    },
+    {
+      "file": "数据资产/角色/specific-tags.json",
+      "sha256": "1334b4891f28e106318bcd9fadb3e2854d6d0c9c62f3015cabaf729af5936c46"
+    },
+    {
+      "file": "数据资产/角色/manifest.json",
+      "sha256": "e962d9c91ef57c1608f9f8fdbef9e2ace281e3f9b7ec560000f621993cd83b89"
+    }
+  ],
+  "counts": {
+    "tags": 53707,
+    "ordinary": 19692,
+    "characters": 34122,
+    "fallbackCharacters": 523,
+    "specific": 804,
+    "categories": 27,
+    "subcategories": 201
+  },
+  "mappingCounts": {
+    "ordinary": 19692,
+    "characters": 34122,
+    "series": 4049,
+    "specific": 804,
+    "subcategories": 201
+  }
+}
