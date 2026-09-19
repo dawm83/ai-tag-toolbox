@@ -75,3 +75,5 @@ Task 2: review — a57e22c, focused11/full331, reviewer /root/unified_review_rep
 Task 2: fix round1 — required legacy backup keys missing custom_tags/selected; duplicated structural validators drifted. Original implementer refactoring shared schema export and exhaustive10-key backup tests; atomic IO path approved.
 Task 2: complete — commitsa57e22c/a989888, reviewer PASS, targeted26/project332, atomic replace+backup and all10 source keys verified. Full directory metadata power-loss fsync not claimed.
 Task 3: running — /root/unified_tags_commands (gpt-6-astra/high), basea989888; single authoritative commands/projections/live selections/history. No production UI cutover yet.
+Task 3: review — commit0dc603e, focused44/project350 pass; reviewer /root/unified_review_commands (gpt-5.6-sol/high), review range8a21688..0dc603e. Recovery resumed2026-09-20 in exact toolbox directory; simulator untouched.
+Ruling: deleted favorite structures must relocate memberships to the explicit “未分类” destination specified in design line350, not arbitrary first remaining user group — predictable organization matters; current deviation will be closed with Task3 review findings.
