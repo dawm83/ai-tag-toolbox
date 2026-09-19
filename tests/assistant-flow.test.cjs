@@ -103,7 +103,7 @@ async function testGenerationSettingsMigration() {
   assert.equal(migrated.generation.imagesPerRound, 4);
   assert.equal(migrated.generation.maxAutoRounds, 1);
   const fresh = modules.normaliseSettings({});
-  assert.equal(fresh.comfy.enabled, true);
+  assert.equal(fresh.comfy.enabled, false);
   assert.equal(fresh.generation.autoRun, true);
   assert.equal(fresh.generation.imagesPerRound, 1);
   assert.equal(fresh.generation.maxAutoRounds, 3);
@@ -155,6 +155,7 @@ async function testHighLevelGenerationPersistsCandidatesAndSelection() {
       return { text: '{"positiveTags":["1girl","blue hair"]}' };
     } }
   });
+  await assistant.refreshCapabilities();
   const result = await assistant.run({ text: '画一个蓝发女孩', requestId: 'assistant-generation-root' });
   assert.equal(result.ok, true, JSON.stringify(result.error));
   assert.equal(renderCount, 1);

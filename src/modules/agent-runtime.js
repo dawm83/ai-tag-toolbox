@@ -262,7 +262,7 @@ function createAgentRuntime(options = {}) {
           const toolMessage = { role: 'tool', tool_call_id: call.id, content: JSON.stringify(outcome.ok ? outcome.data : outcome.error) };
           messages.push(toolMessage); transcript.push(clone(toolMessage)); context.partial = partial();
           if (!outcome.ok) throw outcome.error;
-          if ((call.name === 'generation.execute' || call.name === 'generation.resume') && generationResult?.status === 'needs_input' && generationResult?.needsInput?.kind === 'character') {
+          if ((call.name === 'generation.execute' || call.name === 'generation.resume') && generationResult?.status === 'needs_input') {
             flushDelta(); emit(context, 'round.complete', { round });
             const data = { ...clone(generationResult), text: '', reasoning: '', toolCalls, events: context.events.slice(), artifacts, imageIds: [...new Set(artifacts.map(item => item.imageId).filter(Boolean))], transcript };
             context.partial = data;

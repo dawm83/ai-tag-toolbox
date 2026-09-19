@@ -763,12 +763,13 @@
     function syncComfyStatus(capabilities = ui.comfyCapabilities) {
       const module = $("#comfyUiModule");
       if (!module) return;
-      const state = capabilities?.comfy || {};
+      const state = capabilities?.comfy || assistant?.getCapabilities?.()?.comfy || {};
       module.hidden = false;
       const status = $("#comfyStatus");
       const statusLabel = capabilityLabel(capabilities);
       if (status) {
-        status.textContent = state.render ? "已连接 · 就绪" : !state.connected ? "未连接" : !state.enabled ? "已停用" : "工作流未就绪";
+        const enabled = settings().comfyOn === true;
+        status.textContent = !state.connected ? localized("ui.ai.comfyDisconnectedTags", "未连接 · 当前仅生成 Tag") : !state.workflowReady ? localized("ui.ai.comfyWorkflowMissing", "已连接 · 工作流未就绪") : enabled ? localized("ui.ai.comfyDrawingReady", "已连接 · 绘图已启用") : localized("ui.ai.comfyOnlyTags", "已连接 · 当前仅生成 Tag");
         status.title = statusLabel;
         const connected = state.connected === true;
         const workflowReady = state.workflowReady === true;
@@ -776,7 +777,14 @@
         status.classList.toggle("is-comfy-warning", connected && !workflowReady);
         status.classList.toggle("is-comfy-error", !connected);
       }
-      const toggle = $("#talkComfyOn"); if (toggle) toggle.checked = settings().comfyOn === true || settings().comfy?.enabled === true;
+      for (const selector of ["#talkComfyOn", "#comfyOn"]) {
+        const toggle = $(selector);
+        if (toggle) {
+          toggle.checked = state.connected === true && state.workflowReady === true && (settings().comfyOn === true || settings().comfy?.enabled === true);
+          toggle.disabled = state.connected !== true || state.workflowReady !== true;
+          toggle.title = toggle.disabled ? statusLabel : "";
+        }
+      }
       syncGenerationControls();
       const workflow = $("#generationWorkflowName");
       if (workflow) {
@@ -787,7 +795,8 @@
     }
     function syncGenerationControls() {
       const current = settings();
-      const enabled = current.comfyOn === true || current.comfy?.enabled === true;
+      const state = ui.comfyCapabilities?.comfy || assistant?.getCapabilities?.()?.comfy || {};
+      const enabled = (current.comfyOn === true || current.comfy?.enabled === true) && state.connected === true && state.workflowReady === true;
       const autoRun = current.generationAutoRun !== false;
       const batch = $("#imagesPerRound");
       const rounds = $("#maxAutoRounds");
@@ -795,6 +804,8 @@
       if (batch) { batch.value = String(Math.max(1, Math.min(10, Number(current.imagesPerRound || current.batchCount) || 1))); batch.disabled = !enabled; }
       if (rounds) { rounds.value = String(Math.max(1, Math.min(10, Number(current.maxAutoRounds || current.maxComfyCalls) || 3))); rounds.disabled = !enabled || !autoRun; }
       if (automatic) { automatic.checked = autoRun; automatic.disabled = !enabled; }
+      const controls = $(".generation-controls"); if (controls) controls.hidden = !enabled;
+      if (automatic?.closest("label")) automatic.closest("label").hidden = !enabled;
     }
     async function refreshCapabilitiesStatus(options = {}) {
       if (typeof assistant?.refreshCapabilities !== "function") return null;
@@ -2278,7 +2289,26 @@
       const messageText = doc.createElement("p");
       messageText.textContent = pending?.message || "生成任务需要补充信息后继续";
       notice.appendChild(messageText);
-      if (pending?.kind !== "character") return notice;
+      if (pending?.kind !== "character") {
+        if (['connection', 'workflow'].includes(pending?.kind) && message.result?.stopReason !== 'COMFY_SUBMISSION_UNKNOWN') {
+          const resume = doc.createElement('button'); resume.type = 'button'; resume.className = 'generation-resume-connection btn btn-secondary';
+          resume.textContent = localized('ui.ai.resumeDrawing', '恢复原任务');
+          resume.onclick = async () => {
+            if (resume.disabled || assistant?.snapshot?.().busy) return;
+            if (settings().comfyOn !== true) return notify(localized('ui.ai.enableDrawingToResume', '请先确认连接并开启绘图，再恢复原任务'));
+            resume.disabled = true;
+            const label = $("#talkSendBtn")?.textContent || "📤 发送";
+            setTalkBusy(true, label);
+            try {
+              const result = await assistant?.continueGeneration?.(message.id, '', '', { resumeOnly: true, onEvent: handleTalkToolEvent });
+              if (result?.ok === false) notify(result.error?.message || '恢复失败');
+            } catch (error) { notify(error?.message || '恢复失败'); }
+            finally { setTalkBusy(false, label); renderTalk(); refreshCapabilitiesStatus(); }
+          };
+          notice.append(resume);
+        }
+        return notice;
+      }
       const hint = doc.createElement("p");
       hint.className = "muted";
       hint.textContent = `待确认：${str(pending.query)}。已有作品角色可点击候选或重新搜索；原创人物可直接继续。`;
@@ -2375,6 +2405,36 @@
       if (ui.characterSelectionBusy || message.status === "streaming" || assistant?.snapshot?.().busy) setDisabled(true);
       return notice;
     }
+    function renderGenerationTags(row, message) {
+      $(".generation-tags-result", row)?.remove();
+      if (message.role !== "assistant" || messageHasRender(message) || !message.result?.prompt) return;
+      const panel = doc.createElement("section"); panel.className = "generation-tags-result";
+      for (const [kind, title, value, tagRows] of [
+        ["positive", localized("ui.ai.positiveTags", "正向 Tag"), message.result.prompt, message.result.positiveTags],
+        ["negative", localized("ui.ai.negativeTags", "负向 Tag"), message.result.negative, message.result.negativeTags]
+      ]) {
+        if (!value) continue;
+        const heading = doc.createElement("p");
+        const copyButton = doc.createElement("button"); copyButton.type = "button"; copyButton.className = "abtn btn btn-secondary";
+        copyButton.dataset.copyGenerationTags = kind;
+        copyButton.textContent = localized(kind === "positive" ? "ui.ai.copyPositiveTags" : "ui.ai.copyNegativeTags", `复制${title}`);
+        copyButton.onclick = async () => { if (await copy(value)) notify(localized("ui.common.copied", "已复制")); };
+        heading.append(title + " ", copyButton); panel.append(heading);
+        const chips = doc.createElement("div"); chips.className = "chips";
+        for (const tag of Array.isArray(tagRows) && tagRows.length ? tagRows : value.split(/[,，\n]+/).map(item => item.trim()).filter(Boolean)) {
+          const button = doc.createElement("button"); button.type = "button"; button.className = "chip btn btn-chip";
+          button.style.setProperty("--c", categoryColor(kind === "negative" ? "negative" : "other"));
+          const label = doc.createElement("span"); label.className = "en"; label.textContent = tag; button.append(label);
+          button.onclick = async () => { if (await copy(tag)) notify(localized("ui.common.copied", "已复制")); };
+          chips.append(button);
+        }
+        panel.append(chips);
+      }
+      if (message.result.status === "failed" && message.result.error?.message) {
+        const error = doc.createElement("p"); error.textContent = message.result.error.message; panel.append(error);
+      }
+      row.append(panel);
+    }
     function renderTalk() {
       const host = $("#talkConv");
       if (!host) return;
@@ -2408,6 +2468,7 @@
           if (!bodyText && message.status === "done" && candidateRows.length && !drawPrompt)
             body.textContent = "请选择一张候选图作为最终结果";
           row.appendChild(body);
+          renderGenerationTags(row, message);
           if (message.result?.status === "needs_input" && message.result?.needsInput) row.appendChild(generationNeedsInput(message));
           const reasoning = message.reasoning || parsedDraw?.thinking || "";
           if (reasoning) {
@@ -2479,8 +2540,9 @@
               if (message.role === "assistant") {
                 const negative = message.result?.finalNegative || message.result?.negative || "";
                 const isDrawCopy = messageHasRender(message) && Boolean(drawPrompt);
-                const value = isDrawCopy
-                  ? `${drawPrompt}${negative ? `\n\n【负面提示词】\n${negative}` : ""}`
+                const tagPrompt = isDrawCopy ? drawPrompt : !messageHasRender(message) ? message.result?.prompt : "";
+                const value = tagPrompt
+                  ? `${tagPrompt}${negative ? `\n\n【负面提示词】\n${negative}` : ""}`
                   : message.text || "";
                 if (await copy(value)) notify(isDrawCopy ? "已复制绘图最终提示词" : "已复制 AI 回复文本");
               } else {
@@ -2523,6 +2585,7 @@
         : "";
       const bodyText = messageHasRender(message) && message.role !== "error" && (candidateRows.length || drawPrompt) ? "" : message.text || "";
       updateStreamingBody(body, bodyText);
+      renderGenerationTags(row, message);
       if (!bodyText && !message.reasoning) body.textContent = "🤔 AI 正在思考…";
       if (!bodyText && message.status === "done" && candidateRows.length && !drawPrompt)
         body.textContent = "请选择一张候选图作为最终结果";
@@ -2768,12 +2831,12 @@
       if (item.type === "evaluation" || item.type === "candidate-evaluated" || item.type === "candidate.evaluated") return `已评估 ${item.candidateId || "候选结果"}${Number.isFinite(Number(item.score)) ? ` · ${Math.round(Number(item.score))} 分` : ""}`;
       if (item.type === "recommendation" || item.type === "candidate-recommended" || item.type === "candidate.recommended") return `AI 推荐 ${item.candidateId || "候选结果"}`;
       if (item.type === "candidate.rendering") return `正在生成第 ${item.iteration || 1} 张候选`;
-      if (item.type === "prompt.compiled") return "绘图 Tag 已生成";
+      if (item.type === "prompt.compiled") return "Tag 已生成";
       if (item.type === "prompt.revised") return "已按评价修订绘图 Tag";
       if (item.type === "source.inspected") return "参考原图已分析";
       if (item.type === "generation.needs_input") return item.needsInput?.message || "生成任务需要补充信息";
       if (item.type === "generation.awaiting_feedback") return "本轮完成，等待用户点评";
-      if (item.type === "generation.completed") return "候选生成与选择完成";
+      if (item.type === "generation.completed") return item.outputType === "tags" ? "Tag 生成完成" : "候选生成与选择完成";
       if (item.type === "event") return item.name ? `${item.name} 事件` : "任务事件";
       return item.message || name || "任务事件";
     }
@@ -3078,9 +3141,9 @@
       toolProgress("#talkStatus", event);
       updateActivityTimeline();
       const type = event?.type || "";
-      if (type === "generation.started") put("#talkStatus", "正在准备自动生成任务…");
+      if (type === "generation.started") put("#talkStatus", event.outputType === "tags" ? "正在准备 Tag 生成任务…" : "正在准备绘图任务…");
       if (type === "source.inspected") put("#talkStatus", "参考原图分析完成");
-      if (type === "prompt.compiled") put("#talkStatus", "绘图 Tag 已生成");
+      if (type === "prompt.compiled") put("#talkStatus", "Tag 已生成");
       if (type === "candidate.rendering") put("#talkStatus", `正在生成第 ${Number(event.iteration) || 1} 张候选（尝试 ${Number(event.attempt) || 1}）…`);
       if (type === "candidate.ready" || type === "candidate-ready") {
         if (event.candidate?.id && event.candidate?.previewUrl) ui.candidatePreviews[event.candidate.id] = event.candidate.previewUrl;
@@ -3101,7 +3164,7 @@
       if (type === "prompt.revised") put("#talkStatus", "已按评价修订 Tag，准备下一张候选…");
       if (type === "generation.needs_input") put("#talkStatus", event.needsInput?.message || "生成任务需要补充信息");
       if (type === "generation.awaiting_feedback") put("#talkStatus", "本轮完成，等待点评");
-      if (type === "generation.completed") { updateStreamingCandidates(); put("#talkStatus", "候选比较完成"); }
+      if (type === "generation.completed") { updateStreamingCandidates(); put("#talkStatus", event.outputType === "tags" ? "Tag 生成完成" : "候选比较完成"); }
       if (type === "generation.failed") put("#talkStatus", event.error?.message || "生成任务失败");
       if (type === "generation.cancelled") put("#talkStatus", "生成任务已取消");
       if (event?.name === "comfy.render" && (type === "start" || type === "tool.start")) put("#talkStatus", "ComfyUI 渲染中…");
@@ -3158,6 +3221,7 @@
       renderTalk();
       put("#talkStatus", result?.ok === false ? compactTalkStatus(result, "发送失败") : result?.data?.status === "needs_input" ? "等待补充信息" : result?.data?.status === "awaiting_feedback" ? "本轮完成，等待点评" : "完成");
       setTalkBusy(false, label);
+      if (result?.data?.needsInput?.kind === 'connection' || result?.data?.needsInput?.kind === 'workflow') refreshCapabilitiesStatus();
     }
     function confirmClearConversation() {
       const session = assistant?.currentSession?.();
@@ -3840,6 +3904,7 @@
       });
       $("#tpDescribe")?.addEventListener("click", () => describe());
       $("#talkComfyOn")?.addEventListener("change", event => { assistant?.setSettings?.({ comfyOn: event.target.checked }); syncGenerationControls(); refreshCapabilitiesStatus({ force: true }); });
+      $("#talkComfyRefresh")?.addEventListener("click", () => refreshCapabilitiesStatus({ force: true }));
       $("#talkComfyDebug")?.addEventListener("click", () => showAi("comfy"));
       $("#tpStop")?.addEventListener("click", () => {
         if (!ui.visionBusy) return;

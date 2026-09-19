@@ -104,6 +104,7 @@ test('assistant create/recreate workflows iterate, compare, upload source and pr
     }
   });
 
+  await assistant.refreshCapabilities();
   const created = await assistant.run({ text: '创建蓝发女孩', requestId: 'integration-create' });
   assert.equal(created.ok, true, JSON.stringify(created.error));
   assert.equal(created.candidates.length, 4);

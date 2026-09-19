@@ -27,9 +27,10 @@ const imageSchema = schema({ imageId: nonempty, refId: string, slotNo: { type: '
 const workflowSchema = schema({ ready: { type: 'boolean' }, error: string }, ['ready', 'error']);
 const capabilitiesSchema = schema({ txt2img: { type: 'boolean' }, img2img: { type: 'boolean' }, controlImage: { type: 'boolean' }, mask: { type: 'boolean' } });
 const statusSchema = schema({ enabled: { type: 'boolean' }, connected: { type: 'boolean' }, workflowReady: { type: 'boolean' }, render: { type: 'boolean' }, error: string, workflowProfileId: string, workflowRevision: string, capabilities: capabilitiesSchema }, ['enabled', 'connected', 'workflowReady', 'render', 'error']);
+const pendingRenderSchema = schema({ promptId: nonempty, base: string, workflowHash: string, changedBindings: { type: 'array', items: string }, parameters: { type: 'object' }, workflowProfileId: string, workflowRevision: string, recreationMode: string, aspectRatioMode: string }, ['promptId', 'base']);
 const renderSchema = schema({ artifacts: { type: 'array', minItems: 1, maxItems: 256, items: imageSchema }, imageIds: { type: 'array', minItems: 1, maxItems: 256, items: nonempty }, prompt: string, negative: string, positiveTags: tagArray, negativeTags: tagArray, parameters: { type: 'object' }, workflowProfileId: string, workflowRevision: string, workflowHash: string, changedBindings: { type: 'array', items: string }, recreationMode: { type: 'string', enum: ['', 'reference_image', 'text_approximation'] }, aspectRatioMode: { type: 'string', enum: ['', 'source_matched', 'workflow_fixed'] } }, ['artifacts', 'imageIds']);
 const characterSelectionSchema = schema({ query: nonempty, characterId: nonempty, original: { type: 'boolean' } }, ['query']);
-const generationExecuteSchema = schema({ originalRequirements: { type: 'string', minLength: 1, maxLength: 16000 }, requirements: { type: 'string', minLength: 1, maxLength: 16000 }, mode: { type: 'string', enum: ['create', 'recreate', 'auto'] }, sourceImageId: nonempty, sourceSlot: { type: 'integer', minimum: 1, maximum: 10000 }, characterQueries: { type: 'array', maxItems: 8, items: nonempty }, characterIds: { type: 'array', maxItems: 8, items: nonempty }, strategy: { type: 'string', enum: ['quick', 'auto', 'fixed3'] }, autoSelect: { type: 'boolean' }, autoRun: { type: 'boolean' }, imagesPerRound: { type: 'integer', minimum: 1, maximum: 10 }, maxAutoRounds: { type: 'integer', minimum: 1, maximum: 10 }, workflowProfileId: nonempty });
+const generationExecuteSchema = schema({ outputType: { type: 'string', enum: ['tags', 'images'] }, originalRequirements: { type: 'string', minLength: 1, maxLength: 16000 }, requirements: { type: 'string', minLength: 1, maxLength: 16000 }, mode: { type: 'string', enum: ['create', 'recreate', 'auto'] }, sourceImageId: nonempty, sourceSlot: { type: 'integer', minimum: 1, maximum: 10000 }, characterQueries: { type: 'array', maxItems: 8, items: nonempty }, characterIds: { type: 'array', maxItems: 8, items: nonempty }, strategy: { type: 'string', enum: ['quick', 'auto', 'fixed3'] }, autoSelect: { type: 'boolean' }, autoRun: { type: 'boolean' }, imagesPerRound: { type: 'integer', minimum: 1, maximum: 10 }, maxAutoRounds: { type: 'integer', minimum: 1, maximum: 10 }, workflowProfileId: nonempty });
 const generationResumeSchema = schema({ jobId: nonempty, action: { type: 'string', enum: ['continue'] }, baseCandidateId: nonempty, feedback: { type: 'string', minLength: 1, maxLength: 16000 }, sourceImageId: nonempty, characterIds: { type: 'array', maxItems: 8, items: nonempty }, characterSelection: characterSelectionSchema, workflowProfileId: nonempty, strategy: { type: 'string', enum: ['quick', 'auto', 'fixed3'] }, autoSelect: { type: 'boolean' }, autoRun: { type: 'boolean' }, imagesPerRound: { type: 'integer', minimum: 1, maximum: 10 }, maxAutoRounds: { type: 'integer', minimum: 1, maximum: 10 } }, ['jobId']);
 const DEFINITIONS = Object.freeze({
   'tags.search': { description: '查询本站标签及释义；Tag 含义、拼写或是否属于本站词库不确定时调用。命中角色名时附带角色出处和外貌 Tag。items 按稳定 id 去重，kind 区分 tag 和 bundle，favoriteLocations 汇总收藏位置；content 是完整原文，contentOmitted=true 表示内容未返回，不得用部分文本代替。', parameters: schema({ query: { type: 'string', maxLength: 1000 }, category: string, includeAdult: { type: 'boolean' }, limit: { type: 'integer', minimum: 1,maximum: 200 } }, ['query']), outputSchema: schema({ items: { type: 'array', maxItems: 200, items: tagSchema } }, ['items']) },
@@ -40,8 +41,8 @@ const DEFINITIONS = Object.freeze({
   'agent.generateTags': { description: '使用 Vision AI，根据要求、已有 Tag、参考 Tag、可选 imageId 和 characters.search 返回的 characterIds 生成英文绘图 Tag。', parameters: generateParameters, outputSchema: OUTPUT_SCHEMAS?.generateTags },
   'comfy.status': { description: '读取 ComfyUI 连接、启用和工作流状态。', parameters: schema({}), outputSchema: statusSchema },
   'comfy.validateWorkflow': { description: '检查用户当前 API 工作流是否可用。', parameters: schema({}), outputSchema: workflowSchema },
-  'comfy.render': { description: '按正向 Tag 和可选负向 Tag 出图；内部复刻任务可传当前会话的 sourceImageId。', parameters: schema({ positiveTags: { ...tagArray, minItems: 1 }, negativeTags: tagArray, sourceImageId: nonempty, denoise: { type: 'number', minimum: 0, maximum: 1 }, controlStrength: { type: 'number', minimum: 0, maximum: 2 }, batchCount: { type: 'integer', minimum: 1, maximum: 10 } }, ['positiveTags']), outputSchema: renderSchema },
-  'generation.execute': { description: '启动程序控制的绘图或复刻任务；程序会生成并评价 1 到 3 个候选、按需修订 Tag，并返回最佳图与每张图的实际提示词。原创人物、OC、自设及普通外貌描述直接放入 originalRequirements；characterQueries 和 characterIds 仅用于用户指定的已有作品角色。', parameters: generationExecuteSchema, outputSchema: { type: 'object' } },
+  'comfy.render': { description: '按正向 Tag 和可选负向 Tag 出图；内部复刻任务可传当前会话的 sourceImageId。', parameters: schema({ pendingRender: pendingRenderSchema, positiveTags: { ...tagArray, minItems: 1 }, negativeTags: tagArray, sourceImageId: nonempty, denoise: { type: 'number', minimum: 0, maximum: 1 }, controlStrength: { type: 'number', minimum: 0, maximum: 2 }, batchCount: { type: 'integer', minimum: 1, maximum: 10 } }, ['positiveTags']), outputSchema: renderSchema },
+  'generation.execute': { description: '生成 Tag 或图片：仅 Tag 时传 outputType=tags，绘图时传 images；程序会生成并评价 1 到 3 个候选、按需修订 Tag，并返回最佳图与每张图的实际提示词。原创人物、OC、自设及普通外貌描述直接放入 originalRequirements；characterQueries 和 characterIds 仅用于用户指定的已有作品角色。', parameters: generationExecuteSchema, outputSchema: { type: 'object' } },
   'generation.resume': { description: '为处于 needs_input 或 interrupted 的生成任务补充原图、角色、工作流或策略后继续执行。角色选择必须原样回传上一次结果中的 jobId 和 needsInput.query 到 characterSelection；已有角色传 characterId，用户明确按原创人物继续时传 original=true 且不传 characterId，仅跳过当前人物。', parameters: generationResumeSchema, outputSchema: { type: 'object' } }
 });
 
@@ -207,6 +208,18 @@ function createPrimaryTools(options = {}) {
       const settings = currentComfy(); if (settings.enabled !== true) throw failure('COMFY_DISABLED', 'ComfyUI 未启用'); syncComfy(settings);
       const profile = profiles?.active?.();
       const negative = args.negativeTags === undefined ? (Array.isArray(settings.negativeTags) ? settings.negativeTags : text(settings.negativeTags).split(/[,，\n]+/).filter(Boolean)) : args.negativeTags;
+      if (args.pendingRender) {
+        const pending = args.pendingRender;
+        if (pending.base !== settings.base) throw failure('COMFY_PENDING_ADDRESS', '请切回提交任务时的 ComfyUI 地址，再查询原任务。');
+        if (typeof comfy.wait !== 'function') throw failure('COMFY_WAIT_UNAVAILABLE', '当前连接器不支持恢复结果查询');
+        const raw = await comfy.wait(pending.promptId, { signal: context.signal });
+        return renderedImages(raw, context, {
+          prompt: args.positiveTags.join(', '), negative: negative.join(', '), positiveTags: args.positiveTags, negativeTags: negative,
+          parameters: pending.parameters || {}, workflowHash: pending.workflowHash || '', changedBindings: pending.changedBindings || [],
+          workflowProfileId: pending.workflowProfileId || '', workflowRevision: pending.workflowRevision || '',
+          recreationMode: pending.recreationMode || '', aspectRatioMode: pending.aspectRatioMode || ''
+        });
+      }
       let uploaded = null;
       let recreationMode = '';
       let aspectRatioMode = '';
@@ -243,7 +256,7 @@ function createPrimaryTools(options = {}) {
       }
       if (uploaded && profile?.bindings?.denoise && args.denoise !== undefined) parameters.denoise = args.denoise;
       if (uploaded && profile?.bindings?.controlStrength && args.controlStrength !== undefined) parameters.controlStrength = args.controlStrength;
-      const raw = await comfy.render({ prompt: args.positiveTags.join(', '), negative: negative.join(', '), ...parameters, ...(uploaded ? { sourceImage: uploaded } : {}), workflow: settings.workflow, signal: context.signal, onSubmitted: value => { submitted = clone(value || {}); if (!context.signal?.aborted) context.onEvent?.({ type: 'comfy.submitted', workflowHash: text(value?.workflowHash), changedBindings: Array.isArray(value?.changedBindings) ? value.changedBindings.slice() : [], parameters: object(value?.parameters) ? clone(value.parameters) : {} }); }, onProgress: value => { if (!context.signal?.aborted) context.onEvent?.({ type: 'progress', tool: 'comfy.render', queue: typeof value === 'number' ? value : undefined }); } });
+      const raw = await comfy.render({ prompt: args.positiveTags.join(', '), negative: negative.join(', '), ...parameters, ...(uploaded ? { sourceImage: uploaded } : {}), workflow: settings.workflow, signal: context.signal, onSubmitted: value => { submitted = clone(value || {}); if (!context.signal?.aborted) context.onEvent?.({ type: 'comfy.submitted', promptId: text(value?.promptId), base: settings.base, workflowProfileId: text(profile?.id), workflowRevision: profile?.updatedAt ? String(profile.updatedAt) : '', recreationMode, aspectRatioMode, workflowHash: text(value?.workflowHash), changedBindings: Array.isArray(value?.changedBindings) ? value.changedBindings.slice() : [], parameters: object(value?.parameters) ? clone(value.parameters) : {} }); }, onProgress: value => { if (!context.signal?.aborted) context.onEvent?.({ type: 'progress', tool: 'comfy.render', queue: typeof value === 'number' ? value : undefined }); } });
       guardSignal(context);
       return renderedImages(raw, context, {
         prompt: args.positiveTags.join(', '), negative: negative.join(', '), positiveTags: args.positiveTags.slice(), negativeTags: negative.slice(),
@@ -272,7 +285,14 @@ function createPrimaryTools(options = {}) {
   };
   const resolve = value => { const name = NATIVE_NAMES.get(value) || value; return TOOL_NAMES.includes(name) ? { name, ...clone(DEFINITIONS[name]), handler: handlers[name] } : null; };
   const list = () => TOOL_NAMES.map(name => ({ name, ...clone(DEFINITIONS[name]) }));
-  const listPrimary = () => PRIMARY_TOOL_NAMES.map(name => ({ name, ...clone(DEFINITIONS[name]) }));
+  const listPrimary = () => PRIMARY_TOOL_NAMES.filter(name => name !== 'comfy.status' || getSettings()?.comfy?.enabled !== false).map(name => {
+    const entry = { name, ...clone(DEFINITIONS[name]) };
+    if (getSettings()?.comfy?.enabled === false && name === 'generation.execute') {
+      entry.parameters.properties.outputType.enum = ['tags'];
+      entry.description = '生成 Tag 与提示词，outputType 必须为 tags。支持角色与参考图；当前绘图关闭，生成 Tag 后直接完成，不需要 ComfyUI 或工作流。';
+    }
+    return entry;
+  });
   async function call(name, args = {}, context = {}) {
     const entry = resolve(name); if (!entry) return resultError({ code: 'TOOL_UNAVAILABLE', message: `工具不可用：${name}` }, context.requestId);
     try {
@@ -281,7 +301,7 @@ function createPrimaryTools(options = {}) {
       return resultOk(data, value?.requestId || context.requestId, value?.usage);
     } catch (error) { return resultError(error, context.requestId); }
   }
-  return Object.freeze({ names: () => TOOL_NAMES.slice(), primaryNames: () => PRIMARY_TOOL_NAMES.slice(), list, listPrimary, schemas: list, openAiTools: () => listPrimary().map(item => ({ type: 'function', function: { name: item.name.replace('.', '_'), description: item.description, parameters: item.parameters } })), resolve, call, has: name => Boolean(resolve(name)) });
+  return Object.freeze({ names: () => TOOL_NAMES.slice(), primaryNames: () => listPrimary().map(item => item.name), list, listPrimary, schemas: list, openAiTools: () => listPrimary().map(item => ({ type: 'function', function: { name: item.name.replace('.', '_'), description: item.description, parameters: item.parameters } })), resolve, call, has: name => Boolean(resolve(name)) });
 }
 
 module.exports = { TOOL_NAMES, PRIMARY_TOOL_NAMES, DEFINITIONS, createPrimaryTools };

@@ -10,6 +10,7 @@
 const fs = require('node:fs');
 const { createHash } = require('node:crypto');
 const workflowBindings = require('./comfy-workflow');
+const { nodeFetch } = require('./comfy-http');
 
 function asText(value, fallback = '') {
   const result = value == null ? '' : String(value).trim();
@@ -519,7 +520,7 @@ function defaultWorkflow(params = {}) {
 
 function createComfy(options = {}) {
   let base = asText(options.baseUrl || options.base, 'http://127.0.0.1:8188').replace(/\/+$/, '');
-  const fetchImpl = options.fetch || globalThis.fetch;
+  const fetchImpl = options.fetch || nodeFetch;
   const clientId = asText(options.clientId, `aitag-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
   let workflow = options.workflow || '';
   const objectInfoCache = new Map();
@@ -585,38 +586,53 @@ function createComfy(options = {}) {
       // Abort is handled by wait()/the caller so a user stop remains concise.
       if (init.signal?.aborted) throw error;
       const detail = asText(error?.message || error);
-      throw new Error(`ComfyUI 连接失败${detail ? `：${detail}` : ''}。请确认 ComfyUI 已启动，并检查「API 设置 → ComfyUI 地址」`);
+      if (pathname === '/prompt' && init.method === 'POST') throw Object.assign(new Error(`ComfyUI 提交结果未知${detail ? `：${detail}` : ''}。请先检查 ComfyUI 队列，本任务不会自动重复提交。`), { code: 'COMFY_SUBMISSION_UNKNOWN', retryable: false });
+      throw Object.assign(new Error(`ComfyUI 连接失败${detail ? `：${detail}` : ''}。请确认 ComfyUI 已启动，并检查「API 设置 → ComfyUI 地址」`), { code: error?.code === 'ETIMEDOUT' ? 'COMFY_TIMEOUT' : 'COMFY_CONNECTION', retryable: false });
     }
     if (!response.ok) {
       let detail = '';
       try { detail = (await response.text()).slice(0, 300); } catch { /* ignore */ }
       detail = detail.replace(/<[^>]*>/g, ' ').replace(/&#x20;|&#32;/gi, ' ').replace(/\s+/g, ' ').trim();
+      if (pathname === '/prompt' && init.method === 'POST' && response.status >= 500) throw Object.assign(new Error(`ComfyUI 提交结果未知（HTTP ${response.status}），请先检查 ComfyUI 队列。${detail}`), { code: 'COMFY_SUBMISSION_UNKNOWN', retryable: false });
       const hint = response.status === 404
         ? '请检查「API 设置 → ComfyUI 地址」是否正确，并确认 ComfyUI 服务已启动'
         : response.status >= 500
           ? '请查看 ComfyUI 控制台日志，确认服务和模型没有报错'
           : '请检查 ComfyUI 工作流、节点和参数后重试';
-      throw new Error(`ComfyUI 请求失败（HTTP ${response.status}）${detail ? `：${detail}` : ''}。${hint}`);
+      throw Object.assign(new Error(`ComfyUI 请求失败（HTTP ${response.status}）${detail ? `：${detail}` : ''}。${hint}`), { code: 'COMFY_HTTP_ERROR', status: response.status, retryable: false });
     }
     return response;
   }
-  async function check() {
-    try { await request('/system_stats', { signal: AbortSignal.timeout ? AbortSignal.timeout(5000) : undefined }); return true; }
-    catch { return false; }
+  async function probeSystem(signal) {
+    const controller = new AbortController();
+    const abort = () => controller.abort(signal.reason);
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) abort();
+    const timer = setTimeout(() => controller.abort(Object.assign(new Error('ComfyUI 连接检测超时'), { code: 'COMFY_TIMEOUT' })), 5000);
+    try {
+      const system = await (await request('/system_stats', { signal: controller.signal })).json();
+      if (!system?.system || !Array.isArray(system.devices)) throw Object.assign(new Error('地址返回的内容不是有效的 ComfyUI 服务信息，请检查 ComfyUI 地址'), { code: 'COMFY_INVALID_RESPONSE' });
+      return system;
+    } catch (error) {
+      if (error instanceof SyntaxError) throw Object.assign(new Error('地址返回的内容不是 ComfyUI JSON，请检查 ComfyUI 地址'), { code: 'COMFY_INVALID_RESPONSE' });
+      throw error;
+    } finally { clearTimeout(timer); signal?.removeEventListener('abort', abort); }
   }
+  async function check() { try { await probeSystem(); return true; } catch { return false; } }
   async function status(options2 = {}) {
     const enabled = options2.enabled !== false;
     const selectedWorkflow = options2.workflow !== undefined ? options2.workflow : activeProfile()?.workflow || workflow;
     const workflowInfo = workflowStatus(selectedWorkflow);
-    let connected = false;
-    if (typeof fetchImpl === 'function') connected = await check();
     let system = null;
-    if (connected) { try { system = await (await request('/system_stats', { signal: options2.signal })).json(); } catch { system = null; } }
+    let connectionError = null;
+    try { system = await probeSystem(options2.signal); } catch (error) { if (options2.signal?.aborted) throw error; connectionError = error; }
+    const connected = Boolean(system);
     let queue = null;
-    if (connected) { try { queue = await (await request('/queue', { signal: options2.signal })).json(); } catch { queue = null; } }
+    if (connected) { try { queue = await (await request('/queue', { signal: options2.signal, timeoutMs: 5000 })).json(); } catch { queue = null; } }
     return {
       enabled,
       connected,
+      errorCode: connectionError?.code || '',
       workflowReady: Boolean(workflowInfo.ready),
       render: Boolean(enabled && connected && workflowInfo.ready),
       workflow: workflowInfo.workflow || null,
@@ -624,7 +640,7 @@ function createComfy(options = {}) {
       device: system?.devices?.[0]?.name || '',
       queue: { running: Array.isArray(queue?.queue_running) ? queue.queue_running.length : 0, pending: Array.isArray(queue?.queue_pending) ? queue.queue_pending.length : 0 },
       error: !connected
-        ? 'ComfyUI 未连接 · 请确认 ComfyUI 已启动，并检查「API 设置 → ComfyUI 地址」'
+        ? `ComfyUI 未连接 · ${connectionError?.message || '请确认 ComfyUI 已启动，并检查「API 设置 → ComfyUI 地址」'}`
         : !workflowInfo.ready
           ? (workflowInfo.error || 'ComfyUI 未就绪 · 请到「API 设置 → ComfyUI」上传或粘贴 API 格式工作流')
           : !enabled
@@ -717,7 +733,7 @@ function createComfy(options = {}) {
       }
       await sleep(Number(options2.intervalMs) || 1200, options2.signal);
     }
-    throw new Error('ComfyUI 生成超时，请检查队列和模型加载状态；必要时减少步数或迭代次数后重试');
+    throw Object.assign(new Error('ComfyUI 等待结果超时，已保留任务编号；可恢复查询原任务。'), { code: 'COMFY_TIMEOUT', retryable: false });
   }
   async function render(params = {}) {
     if (!params.workflow && !activeProfile()?.workflow && !workflow) throw new Error('尚未设置 ComfyUI 工作流，请到「API 设置 → ComfyUI」上传或粘贴 API 格式工作流');
@@ -742,9 +758,10 @@ function createComfy(options = {}) {
       body: JSON.stringify({ prompt: built, client_id: clientId }),
       signal: params.signal
     });
-    const result = await response.json();
-    if (result?.error) throw new Error(`ComfyUI 错误：${JSON.stringify(result.error).slice(0, 300)}。请检查工作流节点、模型文件和参数后重试`);
-    if (!result?.prompt_id) throw new Error('ComfyUI 没有返回任务编号，请查看 ComfyUI 控制台日志并确认服务正常');
+    let result;
+    try { result = await response.json(); } catch { throw Object.assign(new Error('ComfyUI 提交结果未知：未能读取任务编号，请先检查 ComfyUI 队列。'), { code: 'COMFY_SUBMISSION_UNKNOWN' }); }
+    if (result?.error) throw Object.assign(new Error(`ComfyUI 错误：${JSON.stringify(result.error).slice(0, 300)}。请检查工作流节点、模型文件和参数后重试`), { code: 'COMFY_HTTP_ERROR' });
+    if (!result?.prompt_id) throw Object.assign(new Error('ComfyUI 提交结果未知：没有返回任务编号，请先检查 ComfyUI 队列。'), { code: 'COMFY_SUBMISSION_UNKNOWN' });
     try { params.onSubmitted?.({ promptId: result.prompt_id, workflowHash, changedBindings: [...new Set(changedBindings)], parameters }); } catch { /* diagnostics are optional */ }
     const output = await wait(result.prompt_id, params);
     return { ...output, workflowHash, changedBindings: [...new Set(changedBindings)], parameters };

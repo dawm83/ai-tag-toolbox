@@ -64,6 +64,12 @@ function createAssistant(options = {}) {
   let generation;
   let imageRepository;
   let destroyed = false;
+  function executionSettings() {
+    const value = settings.snapshot();
+    const ready = capabilities?.comfy;
+    value.comfy.enabled = value.comfy.enabled && ready?.connected === true && ready?.workflowReady === true;
+    return value;
+  }
   function read(key, fallback) { try { return storage?.get ? storage.get(key, fallback) : storage?.load?.(key, fallback) ?? fallback; } catch { return fallback; } }
   function write(key, value) { if (storage?.set) storage.set(key, clone(value)); else storage?.save?.(key, clone(value)); }
   function sessionById(sessionId = state.currentId) { return state.sessions.find(session => session.id === sessionId) || null; }
@@ -146,10 +152,10 @@ function createAssistant(options = {}) {
   }
   const comfy = options.comfy && typeof options.comfy.render === 'function' ? options.comfy : createComfy({ ...(options.comfyOptions || {}), profiles: comfyProfiles });
   const visionService = options.visionService || createVisionService({ images, visionTempStore, localVision: options.localVision || options.vision, visionAI: visionClient, parseMetadata: parsePngMetadata, getPrompt: key => prompts.getEffective?.(key) || prompts.get?.(key) || '' });
-  const primary = createPrimaryAgent({ client: ai, prompts, getSettings: settings.snapshot, charactersEnabled: Boolean(options.characters), favoritesEnabled: Boolean(options.favorites) });
+  const primary = createPrimaryAgent({ client: ai, prompts, getSettings: executionSettings, charactersEnabled: Boolean(options.characters), favoritesEnabled: Boolean(options.favorites) });
   const subagents = createFixedSubagents({ vision: visionService, translation: options.translation, ai, visionAI: visionClient, prompts, resolveImage, getSettings: settings.snapshot });
-  runtime = createAgentRuntime({ primaryClient: primary, subagents, tools: () => primaryTools, getSettings: settings.snapshot, getPrimaryPrompt: primary.getPrompt, monitor: callMonitor });
-  primaryTools = createPrimaryTools({ tags, favorites: options.favorites, characters: options.characters, images, imageRepository, runtime, comfy, comfyProfiles, generation: () => generation, getSettings: settings.snapshot });
+  runtime = createAgentRuntime({ primaryClient: primary, subagents, tools: () => primaryTools, getSettings: executionSettings, getPrimaryPrompt: primary.getPrompt, monitor: callMonitor });
+  primaryTools = createPrimaryTools({ tags, favorites: options.favorites, characters: options.characters, images, imageRepository, runtime, comfy, comfyProfiles, generation: () => generation, getSettings: executionSettings });
   const internalTool = async (name, args, context) => {
     const outcome = await runtime.callTool(name, args, { parentRequestId: context.requestId, signal: context.signal, sessionId: context.sessionId, messageId: context.messageId, onEvent: context.onEvent });
     if (outcome?.ok === false) throw Object.assign(new Error(outcome.error?.message || '内部工具调用失败'), { code: outcome.error?.code || 'TOOL_FAILED', retryable: outcome.error?.retryable === true });
@@ -162,14 +168,16 @@ function createAssistant(options = {}) {
       positiveTags: input.positiveTags,
       negativeTags: input.negativeTags,
       batchCount: input.batchCount,
+      ...(input.pendingRender ? { pendingRender: input.pendingRender } : {}),
       ...(input.sourceImageId ? { sourceImageId: input.sourceImageId } : {})
     }, context),
     cancelRender: () => comfy?.cancel?.('current'),
     preflight: async (input, context) => {
       const value = await internalTool('comfy.status', {}, context);
+      if (!value.connected || (!input.pendingRender && !value.workflowReady)) settings.setForm({ comfyOn: false });
       const profile = comfyProfiles.active();
       const referenceReady = Boolean(profile?.bindings?.sourceImage && (profile?.capabilities?.img2img === true || profile?.capabilities?.controlImage === true));
-      return { ready: value.render === true, connected: value.connected === true, error: value.error || '', workflowProfileId: profile?.id || '', workflowRevision: profile?.updatedAt ? String(profile.updatedAt) : '', recreationMode: input.mode === 'recreate' ? (referenceReady ? 'reference_image' : 'text_approximation') : '' };
+      return { ready: input.pendingRender ? value.enabled && value.connected : value.render === true, connected: value.connected === true, error: value.error || '', workflowProfileId: profile?.id || '', workflowRevision: profile?.updatedAt ? String(profile.updatedAt) : '', recreationMode: input.mode === 'recreate' ? (referenceReady ? 'reference_image' : 'text_approximation') : '' };
     },
     listConversationImages: sessionId => imageRepository.listConversation(sessionId, { includePending: true, includeDeleted: false }),
     resolveCharacter: (value, context) => {
@@ -178,7 +186,7 @@ function createAssistant(options = {}) {
       if (context.mode === 'id') return options.characters.get?.(value, { includeAdult }) || null;
       return options.characters.page?.({ query: value, includeAdult, precision: 'standard', limit: 10 }) || null;
     },
-    getSettings: settings.snapshot,
+    getSettings: executionSettings,
     getPromptSnapshot: prompts.snapshot
   });
 
@@ -295,7 +303,7 @@ function createAssistant(options = {}) {
       applyPayload(job, payload);
       const error = result.ok ? null : errorShape(result.error);
       live.status = result.ok ? 'done' : error.code === 'CANCELLED' ? 'cancelled' : error.code === 'TIMEOUT' ? 'timeout' : 'error';
-      live.result = { ...clone(payload), ok: result.ok, error, usage: clone(result.usage) };
+      live.result = { ...clone(payload), ok: result.ok, error: error || payload.error || null, usage: clone(result.usage) };
       if (!live.text && error) live.text = error.message;
       session.updatedAt = Date.now(); state.lastError = error?.message || ''; state.status = result.ok ? 'idle' : live.status; await flushPersist(); observe(input.onDelta, live.text, live.reasoning, clone(live));
       return { ...result, ...payload, ok: result.ok, error, data: clone(payload), text: live.text, status: live.status, requestId, sessionId: session.id };
@@ -351,8 +359,14 @@ function createAssistant(options = {}) {
     if (active) return failure('BUSY', '当前请求仍在处理中', active.id, active.sessionId);
     const found = messageLocation(value, sessionId);
     const jobId = text(found?.message?.result?.jobId);
-    const note = text(feedback);
-    if (!found || !jobId || !text(candidateId) || !note) return failure('INVALID_INPUT', '继续优化需要候选图和修改意见');
+    const resumeOnly = options.resumeOnly === true;
+    const note = resumeOnly ? '恢复原绘图任务' : text(feedback);
+    if (!found || !jobId || (!resumeOnly && (!text(candidateId) || !note))) return failure('INVALID_INPUT', '继续优化需要候选图和修改意见');
+    if (resumeOnly) {
+      const current = generation.get(jobId);
+      if (current?.status !== 'needs_input' || !['connection', 'workflow'].includes(current.needsInput?.kind) || current.stopReason === 'COMFY_SUBMISSION_UNKNOWN') return failure('INPUT_EXPIRED', '当前任务无法直接恢复，请按任务提示处理');
+      if (!settings.snapshot().comfy.enabled) return failure('COMFY_DISABLED', '请先确认连接并开启绘图，再恢复原任务');
+    }
     const session = found.session;
     const requestId = id('generation_resume');
     const user = append('user', note, { status: 'done' }, session.id);
@@ -373,14 +387,15 @@ function createAssistant(options = {}) {
       schedulePersist(); observe(options.onEvent, clone(event));
     };
     try {
-      const outcome = await runtime.callTool('generation.resume', { jobId, action: 'continue', baseCandidateId: text(candidateId), feedback: note }, { requestId, sessionId: session.id, messageId: live.id, signal: controller.signal, onEvent });
+      const args = resumeOnly ? { jobId } : { jobId, action: 'continue', baseCandidateId: text(candidateId), feedback: note };
+      const outcome = await runtime.callTool('generation.resume', args, { requestId, sessionId: session.id, messageId: live.id, signal: controller.signal, onEvent });
       if (!writable(job)) return { ...failure('CANCELLED', '请求已取消', requestId, session.id), data: cancelledPayload(job) };
       const publicPayload = object(outcome.data) ? outcome.data : {};
       const payload = hydrateGenerationPayload(publicPayload);
       applyPayload(job, payload);
       const error = outcome.ok ? null : errorShape(outcome.error);
       live.status = outcome.ok ? 'done' : error.code === 'CANCELLED' ? 'cancelled' : 'error';
-      live.result = { ...clone(payload), ok: outcome.ok, error, usage: clone(outcome.usage) };
+      live.result = { ...clone(payload), ok: outcome.ok, error: error || payload.error || null, usage: clone(outcome.usage) };
       if (!live.text && error) live.text = error.message;
       session.updatedAt = Date.now(); state.status = outcome.ok ? 'idle' : live.status; state.lastError = error?.message || ''; persist();
       return { ...outcome, ...payload, data: clone(payload), text: live.text, status: live.status, requestId, sessionId: session.id, userMessageId: user?.id };
@@ -479,6 +494,9 @@ function createAssistant(options = {}) {
     const result = await primaryTools?.call?.('comfy.status', {}, { caller: 'ui', sessionId: state.currentId });
     if (revision !== capabilityRevision) return clone(capabilities);
     const comfyState = result?.data || {};
+    if (result?.ok && (!comfyState.connected || !comfyState.workflowReady)) settings.setForm({ comfyOn: false });
+    comfyState.enabled = settings.snapshot().comfy.enabled === true;
+    comfyState.render = comfyState.enabled && comfyState.connected === true && comfyState.workflowReady === true;
     capabilities = { tags: Boolean(tags?.search), vision: visionService.available?.() || { metadata: Boolean(images?.get), local: false, ai: false }, comfy: { enabled: comfyState.enabled === true, connected: comfyState.connected === true, workflowReady: comfyState.workflowReady === true, render: comfyState.render === true, error: text(comfyState.error) } };
     return clone(capabilities);
   }
