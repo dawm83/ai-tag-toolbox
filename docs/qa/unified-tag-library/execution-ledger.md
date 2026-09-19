@@ -64,3 +64,14 @@ Task 8: pending — editor/location
 Task 9: pending — UI integration
 Task 10: pending — transfer
 Task 11: pending — delivery
+Task 1: review — commit27c133a; /root/unified_review_seed; 11 focused tests, npm check317 pass; actual report in .superpowers/sdd/2026-09-19-unified-tag-library/task-1-report.md.
+Task 2 handoff ruling: repository.read is responsible for missing/invalid JSON/unknown schema and safe atomic file IO; complete referential validation occurs with base in TagLibrary.ready/execute. Do not invent fake base to validate repository in isolation. Read-time malformed shape must still produce INVALID_DOCUMENT.
+Task 3 handoff ruling: preserve duplicate-content escape allowIndependent, explicit empty field overrides, immutable ID and both taxonomy/favorite location scopes. Batch color commands and selections must not affect current editor content revision accidentally without reporting conflict.
+Task 1: fix round1 — review P1 invented characterOverrides and P2 malformed seed input Result boundary; original implementer /root/unified_tags_seed fixing. Corpus mapping approved, no unrelated seed redesign.
+Task 1: complete — commits27c133a/15b93d5, reviewer PASS; 14 focused /320 total; unified base53707 tags/34122 roles/804 specific. Source mapping and exact limits verified.
+Task 2: running — /root/unified_tags_repository; base15b93d5; filesystem-only task, no AppData writes.
+Ruling for Task3: migrationReceipt ID maps are historical, not permanent live FK constraints. Validate target existence when migrating/importing, but later unfavorite/delete must not be blocked by old receipt; add regression and retain audit metadata.
+Task 2: review — a57e22c, focused11/full331, reviewer /root/unified_review_repository. Controller identified backup allowlist omits rewrite_custom_tags/rewrite_selected; review to confirm and close before migration relies on it.
+Task 2: fix round1 — required legacy backup keys missing custom_tags/selected; duplicated structural validators drifted. Original implementer refactoring shared schema export and exhaustive10-key backup tests; atomic IO path approved.
+Task 2: complete — commitsa57e22c/a989888, reviewer PASS, targeted26/project332, atomic replace+backup and all10 source keys verified. Full directory metadata power-loss fsync not claimed.
+Task 3: running — /root/unified_tags_commands (gpt-6-astra/high), basea989888; single authoritative commands/projections/live selections/history. No production UI cutover yet.

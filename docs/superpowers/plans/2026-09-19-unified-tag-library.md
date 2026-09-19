@@ -10,7 +10,7 @@
 
 **Spec:** [统一标签设计规范](../specs/2026-09-19-unified-tag-library-design.md)。发生冲突先按此规范裁定，再记录证据和改动原因。
 
-**Status:** 仅设计阶段。下面 12 个任务均未实施；本轮不变更 V1.4.316 应用、不迁移用户数据、不更新桌面运行包。
+**Status:** 用户已授权实施。Task 0–2 已完成并通过审查，Task 3 正在实施；其余待执行。生产入口仍为 V1.4.316，真实用户数据未迁移。实际证据见 docs/qa/unified-tag-library/execution-ledger.md。
 
 ## Global Constraints
 
@@ -211,13 +211,13 @@ type MigrationPlan = { document: LibraryDocument; report: MigrationReceipt; sour
 
 **输入/输出:** 输入当前 V1.4.316 工作区；输出基线命令日志、文件/hash 清单、旧行为与被替代规则映射。
 
-- [ ] 检查 Git 当前分支/状态、根及子目录 AGENTS；保留 `%SystemDrive%/`。
-- [ ] 执行 `npm run check`，保存到 `work/unified-tags/P0/check.log`；预期 306 项基线测试通过，以实际输出为准。
-- [ ] 文件复制保存当前源码、配置、tests、scripts、可信 assets 和三个设计文档；排除 models/node_modules/历史QA/work 嵌套归档，不复制真实用户配置。
-- [ ] 记录现有运行目录及 V1.4.316 包 hash，明确恢复时复制文件内容到独立目录，不能制造 `src/src` 双重嵌套。
-- [ ] 建立 U01–U24 矩阵，每项初始 `未实施`；记录旧 favorites-selection 快照规则、收藏 internal 搜索例外和自动保存测试将有意改变。
-- [ ] 从冻结文件建立语法/构建或 npm check 恢复演练，可复用当前 node_modules；记录依赖复用事实。
-- [ ] 账本写“当前 Task 0、下一 Task 1、无运行代理”，完成后仅提交本任务文档。
+- [x] 检查 Git 当前分支/状态、根及子目录 AGENTS；保留 `%SystemDrive%/`。
+- [x] 执行 `npm run check`，保存到 `work/unified-tags/P0/check.log`；预期 306 项基线测试通过，以实际输出为准。
+- [x] 文件复制保存当前源码、配置、tests、scripts、可信 assets 和三个设计文档；排除 models/node_modules/历史QA/work 嵌套归档，不复制真实用户配置。
+- [x] 记录现有运行目录及 V1.4.316 包 hash，明确恢复时复制文件内容到独立目录，不能制造 `src/src` 双重嵌套。
+- [x] 建立 U01–U24 矩阵，每项初始 `未实施`；记录旧 favorites-selection 快照规则、收藏 internal 搜索例外和自动保存测试将有意改变。
+- [x] 从冻结文件建立语法/构建或 npm check 恢复演练，可复用当前 node_modules；记录依赖复用事实。
+- [x] 账本写“当前 Task 0、下一 Task 1、无运行代理”，完成后仅提交本任务文档。
 
 **验收:** 能指向确切恢复文件和检查退出码；不宣称已运行 Electron 人工流程。提交：`V1.4.316：记录统一标签改造基线`。
 
@@ -227,7 +227,7 @@ type MigrationPlan = { document: LibraryDocument; report: MigrationReceipt; sour
 
 **Interfaces:** `buildUnifiedSeed({tags,characters,specificTags,manifest})`、`validateTag(record)`、`validateLibraryDocument(doc,base)`、`validateCommand(command)`；结果 `{ok:true,data}` 或统一 error。`buildUnifiedSeed` 返回 `{tags,categories,subcategories,characterLinks,legacyIds,fingerprint}`。
 
-- [ ] 先写身份与原文测试：
+- [x] 先写身份与原文测试：
 
 ```js
 const { makeRecord } = require('./fixtures/tag-library.cjs');
@@ -241,15 +241,15 @@ test('content is editable independently of immutable identity', () => {
 });
 ```
 
-- [ ] 运行 `node --test tests/tag-library-schema.test.cjs tests/tag-library-seed.test.cjs`，记录预期缺模块/行为失败。
-- [ ] 实现规范中的字段、类型、长度、唯一 ID、父子引用、集合顺序、HEX 颜色和未知字段校验；有效种子也必须校验。
-- [ ] 构建器读取现有可信 `loadTagFiles()` 输出及角色 JSON；这是构建时适配，不能读用户目录。保留现有 ordinary IDs，创建身份/作品/专属词缺项；冲突使用显式命名空间和映射。
-- [ ] 保留 `loadTagFiles`/纯 normalise 工具供构建器使用，不能依赖任务 11 将删除的旧 `createTags({sources})` 可变运行实现；生产只加载生成后的base JSON，seed构建模块不参与运行时循环依赖。
-- [ ] 将现有字符串子分类变成稳定 subcategoryId，依据 `(categoryId,原子分类名称)` 构建确定性 ID。类别名称仍可修改，ID 不变。
-- [ ] 角色词不从显示名称反推引用；产出 CharacterLinks。`specific:*` 默认不搜索，普通词可被多个角色引用。
-- [ ] 构建必须确定性：同输入两次 JSON 内容一致、源 hash 一致；不把 Date.now/随机 UUID 写入内置种子。新增用户记录才用宿主 UUID。
-- [ ] 全量种子逐项验证角色引用均可解析，数量变化有迁移映射说明；测试同名异作品、不规则下划线/括号、ID碰撞和原文不变。
-- [ ] 运行 targeted + `npm run check`，提交本任务确切文件，不提交 node_modules。
+- [x] 运行 `node --test tests/tag-library-schema.test.cjs tests/tag-library-seed.test.cjs`，记录预期缺模块/行为失败。
+- [x] 实现规范中的字段、类型、长度、唯一 ID、父子引用、集合顺序、HEX 颜色和未知字段校验；有效种子也必须校验。
+- [x] 构建器读取现有可信 `loadTagFiles()` 输出及角色 JSON；这是构建时适配，不能读用户目录。保留现有 ordinary IDs，创建身份/作品/专属词缺项；冲突使用显式命名空间和映射。
+- [x] 保留 `loadTagFiles`/纯 normalise 工具供构建器使用，不能依赖任务 11 将删除的旧 `createTags({sources})` 可变运行实现；生产只加载生成后的base JSON，seed构建模块不参与运行时循环依赖。
+- [x] 将现有字符串子分类变成稳定 subcategoryId，依据 `(categoryId,原子分类名称)` 构建确定性 ID。类别名称仍可修改，ID 不变。
+- [x] 角色词不从显示名称反推引用；产出 CharacterLinks。`specific:*` 默认不搜索，普通词可被多个角色引用。
+- [x] 构建必须确定性：同输入两次 JSON 内容一致、源 hash 一致；不把 Date.now/随机 UUID 写入内置种子。新增用户记录才用宿主 UUID。
+- [x] 全量种子逐项验证角色引用均可解析，数量变化有迁移映射说明；测试同名异作品、不规则下划线/括号、ID碰撞和原文不变。
+- [x] 运行 targeted + `npm run check`，提交本任务确切文件，不提交 node_modules。
 
 **验收:** 统一种子可重建、引用闭合、804 专属词有去向；不改变当前生产入口。提交：`V1.4.317：建立统一标签种子与稳定身份`（版本提交前缀为候选里程碑，应用版本暂不切换）。
 
@@ -259,7 +259,7 @@ test('content is editable independently of immutable identity', () => {
 
 **Interfaces:** `createLibraryRepository({filePath,backupDir,fsImpl?}): LibraryRepository`；read/save/backupLegacy 合同见第 3 节。`fsImpl` 是仅测试注入的文件系统接口，不暴露给 renderer。
 
-- [ ] 先测试原子替换失败仍读到旧文档，使用真实临时目录和注入失败的 rename：
+- [x] 先测试原子替换失败仍读到旧文档，使用真实临时目录和注入失败的 rename：
 
 ```js
 const fs = require('node:fs/promises');
@@ -281,13 +281,13 @@ test('failed replace retains the last committed document', async t => {
 });
 ```
 
-- [ ] RED 后实现：同目录唯一 temp → 写入完整 JSON → sync → 关闭句柄 → 更新有效 bak → rename temp 到正式文件。不要先删除正式文件。
-- [ ] 异常清理只删本次生成且已解析到允许目录内的 temp；绝不递归删除用户目录。Windows 锁定时返回可重试错误。
-- [ ] read 区分不存在/非法 JSON/未知 schema/权限错误，非法文件不能返回空文档。
-- [ ] backupLegacy 使用独占创建和 SHA-256；备份只包含需迁移键，不拷贝密钥/聊天到源码目录。
-- [ ] 磁盘成功是 commit 的返回前提；不使用旧 storage.set 的返回值判断落盘成功。
-- [ ] 测试 read 重新打开文件、ENOSPC/EBUSY、损坏 JSON、已有备份、temp残留、目录限制；不只断言 mock.write 被调用。
-- [ ] `node --test tests/tag-library-repository.test.cjs`、`npm run check`；提交。
+- [x] RED 后实现：同目录唯一 temp → 写入完整 JSON → sync → 关闭句柄 → 更新有效 bak → rename temp 到正式文件。不要先删除正式文件。
+- [x] 异常清理只删本次生成且已解析到允许目录内的 temp；绝不递归删除用户目录。Windows 锁定时返回可重试错误。
+- [x] read 区分不存在/非法 JSON/未知 schema/权限错误，非法文件不能返回空文档。
+- [x] backupLegacy 使用独占创建和 SHA-256；备份只包含需迁移键，不拷贝密钥/聊天到源码目录。
+- [x] 磁盘成功是 commit 的返回前提；不使用旧 storage.set 的返回值判断落盘成功。
+- [x] 测试 read 重新打开文件、ENOSPC/EBUSY、损坏 JSON、已有备份、temp残留、目录限制；不只断言 mock.write 被调用。
+- [x] `node --test tests/tag-library-repository.test.cjs`、`npm run check`；提交。
 
 **验收:** 所有失败路径保持旧正式文档可读、错误可见。提交：`V1.4.317：增加统一词库原子保存`。
 
