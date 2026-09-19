@@ -73,3 +73,19 @@ test('stored primary prompt receives the character contract without modifying th
   assert(primary.getPrompt().lastIndexOf('generation.execute') > primary.getPrompt().indexOf('comfy.render'));
   assert.equal(prompts.composePrimary(), '我的自定义提示词：请调用 comfy.render');
 });
+
+test('canonical blank AI discovery excludes hidden roles before totals and pagination', async () => {
+  const { createHarness } = require('./fixtures/tag-library.cjs');
+  const { createTagAdapter } = require('../src/modules/tag-library/tag-adapter');
+  const h = createHarness(); await h.ready;
+  const tags = createTagAdapter({ library: h.library });
+  const characters = createCharacters({ library: h.library, characterSource: { characters: [{ id: 'alice', count: 100 }, { id: 'bob', count: 1 }] } });
+  await tags.edit('alice', { searchable: false });
+  const tools = createPrimaryTools({ tags, characters });
+  const result = await tools.call('characters.search', { query: '  ', limit: 1 });
+  assert.equal(result.ok, true, JSON.stringify(result)); assert.equal(result.data.total, 1); assert.equal(result.data.items[0].id, 'bob');
+  assert.equal(characters.page({ query: '', limit: 1 }).items[0].id, 'alice');
+  assert.equal(result.data.items[0].specificTags[0].en, 'school uniform');
+  assert.equal((await tools.call('characters.search', { query: 'school uniform' })).data.total, 0);
+  characters.dispose(); tags.dispose();
+});

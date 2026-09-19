@@ -13,12 +13,21 @@ function createTagAdapter({ library, metadataById = {}, categoryMetadata = DEFAU
   const precision = value => ['exact', 'broad'].includes(value) ? value : 'standard';
   let includeAdult = Boolean(readPreference('rewrite_adult', false)), searchPrecision = precision(readPreference('app.searchPrecision', 'standard'));
   let query = '', category = '';
+  let subcategoryNames = null; const countCache = new Map();
+  const unsubscribe = library.subscribe(change => {
+    if (change.changedTagIds.length || change.structureChanged) countCache.clear();
+    if (change.structureChanged) subcategoryNames = null;
+  });
+  function names() {
+    if (!subcategoryNames) subcategoryNames = new Map(library.getCategories().flatMap(row => library.getSubcategories(row.id)).map(row => [row.id, row.name]));
+    return subcategoryNames;
+  }
   const selectedIds = () => library.selected({ includeAdult: true }).filter(row => row.kind === 'tag').map(row => row.tagIds[0]);
   function view(tag, selected = new Set(selectedIds())) {
     if (!tag) return null;
     const meta = metadata[tag.id] || {};
     return { ...tag, en: tag.content, zh: tag.displayName, nsfw: tag.adult, category: tag.categoryId,
-      subcategory: library.getSubcategories(tag.categoryId).find(row => row.id === tag.subcategoryId)?.name || '',
+      subcategory: names().get(tag.subcategoryId) || '',
       count: meta.count ?? null, categoryCode: meta.categoryCode ?? null, confidence: meta.confidence ?? null,
       keywords: clone(meta.keywords || []), custom: tag.source.kind !== 'bundled', edited: tag.revision > 0,
       editedAt: tag.revision > 0 ? tag.updatedAt : null, selected: selected.has(tag.id) };
@@ -44,17 +53,19 @@ function createTagAdapter({ library, metadataById = {}, categoryMetadata = DEFAU
   function projected(rows) { const selected = new Set(selectedIds()); return rows.map(row => view(row, selected)); }
   const list = (options = {}) => projected(collect(o => library.listTags(o), filters(options)));
   const search = (value, options = {}) => {
-    const rows = projected(collect(o => library.search(value, o), filters(options)));
-    return Number.isSafeInteger(options.limit) && options.limit > 0 ? rows.slice(0, options.limit) : rows;
+    return projected(Number.isSafeInteger(options.limit) && options.limit > 0 && options.limit <= 2000
+      ? library.search(value, { ...filters(options), limit: options.limit }).items
+      : collect(o => library.search(value, o), filters(options)).slice(0, options.limit || Infinity));
   };
-  function categoryCounts(adult = includeAdult) {
-    const counts = { all: 0 }; for (const row of collect(o => library.listTags(o), { includeAdult: adult })) { counts.all++; counts[row.categoryId] = (counts[row.categoryId] || 0) + 1; }
-    return counts;
+  function counts(adult) {
+    if (!library.status().ready) return { categories: { all: 0 }, subcategories: {} };
+    if (!countCache.has(adult)) countCache.set(adult, library.tagCounts({ includeAdult: adult }));
+    return countCache.get(adult);
   }
+  function categoryCounts(adult = includeAdult) { return clone(counts(adult).categories); }
   function subcategories(value, options = {}) {
-    const rows = list({ ...options, category: value }); const counts = new Map();
-    for (const row of rows) { const current = counts.get(row.subcategoryId) || { id: row.subcategoryId, name: row.subcategory, count: 0 }; current.count++; counts.set(current.id, current); }
-    return [...counts.values()];
+    const count = counts(filters(options).includeAdult).subcategories;
+    return library.getSubcategories(value).filter(row => count[row.id]).map(row => ({ id: row.id, name: row.name, count: count[row.id] }));
   }
   const get = value => view(library.getTag(idOf(value)));
   function editablePatch(input, current) {
@@ -90,6 +101,7 @@ function createTagAdapter({ library, metadataById = {}, categoryMetadata = DEFAU
     return { ...result, items: projected(result.items), displayTotal: result.total, maxDisplay: Infinity, categoryCounts: categoryCounts(filter.includeAdult), query: value, category: filter.categoryId || '', subcategory: options.subcategory || '', includeAdult: filter.includeAdult };
   }
   return Object.freeze({
+    dispose: unsubscribe, revision: () => library.revision(), searchSettings: () => ({ includeAdult, precision: searchPrecision }),
     ready: () => library.ready(), status: () => library.status(), isLoaded: () => library.status().ready,
     get, has: value => Boolean(library.getTag(idOf(value))), list, all: list, allTags: list, getAll: list, search, page,
     size: () => library.listTags({ includeAdult: true, limit: 0 }).total,

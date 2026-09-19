@@ -32,3 +32,21 @@ test('translation reference buttons expose the conservative match source', () =>
   assert.match(source, /ref\.matchType/);
   assert.doesNotMatch(source, /中文命中/);
 });
+
+test('translation public references and AI prompts exclude hidden, bundle and disabled adult entries', async () => {
+  const { createHarness } = require('./fixtures/tag-library.cjs');
+  const { createTagAdapter } = require('../src/modules/tag-library/tag-adapter');
+  const h = createHarness(); await h.ready; const tags = createTagAdapter({ library: h.library });
+  await tags.edit('blue_hair', { searchable: false });
+  await tags.edit('long_hair', { adult: true });
+  await tags.addCustom({ kind: 'bundle', content: 'raw bundle', displayName: '组合' });
+  let received;
+  const translation = createTranslation({ tags, ai: async prompt => { received = prompt; return 'offline response'; } });
+  const result = await translation.translateWithAI('blue hair, long hair, raw bundle', 'en-zh');
+  assert.equal(result.ok, true); assert.deepEqual(received.references, []);
+  tags.setAdult(true); assert.deepEqual(translation.findReferences('long hair').map(row => row.en), ['long hair']);
+  assert.deepEqual(translation.exactMatches('blue hair, raw bundle'), []);
+  await tags.edit('blue_hair', { searchable: true, displayName: '新蓝发' });
+  assert.equal(translation.translateLocal('blue hair', 'en-zh').text, '新蓝发');
+  translation.dispose(); tags.dispose();
+});

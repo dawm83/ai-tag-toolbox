@@ -72,29 +72,22 @@ function chineseNames(tag) {
 }
 
 function visible(tag, options = {}) {
+  if (!tag || tag.searchable === false || tag.globalSearchable === false || (tag.kind && tag.kind !== 'tag')) return false;
   if (options.includeAdult || options.adult || options.nsfw) return true;
   return !(tag && (tag.nsfw || tag.adult || tag.isAdult));
 }
 
-function catalogFrom(tags) {
+function catalogFrom(tags, options = {}) {
   if (!tags) return [];
-  if (Array.isArray(tags)) return tags.slice();
+  if (Array.isArray(tags)) return tags.filter(tag => visible(tag, options));
   for (const method of ['list', 'all', 'getAll']) {
     if (typeof tags[method] !== 'function') continue;
     try {
-      const rows = tags[method]({ includeAdult: true, adult: true, nsfw: true });
-      if (Array.isArray(rows)) return rows;
+      const rows = tags[method]({ includeAdult: Boolean(options.includeAdult) });
+      if (Array.isArray(rows)) return rows.filter(tag => visible(tag, options));
     } catch { /* optional catalog */ }
   }
   return [];
-}
-
-function catalogSearch(tags, value, limit) {
-  if (!tags || typeof tags.search !== 'function' || !text(value)) return [];
-  try {
-    const rows = tags.search(value, { includeAdult: true, adult: true, nsfw: true, limit });
-    return Array.isArray(rows) ? rows : [];
-  } catch { return []; }
 }
 
 function exactMatches(value, options = {}) {
@@ -163,7 +156,7 @@ function referenceShape(item, index) {
 
 function buildReference(value, options = {}) {
   const dir = direction(value, options.direction);
-  const catalog = options.catalog || catalogFrom(options.tags);
+  const catalog = options.catalog || catalogFrom(options.tags, options);
   const exact = exactMatches(value, { ...options, catalog });
   const exactIds = new Set(exact.map(item => normalizeTag(englishOf(item.tag))));
   const fuzzy = fuzzyMatches(value, { ...options, catalog, tags: options.tags }).filter(item => !exactIds.has(normalizeTag(englishOf(item.tag))));
@@ -242,12 +235,23 @@ function createTranslation(options = {}) {
   const dictionary = options.dictionary || null;
   let runner = options.runner || options.localRunner || options.localModel || options.onnx || null;
   const resultCache = new BoundedCache(256);
+  let cachedCatalog = null, catalogKey = null;
+  const effectiveOptions = extra => ({ ...extra, includeAdult: Boolean(extra?.includeAdult ?? tags?.searchSettings?.().includeAdult ?? tags?.stateSnapshot?.().includeAdult ?? options.includeAdult ?? false) });
+  function catalog(extra = {}) {
+    const settings = effectiveOptions(extra);
+    if (extra.catalog) return extra.catalog.filter(tag => visible(tag, settings));
+    const revision = tags?.revision?.() ?? tags?.stateSnapshot?.().revision;
+    const key = revision === undefined ? null : JSON.stringify([revision, settings.includeAdult]);
+    if (key === null || catalogKey !== key || !cachedCatalog) { cachedCatalog = catalogFrom(tags, settings); catalogKey = key; }
+    return cachedCatalog;
+  }
+  const unsubscribe = tags?.subscribe?.(() => { resultCache.clear(); cachedCatalog = null; });
   const state = { input: '', output: '', direction: 'auto', references: [], status: 'idle', source: '', model: '', error: '' };
 
   function refs(value, extra = {}) {
     // 页面常用 findReferences(text, 'en-zh')；同时保留对象形式供模块调用。
     const requested = typeof extra === 'string' ? { direction: extra } : (extra || {});
-    return buildReference(value, { ...requested, tags, catalog: requested.catalog || catalogFrom(tags), includeAdult: true, limit: requested.limit || options.referenceLimit || 60 });
+    return buildReference(value, { ...effectiveOptions(requested), tags, catalog: catalog(requested), limit: requested.limit || options.referenceLimit || 60 });
   }
   function rawReferences(value, extra = {}) { return refs(value, extra).map(item => item.tag || item); }
   function findTag(value, catalog) {
@@ -257,8 +261,8 @@ function createTranslation(options = {}) {
   function mapped(value, requested, extra = {}) {
     const input = text(value);
     const dir = direction(input, requested);
-    const catalog = extra.catalog || catalogFrom(tags);
-    const details = refs(input, { ...extra, direction: dir, catalog });
+    const entries = catalog(extra);
+    const details = refs(input, { ...extra, direction: dir, catalog: entries });
     let output = dictionaryLookup(dictionary, input, dir);
     if (!output && dir === 'zh-en') {
       const values = []; const seen = new Set();
@@ -268,42 +272,42 @@ function createTranslation(options = {}) {
       }
       output = values.join(', ');
     } else if (!output) {
-      output = tagParts(input).map(part => { const names = chineseNames(findTag(part, catalog)); return names[0] || part; }).join('，');
+      output = tagParts(input).map(part => { const names = chineseNames(findTag(part, entries)); return names[0] || part; }).join('，');
     }
     return { ok: true, text: output || input, direction: dir, references: details, source: 'tags' };
   }
-  function finish(result, input, dir, source = 'tags') {
+  function finish(result, input, dir, source = 'tags', extra = {}) {
     const value = normalizeRunnerResult(result, dir);
-    const fallback = mapped(input, dir);
+    const fallback = mapped(input, dir, extra);
     const output = value.ok ? value.text : fallback.text;
     state.input = input; state.output = output; state.direction = dir;
-    state.references = value.ok ? refs(input, { direction: dir }) : fallback.references;
+    state.references = value.ok ? refs(input, { ...extra, direction: dir }) : fallback.references;
     state.status = output ? 'done' : 'error'; state.source = value.ok ? source : 'tags'; state.model = value.model || ''; state.error = value.ok ? '' : value.error || '';
     return { ...(value.ok ? value : fallback), ok: true, text: output, direction: dir, references: state.references, source: value.ok ? source : 'tags', fallback: !value.ok, error: value.ok ? '' : value.error || '' };
   }
   function translateLocal(value, requested, extra = {}) {
     const input = text(value); const dir = direction(input, requested);
     if (!input) { state.input = ''; state.output = ''; state.direction = dir; state.references = []; state.status = 'idle'; state.source = ''; return { ok: false, text: '', direction: dir, references: [], error: '请输入要翻译的内容' }; }
-    const cacheKey = `${dir}|${input}`;
+    const cacheKey = `${tags?.revision?.() ?? tags?.stateSnapshot?.().revision ?? ""}|${effectiveOptions(extra).includeAdult}|${dir}|${input}`;
     if (!extra.force && resultCache.has(cacheKey)) return { ...clone(resultCache.get(cacheKey)), cached: true };
     const fn = runnerMethod(runner);
     if (!fn) {
-      const result = finish(null, input, dir, 'tags');
+      const result = finish(null, input, dir, 'tags', extra);
       resultCache.set(cacheKey, clone(result));
       return result;
     }
     try {
       const result = fn(input, dir, extra);
-      if (result && typeof result.then === 'function') return result.then(value2 => { const done = finish(value2, input, dir, 'model'); resultCache.set(cacheKey, clone(done)); return done; }).catch(error => { const done = finish({ ok: false, error: text(error && error.message, String(error)) }, input, dir, 'tags'); resultCache.set(cacheKey, clone(done)); return done; });
-      const done = finish(result, input, dir, 'model'); resultCache.set(cacheKey, clone(done)); return done;
-    } catch (error) { const done = finish({ ok: false, error: text(error && error.message, String(error)) }, input, dir, 'tags'); resultCache.set(cacheKey, clone(done)); return done; }
+      if (result && typeof result.then === 'function') return result.then(value2 => { const done = finish(value2, input, dir, 'model', extra); resultCache.set(cacheKey, clone(done)); return done; }).catch(error => { const done = finish({ ok: false, error: text(error && error.message, String(error)) }, input, dir, 'tags', extra); resultCache.set(cacheKey, clone(done)); return done; });
+      const done = finish(result, input, dir, 'model', extra); resultCache.set(cacheKey, clone(done)); return done;
+    } catch (error) { const done = finish({ ok: false, error: text(error && error.message, String(error)) }, input, dir, 'tags', extra); resultCache.set(cacheKey, clone(done)); return done; }
   }
   async function translateWithModel(value, requested, extra = {}) { return await Promise.resolve(translateLocal(value, requested, extra)); }
   async function translateWithAI(value, requested, extra = {}) {
     const input = text(value); const dir = direction(input, requested);
     if (!input) return { ok: false, text: '', direction: dir, references: [], error: '请输入要翻译的内容' };
     if (!ai) return translateWithModel(input, dir, extra);
-    const prompt = buildPrompt(input, dir, { ...extra, tags, catalog: catalogFrom(tags) });
+    const prompt = buildPrompt(input, dir, { ...effectiveOptions(extra), tags, catalog: catalog(extra) });
     try {
       let result;
       const directOutputOptions = {
@@ -353,20 +357,21 @@ function createTranslation(options = {}) {
   }
   return {
     state,
+    dispose: () => { unsubscribe?.(); resultCache.clear(); cachedCatalog = null; },
     detectDirection: direction,
     direction,
     normalizeTag,
     inputParts,
     tagParts,
     chineseNames,
-    exactMatches: (value, extra = {}) => exactMatches(value, { ...extra, catalog: extra.catalog || catalogFrom(tags) }),
+    exactMatches: (value, extra = {}) => exactMatches(value, { ...effectiveOptions(extra), catalog: catalog(extra) }),
     buildReference: (value, extra = {}) => refs(value, extra),
     reference: (value, extra = {}) => refs(value, extra),
     referenceDetails: (value, extra = {}) => refs(value, extra),
     findReferences: (value, extra = {}) => refs(value, extra),
     references: rawReferences,
     referenceLines,
-    buildPrompt: (value, requested, extra = {}) => buildPrompt(value, requested, { ...extra, tags, catalog: extra.catalog || catalogFrom(tags) }),
+    buildPrompt: (value, requested, extra = {}) => buildPrompt(value, requested, { ...effectiveOptions(extra), tags, catalog: catalog(extra) }),
     translateLocal,
     translateWithModel,
     translate: translateLocal,

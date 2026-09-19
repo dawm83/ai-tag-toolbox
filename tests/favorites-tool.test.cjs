@@ -3,48 +3,50 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { createPrimaryTools } = require('../src/modules/primary-tools');
 const { createPrimaryAgent } = require('../src/modules/primary-agent');
+const { createHarness } = require('./fixtures/tag-library.cjs');
+const { createTagAdapter } = require('../src/modules/tag-library/tag-adapter');
+const { createFavoriteAdapter } = require('../src/modules/tag-library/favorite-adapter');
 
-test('favorite query contract augments the runtime prompt without changing user prompt storage', () => {
+test('canonical favorite contract augments the prompt without changing user storage', () => {
   const stored = 'My original instructions';
   const agent = createPrimaryAgent({ prompts: { get: () => stored }, favoritesEnabled: true });
   const prompt = agent.getPrompt();
   assert.ok(prompt.startsWith(stored));
-  assert.match(prompt, /favorites/);
-  assert.match(prompt, /contentOmitted/);
-  assert.match(prompt, /用户收藏/);
+  for (const field of ['items', 'kind', 'favoriteLocations', 'contentOmitted']) assert.ok(prompt.includes(field));
+  assert.doesNotMatch(prompt, /可选 favorites|rawText/);
   assert.equal(stored, 'My original instructions');
 });
 
-test('Tag queries return distinct favorite groups without notes or changing dictionary results', async () => {
-  const calls = [];
-  const tools = createPrimaryTools({
-    tags: { search: () => [{ en: 'soft lighting', zh: '柔光' }] },
-    favorites: { search: (query, options) => {
-      calls.push({ query, options });
-      return { items: [{ entryId: 'e1', kind: 'bundle', title: 'soft portrait', rawText: ' soft lighting, (blue hair:1.2) ', note: 'private note', seriesName: 'light', memberCount: 2 }] };
-    } }
-  });
+test('real unified Tag queries return favorites once, with full content and no private notes', async () => {
+  const h = createHarness(); await h.ready;
+  const tags = createTagAdapter({ library: h.library }), favorites = createFavoriteAdapter({ library: h.library });
+  const raw = ' soft lighting, (blue hair:1.2) ';
+  const saved = await favorites.saveEntry({ kind: 'bundle', seriesId: 'home', sectionId: 'daily', title: 'soft portrait', rawText: raw, note: 'private note' });
+  assert.equal(saved.ok, true);
+  const tools = createPrimaryTools({ tags, favorites }), before = h.repository.saveCount;
   const result = await tools.call('tags.search', { query: 'soft', includeAdult: false });
   assert.equal(result.ok, true, JSON.stringify(result));
-  assert.equal(result.data.items[0].en, 'soft lighting');
-  assert.equal(result.data.favorites[0].rawText, ' soft lighting, (blue hair:1.2) ');
-  assert.equal(result.data.favorites[0].kind, 'bundle');
-  assert.equal('note' in result.data.favorites[0], false);
-  assert.equal(calls[0].options.scope, 'global');
-  assert.equal(calls[0].options.includeAdult, false);
+  assert.equal(result.data.items.length, 1);
+  assert.equal(result.data.items[0].id, saved.data.tagId);
+  assert.equal(result.data.items[0].content, raw);
+  assert.equal(result.data.items[0].kind, 'bundle');
+  assert.equal(result.data.items[0].favoriteLocations[0].membershipId, saved.data.id);
+  assert.equal('note' in result.data.items[0], false);
+  assert.equal(result.data.favorites, undefined);
+  assert.deepEqual((await tools.call('tags.search', { query: 'private note' })).data.items, []);
+  assert.equal(h.repository.saveCount, before);
 });
 
-test('oversized groups are explicitly omitted rather than returned as a truncated prompt', async () => {
-  const tools = createPrimaryTools({
-    tags: { search: () => [] },
-    favorites: { search: () => ({ items: [
-      { entryId: 'huge', kind: 'bundle', title: 'long', rawText: 'x'.repeat(16001) },
-      { entryId: 'small', kind: 'tag', title: 'small', rawText: 'blue hair' }
-    ] }) }
-  });
-  const result = await tools.call('tags.search', { query: 'hair' });
-  assert.equal(result.ok, true);
-  assert.equal(result.data.favorites[0].contentOmitted, true);
-  assert.equal(result.data.favorites[0].rawText, undefined);
-  assert.equal(result.data.favorites[1].rawText, 'blue hair');
+test('bundle budget omits entire values and still includes later values that fit', async () => {
+  const h = createHarness(); await h.ready;
+  const tags = createTagAdapter({ library: h.library });
+  for (const [name, content] of [['huge', 'x'.repeat(16001)], ['medium', 'm'.repeat(15999)], ['overflow', 'zz'], ['small', 's']]) {
+    const result = await tags.addCustom({ kind: 'bundle', displayName: `budget ${name}`, content }); assert.equal(result.ok, true);
+  }
+  const result = await createPrimaryTools({ tags }).call('tags.search', { query: 'budget' });
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.deepEqual(result.data.items.map(row => row.contentOmitted), [true, false, true, false]);
+  assert.equal(result.data.items[0].content, undefined); assert.equal(result.data.items[2].content, undefined);
+  assert.equal(result.data.items[3].content, 's');
+  assert.equal(result.data.items.reduce((total, row) => total + (row.content || '').length, 0), 16000);
 });

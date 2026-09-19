@@ -44,7 +44,7 @@ function createPrimaryAgent(options = {}) {
       ? '角色调度补充：只有用户要求绘制已有作品中的具体角色时，才先调用 tags.search；命中角色时读取 attachedData，其中包含姓名、作品身份 Tag 和外貌 Tag；有多个候选时再调用 characters.search；仍不明确时将角色原名放入 generation.execute 的 characterQueries，程序会展示选择卡片。原创人物、OC、自设名称、普通人物或外貌描述无需查询或确认角色，直接将原始要求交给 generation.execute，不为这些人物填写 characterQueries 或 characterIds。混合画面只为明确指定的已有作品角色填写角色字段。用户在角色确认时明确表示是原创或跳过此人物时，用原 jobId 调用 generation.resume，characterSelection 原样填写 needsInput.query，并传 original=true，不传 characterId；也可点击卡片中的“这是原创人物，继续”。任何不确定的 Tag 先调用 tags.search。作品名不要放入 characterQueries。绘图时把已确认的 characterIds 与用户要求一并传给 generation.execute，程序会交给文生图 Tag 子代理筛选，主 AI 不自行筛选角色外貌。'
       : '';
     const favoritesContract = options.favoritesEnabled
-      ? '收藏查询补充：tags.search 的可选 favorites 字段来自用户收藏，包含单标签或组合，不代表基础词库已确认其含义。rawText 是完整原文；contentOmitted=true 时内容未返回，不得当成完整 Prompt 使用。收藏查询只读取，不会修改收藏或自动加入底部组合。'
+      ? '收藏查询补充：tags.search 的 items 按稳定 id 去重，kind 区分 tag 与 bundle，favoriteLocations 汇总收藏位置。content 是完整原文；contentOmitted=true 时内容未返回，不得从名称或部分文本拼造完整 Prompt。收藏查询只读取，不会修改收藏或自动加入底部组合。'
       : '';
     return [prompt, generationContract, characterContract, favoritesContract].filter(Boolean).join('\n\n');
   }

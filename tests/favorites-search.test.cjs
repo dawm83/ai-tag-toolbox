@@ -94,3 +94,20 @@ test('member counts are returned only when tag segmentation is reliable', () => 
   assert.equal(favoriteMemberCount({ kind: 'bundle', rawText: 'soft lighting, (backlighting:1.2)' }), 2);
   assert.equal(favoriteMemberCount({ kind: 'bundle', rawText: 'A complete natural language prompt with no separators.' }), null);
 });
+
+test('unified favorites filter locations before pagination and never search another page private labels', async () => {
+  const { createHarness } = require('./fixtures/tag-library.cjs');
+  const { createFavoriteAdapter } = require('../src/modules/tag-library/favorite-adapter');
+  const h = createHarness(); await h.ready; const favorites = createFavoriteAdapter({ library: h.library });
+  const first = (await favorites.saveEntry({ sourceTagId: 'blue_hair', seriesId: 'home', sectionId: 'daily' })).data;
+  const page = (await favorites.saveSeries({ name: 'Other private page' })).data;
+  const section = (await favorites.saveSection({ seriesId: page.id, name: 'Other group' })).data;
+  await favorites.saveEntry({ sourceTagId: 'blue_hair', seriesId: page.id, sectionId: section.id });
+  assert.equal(favorites.search('Other private page', { seriesId: 'home' }).total, 0);
+  assert.equal(favorites.search('Other private page').total, 1);
+  assert.equal(favorites.search('Other private page', { scope: 'global' }).total, 0);
+  const hit = favorites.search('blue hair', { limit: 1 }); assert.equal(hit.total, 1); assert.equal(hit.items[0].favoriteLocations.length, 2); assert.equal(hit.items[0].entryId, first.id);
+  await favorites.saveEntry({ id: first.id, nsfw: true });
+  assert.equal(favorites.list({ includeAdult: false }).total, 0); assert.equal(favorites.search('blue', { includeAdult: false }).total, 0);
+  favorites.dispose();
+});

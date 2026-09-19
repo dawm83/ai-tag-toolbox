@@ -42,7 +42,7 @@ function changeFor(before, after, base, delta = diffDocuments(before, after)) {
     }
     if (['customCategories', 'customSubcategories', 'categoryOverrides', 'subcategoryOverrides', 'favoritePages', 'favoriteGroups'].includes(entry.field)) structureChanged = true;
   }
-  for (const doc of [before, after]) {
+  if (tags.size || structureChanged) for (const doc of [before, after]) {
     const projection = createProjection(doc, base);
     for (const id of tags) {
       for (const character of projection.characterUses.get(id) || []) characters.add(character);

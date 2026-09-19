@@ -17,10 +17,10 @@ const string = { type: 'string' };
 const nonempty = { type: 'string', minLength: 1, maxLength: 1000 };
 const tagArray = { type: 'array', items: nonempty, maxItems: 256 };
 const attachedDataSchema = schema({ type: string, characterId: string, series: string, identityTags: tagArray, appearanceTags: tagArray });
-const tagSchema = schema({ en: nonempty, zh: string, aliases: { type: 'array', items: string, maxItems: 64 }, category: string, subcategory: string, nsfw: { type: 'boolean' }, confidence: { type: 'number' }, attachedData: attachedDataSchema }, ['en']);
-const favoriteSchema = schema({ entryId: string, kind: { type: 'string', enum: ['tag', 'bundle'] }, title: string, rawText: string, zh: string, seriesName: string, sectionName: string, memberCount: { type: 'integer', minimum: 1 }, contentOmitted: { type: 'boolean' } }, ['entryId', 'kind', 'title', 'contentOmitted']);
+const locationSchema = schema({ membershipId: string, pageId: string, pageName: string, groupId: string, groupName: string }, ['membershipId', 'pageId', 'pageName', 'groupId', 'groupName']);
+const tagSchema = schema({ id: nonempty, kind: { type: 'string', enum: ['tag', 'bundle'] }, content: string, contentOmitted: { type: 'boolean' }, favoriteLocations: { type: 'array', items: locationSchema }, en: nonempty, zh: string, aliases: { type: 'array', items: string, maxItems: 64 }, category: string, subcategory: string, nsfw: { type: 'boolean' }, confidence: { type: 'number' }, attachedData: attachedDataSchema }, ['id', 'kind', 'contentOmitted', 'favoriteLocations']);
 const characterTagSchema = schema({ id: nonempty, en: nonempty, zh: string, category: string, nsfw: { type: 'boolean' }, review: { type: 'boolean' }, edited: { type: 'boolean' } }, ['id', 'en']);
-const characterSchema = schema({ id: nonempty, name: string, nameZh: string, aliases: { type: 'array', items: string }, seriesId: string, seriesName: string, identityTags: tagArray, generalTags: { type: 'array', items: characterTagSchema }, specificTags: { type: 'array', items: characterTagSchema }, hasFeatures: { type: 'boolean' }, count: { type: 'number' }, trigger: string }, ['id', 'identityTags', 'generalTags', 'specificTags']);
+const characterSchema = schema({ id: nonempty, identityTagId: nonempty, contentOmitted: { type: 'boolean' }, name: string, nameZh: string, aliases: { type: 'array', items: string }, seriesId: string, seriesName: string, identityTags: tagArray, generalTags: { type: 'array', items: characterTagSchema }, specificTags: { type: 'array', items: characterTagSchema }, hasFeatures: { type: 'boolean' }, count: { type: 'number' }, trigger: string }, ['id', 'identityTags', 'generalTags', 'specificTags']);
 const generateParameters = clone(SCHEMAS.generateTags);
 delete generateParameters.properties.characterReferences;
 const imageSchema = schema({ imageId: nonempty, refId: string, slotNo: { type: 'integer', minimum: 0 }, displayTitle: string, source: string, messageId: string, pending: { type: 'boolean' }, sent: { type: 'boolean' }, final: { type: 'boolean' }, width: { type: 'number', minimum: 0 }, height: { type: 'number', minimum: 0 }, hasBuiltinTags: { type: 'boolean' } }, ['imageId']);
@@ -32,7 +32,7 @@ const characterSelectionSchema = schema({ query: nonempty, characterId: nonempty
 const generationExecuteSchema = schema({ originalRequirements: { type: 'string', minLength: 1, maxLength: 16000 }, requirements: { type: 'string', minLength: 1, maxLength: 16000 }, mode: { type: 'string', enum: ['create', 'recreate', 'auto'] }, sourceImageId: nonempty, sourceSlot: { type: 'integer', minimum: 1, maximum: 10000 }, characterQueries: { type: 'array', maxItems: 8, items: nonempty }, characterIds: { type: 'array', maxItems: 8, items: nonempty }, strategy: { type: 'string', enum: ['quick', 'auto', 'fixed3'] }, autoSelect: { type: 'boolean' }, autoRun: { type: 'boolean' }, imagesPerRound: { type: 'integer', minimum: 1, maximum: 10 }, maxAutoRounds: { type: 'integer', minimum: 1, maximum: 10 }, workflowProfileId: nonempty });
 const generationResumeSchema = schema({ jobId: nonempty, action: { type: 'string', enum: ['continue'] }, baseCandidateId: nonempty, feedback: { type: 'string', minLength: 1, maxLength: 16000 }, sourceImageId: nonempty, characterIds: { type: 'array', maxItems: 8, items: nonempty }, characterSelection: characterSelectionSchema, workflowProfileId: nonempty, strategy: { type: 'string', enum: ['quick', 'auto', 'fixed3'] }, autoSelect: { type: 'boolean' }, autoRun: { type: 'boolean' }, imagesPerRound: { type: 'integer', minimum: 1, maximum: 10 }, maxAutoRounds: { type: 'integer', minimum: 1, maximum: 10 } }, ['jobId']);
 const DEFINITIONS = Object.freeze({
-  'tags.search': { description: '查询本站标签及释义；Tag 含义、拼写或是否属于本站词库不确定时调用。命中角色名时附带角色出处和外貌 Tag。可选 favorites 是用户收藏的单标签或组合；rawText 保留原文，contentOmitted=true 表示内容过长未返回。', parameters: schema({ query: { type: 'string', maxLength: 1000 }, category: string, includeAdult: { type: 'boolean' }, limit: { type: 'integer', minimum: 1,maximum: 200 } }, ['query']), outputSchema: schema({ items: { type: 'array', maxItems: 200, items: tagSchema }, favorites: { type: 'array', maxItems: 8, items: favoriteSchema } }, ['items']) },
+  'tags.search': { description: '查询本站标签及释义；Tag 含义、拼写或是否属于本站词库不确定时调用。命中角色名时附带角色出处和外貌 Tag。items 按稳定 id 去重，kind 区分 tag 和 bundle，favoriteLocations 汇总收藏位置；content 是完整原文，contentOmitted=true 表示内容未返回，不得用部分文本代替。', parameters: schema({ query: { type: 'string', maxLength: 1000 }, category: string, includeAdult: { type: 'boolean' }, limit: { type: 'integer', minimum: 1,maximum: 200 } }, ['query']), outputSchema: schema({ items: { type: 'array', maxItems: 200, items: tagSchema } }, ['items']) },
   'characters.search': { description: '查询本地角色资料，返回中英文名、作品、身份词和可选特征；已确认角色向 generation.execute 传 characterIds；仍有歧义时传 characterQueries 让用户选择。', parameters: schema({ query: { type: 'string', maxLength: 1000 }, seriesId: string, precision: { type: 'string', enum: ['exact', 'standard', 'broad'] }, includeAdult: { type: 'boolean' }, limit: { type: 'integer', minimum: 1, maximum: 10 } }, ['query']), outputSchema: schema({ items: { type: 'array', maxItems: 10, items: characterSchema }, total: { type: 'integer', minimum: 0 } }, ['items', 'total']) },
   'conversation.listImages': { description: '读取当前会话的真实 imageId、显示编号和图片元数据。', parameters: schema({ includePending: { type: 'boolean' }, includeDeleted: { type: 'boolean' } }), outputSchema: schema({ items: { type: 'array', items: imageSchema }, pendingIds: { type: 'array', items: string } }, ['items', 'pendingIds']) },
   'vision.processOne': { description: '对当前会话中的单个 imageId 进行 metadata/local/ai 识图。', parameters: SCHEMAS.vision, outputSchema: OUTPUT_SCHEMAS?.vision },
@@ -48,9 +48,12 @@ const DEFINITIONS = Object.freeze({
 function failure(code, message) { return Object.assign(new Error(message), { code }); }
 function check(schemaValue, value, code) { try { return assertValid(schemaValue || {}, value); } catch (error) { error.code = code; throw error; } }
 function unwrap(value) { if (value?.ok === false) throw errorShape(value); return value?.ok === true && Object.prototype.hasOwnProperty.call(value, 'data') ? value.data : value; }
-function publicTag(row, attachedData = {}) {
+function publicTag(row, attachedData = {}, budget = { remaining: 16000 }) {
   const value = object(row?.tag) ? row.tag : row;
-  const item = { en: text(value?.en || value?.tag || value?.name || (typeof value === 'string' ? value : '')) };
+  const raw = typeof value?.content === 'string' ? value.content : typeof value?.en === 'string' ? value.en : text(value?.tag || value?.name || (typeof value === 'string' ? value : ''));
+  const kind = value?.kind === 'bundle' ? 'bundle' : 'tag';
+  const item = { id: text(value?.id) || raw, kind, contentOmitted: raw.length > budget.remaining || (kind === 'tag' && raw.length > 1000), favoriteLocations: clone(value?.favoriteLocations || []) };
+  if (!item.contentOmitted) { item.content = raw; if (kind === 'tag') item.en = raw; budget.remaining -= raw.length; }
   for (const key of ['zh', 'category', 'subcategory']) if (typeof value?.[key] === 'string') item[key] = value[key];
   if (Array.isArray(value?.aliases)) item.aliases = value.aliases.filter(v => typeof v === 'string').slice(0, 64);
   if (typeof value?.nsfw === 'boolean') item.nsfw = value.nsfw;
@@ -58,29 +61,26 @@ function publicTag(row, attachedData = {}) {
   item.attachedData = object(attachedData) ? clone(attachedData) : {};
   return item;
 }
+const boundedWords = rows => (Array.isArray(rows) ? rows : []).filter(word => typeof word === 'string' && word.length > 0 && word.length <= 1000).slice(0, 256);
+function publicCharacter(role) {
+  const result = { id: role.id, identityTags: boundedWords(role.identityTags), generalTags: [], specificTags: [] };
+  for (const key of ['identityTagId', 'name', 'nameZh', 'seriesId', 'seriesName', 'trigger']) if (typeof role[key] === 'string') result[key] = role[key];
+  if (Array.isArray(role.aliases)) result.aliases = role.aliases.slice();
+  if (typeof role.hasFeatures === 'boolean') result.hasFeatures = role.hasFeatures;
+  if (Number.isFinite(role.count)) result.count = role.count;
+  for (const field of ['generalTags', 'specificTags']) result[field] = (role[field] || []).filter(tag => typeof tag.en === 'string' && tag.en.length > 0 && tag.en.length <= 1000).slice(0, 256).map(tag => {
+    const item = { id: tag.id, en: tag.en };
+    for (const key of ['zh', 'category', 'nsfw', 'review', 'edited']) if (tag[key] !== undefined) item[key] = tag[key];
+    return item;
+  });
+  result.contentOmitted = result.identityTags.length !== (role.identityTags || []).length || ['generalTags', 'specificTags'].some(field => result[field].length !== (role[field] || []).length);
+  return result;
+}
 function roleAttachedData(role) {
   if (!role) return {};
-  return {
-    type: 'character',
-    characterId: role.id,
-    series: text(role.seriesName || role.seriesId),
-    identityTags: Array.isArray(role.identityTags) ? role.identityTags.slice() : [],
-    appearanceTags: [...(Array.isArray(role.generalTags) ? role.generalTags : []), ...(Array.isArray(role.specificTags) ? role.specificTags : [])]
-      .map(item => text(item?.en || item))
-      .filter(Boolean)
-  };
-}
-function publicFavorites(rows) {
-  let remaining = 16000;
-  return (Array.isArray(rows) ? rows : []).slice(0, 8).map(row => {
-    const result = { entryId: text(row.entryId || row.id), kind: row.kind === 'bundle' ? 'bundle' : 'tag', title: text(row.title), contentOmitted: false };
-    for (const key of ['zh', 'seriesName', 'sectionName']) if (typeof row[key] === 'string') result[key] = row[key];
-    if (Number.isInteger(row.memberCount) && row.memberCount > 0) result.memberCount = row.memberCount;
-    const rawText = typeof row.rawText === 'string' ? row.rawText : '';
-    if (rawText.length <= remaining) { result.rawText = rawText; remaining -= rawText.length; }
-    else result.contentOmitted = true;
-    return result;
-  });
+  const value = publicCharacter(role);
+  return { type: 'character', characterId: role.id, series: text(role.seriesName || role.seriesId), identityTags: value.identityTags,
+    appearanceTags: boundedWords([...value.generalTags, ...value.specificTags].map(item => item.en)) };
 }
 function publicImage(value) {
   const result = { imageId: text(value?.imageId || value?.id) };
@@ -152,22 +152,18 @@ function createPrimaryTools(options = {}) {
       if (!Array.isArray(rows)) throw failure('OUTPUT_INVALID', '标签查询返回格式无效');
       const attached = new Map();
       if (typeof options.characters?.get === 'function') for (const row of rows) {
-        if (row?.category !== 'character_names' && row?.categoryCode !== 4) continue;
-        const role = options.characters.get(row.id, { includeAdult });
+        if (!row.characterId && row?.category !== 'character_names' && row?.categoryCode !== 4) continue;
+        const role = options.characters.get(row.characterId || row.id, { includeAdult });
         if (role) attached.set(row.id, roleAttachedData(role));
       }
-      const result = { items: rows.slice(0, args.limit || 50).map(row => publicTag(row, attached.get(row.id))) };
-      if (args.query.trim() && typeof options.favorites?.search === 'function') {
-        const matches = await options.favorites.search(args.query, { scope: 'global', includeAdult, limit: 8 });
-        if (matches?.items?.length) result.favorites = publicFavorites(matches.items);
-      }
-      return result;
+      const budget = { remaining: 16000 }, seen = new Set();
+      return { items: rows.filter(row => { const id = row.id || row.en; if (seen.has(id)) return false; seen.add(id); return row.searchable !== false && (includeAdult || !(row.adult || row.nsfw)); }).slice(0, args.limit || 50).map(row => publicTag(row, attached.get(row.id), budget)) };
     },
     'characters.search': args => {
       if (!options.characters?.page) throw failure('TOOL_UNAVAILABLE', '角色模块不可用');
       const includeAdult = args.includeAdult === true;
-      const page = options.characters.page({ ...args, includeAdult, limit: args.limit || 5 });
-      return { items: page.items.map(row => options.characters.get(row.id, { includeAdult })).filter(Boolean), total: page.total };
+      const page = options.characters.page({ ...args, discovery: true, includeAdult, limit: args.limit || 5 });
+      return { items: page.items.map(row => options.characters.get(row.id, { includeAdult })).filter(role => role && role.searchable !== false).map(publicCharacter), total: page.total };
     },
     'conversation.listImages': async (args, context) => {
       if (!context.sessionId) throw failure('SESSION_REQUIRED', '当前会话不可用');

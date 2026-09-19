@@ -3,7 +3,7 @@ const { joinFavoriteBlocks, parseFavoritePaste, validateFavoriteBundle } = requi
 const { segmentSourceText } = require('../translation-alignment');
 const { PALETTE } = require('./presentation-metadata');
 const { formatTagOutput } = require('./selection');
-const { fail, own, object, context, tagPatch, collect } = require('./adapter-common');
+const { fail, own, object, context, tagPatch, clone } = require('./adapter-common');
 
 /** Membership views are derived on every read; TagView owns all editable text. */
 function createFavoriteAdapter({ library } = {}) {
@@ -11,38 +11,57 @@ function createFavoriteAdapter({ library } = {}) {
   const series = () => library.getFavoritePages();
   const sections = pageId => (pageId ? library.getFavoriteGroups(pageId) : series().flatMap(page => library.getFavoriteGroups(page.id)))
     .map(row => ({ ...row, seriesId: row.pageId }));
-  const membership = id => library.getMemberships().find(row => row.id === id);
-  function entry(row) {
+  let memberIndex = null, ordered = null;
+  const unsubscribe = library.subscribe(change => { if (change.changedMembershipIds.length || change.structureChanged) { memberIndex = null; ordered = null; } });
+  function members() { if (!library.status().ready) return new Map(); if (!memberIndex) memberIndex = new Map(library.getMemberships().map(row => [row.id, row])); return memberIndex; }
+  const membership = id => members().get(id);
+  const selectedIds = () => new Set(library.selected({ includeAdult: true }).filter(row => row.kind === 'tag').map(row => row.tagIds[0]));
+  function entry(row, selected = selectedIds(), tag = row && library.getTag(row.tagId)) {
     if (!row) return null;
-    const tag = library.getTag(row.tagId); if (!tag) return null;
+    if (!tag) return null;
     const location = tag.favoriteLocations.find(value => value.membershipId === row.id);
-    const selected = library.selected({ includeAdult: true }).some(value => value.kind === 'tag' && value.tagIds[0] === tag.id);
     return { id: row.id, sourceTagId: tag.id, tagId: tag.id, kind: tag.kind, seriesId: location.pageId, sectionId: row.groupId,
       title: tag.displayName, zh: tag.displayName, rawText: tag.content, aliases: tag.aliases, note: tag.note,
       nsfw: tag.adult, globalSearchable: tag.searchable, searchable: tag.searchable, pinned: row.pinned, order: row.order,
-      createdAt: tag.createdAt, updatedAt: tag.updatedAt, revision: tag.revision, selected };
+      createdAt: tag.createdAt, updatedAt: tag.updatedAt, revision: tag.revision, selected: selected.has(tag.id) };
   }
   const getEntry = id => entry(membership(id));
-  function rows(settings = {}) {
-    const pages = new Map(series().map(row => [row.id, row.order])), groups = new Map(sections().map(row => [row.id, row.order]));
-    let result = library.getMemberships().map(entry).filter(Boolean).filter(row =>
-      (settings.includeAdult !== false || !row.nsfw) && (!settings.seriesId || row.seriesId === settings.seriesId) && (!own(settings, 'sectionId') || row.sectionId === settings.sectionId));
+  function matchingMembers(settings = {}) {
+    if (!library.status().ready) return [];
+    const groups = new Map(sections().map(row => [row.id, row]));
+    if (!ordered) {
+      const pages = new Map(series().map(row => [row.id, row.order]));
+      ordered = [...members().values()].sort((a, b) => pages.get(groups.get(a.groupId)?.pageId) - pages.get(groups.get(b.groupId)?.pageId) || groups.get(a.groupId)?.order - groups.get(b.groupId)?.order || Number(b.pinned) - Number(a.pinned) || a.order - b.order);
+    }
+    let result = ordered.filter(row => (!settings.seriesId || groups.get(row.groupId)?.pageId === settings.seriesId) && (!own(settings, 'sectionId') || row.groupId === settings.sectionId));
+    if (settings.includeAdult === false) {
+      const allowed = new Set(library.getTagIds({ scope: 'favorites', includeAdult: false, pageId: settings.seriesId, groupId: settings.sectionId }));
+      result = result.filter(row => allowed.has(row.tagId));
+    }
     if (settings.view === 'recent') {
       const recent = new Map(library.getRecentTagIds().map((id, index) => [id, index]));
       result = result.filter(row => recent.has(row.tagId)).sort((a, b) => recent.get(a.tagId) - recent.get(b.tagId));
-    } else result.sort((a, b) => pages.get(a.seriesId) - pages.get(b.seriesId) || groups.get(a.sectionId) - groups.get(b.sectionId) || Number(b.pinned) - Number(a.pinned) || a.order - b.order);
+    }
     return result;
   }
-  function paged(items, settings = {}) {
+  function rows(settings = {}) { const selected = selectedIds(); return matchingMembers(settings).map(row => entry(row, selected)).filter(Boolean); }
+  function list(settings = {}) {
+    const items = matchingMembers(settings), selected = selectedIds();
     const offset = Number.isSafeInteger(settings.offset) && settings.offset >= 0 ? settings.offset : 0;
     const limit = Number.isSafeInteger(settings.limit) && settings.limit > 0 ? Math.min(settings.limit, 2000) : 80;
-    return { items: items.slice(offset, offset + limit), total: items.length, offset, limit, hasMore: offset + limit < items.length, revision: library.revision() };
+    return { items: items.slice(offset, offset + limit).map(row => entry(row, selected)), total: items.length, offset, limit, hasMore: offset + limit < items.length, revision: library.revision() };
   }
-  const list = (settings = {}) => paged(rows(settings), settings);
   function search(query, settings = {}) {
-    const hits = new Set(collect(o => library.search(query, o), { scope: 'favorites', includeAdult: settings.includeAdult !== false,
-      precision: settings.precision, pageId: settings.seriesId, groupId: settings.sectionId }).map(row => row.id));
-    return paged(rows(settings).filter(row => hits.has(row.tagId)), settings);
+    const result = library.search(query, { scope: 'favorites', matchPrivate: settings.scope !== 'global', includeAdult: settings.includeAdult !== false,
+      precision: settings.precision, pageId: settings.seriesId, groupId: settings.sectionId, kind: settings.kind, offset: settings.offset, limit: settings.limit ?? 80 });
+    const selected = selectedIds();
+    return { ...result, items: result.items.map(tag => {
+      const location = tag.favoriteLocations.find(place => (!settings.seriesId || place.pageId === settings.seriesId) && (!own(settings, 'sectionId') || place.groupId === settings.sectionId));
+      if (!location) return null;
+      return { ...entry(membership(location.membershipId), selected, tag), entryId: location.membershipId,
+        favoriteLocations: clone(tag.favoriteLocations), seriesName: location.pageName, sectionName: location.groupName,
+        score: tag.score, matches: tag.matches.map(match => ({ ...match, field: ({ content: 'rawText', displayName: 'title', pageName: 'seriesName', groupName: 'sectionName' })[match.field] || match.field })) };
+    }).filter(Boolean) };
   }
   const placement = (input, old) => ({ kind: 'favorite', page: { id: input.seriesId ?? old?.seriesId }, group: { id: input.sectionId ?? old?.sectionId } });
   async function saveEntry(input = {}, options) {
@@ -138,6 +157,7 @@ function createFavoriteAdapter({ library } = {}) {
     const segmented = segmentSourceText(row.rawText); return segmented.granularity === 'tag' ? segmented.sourceUnits.length : null;
   })() : null;
   return Object.freeze({
+    dispose: unsubscribe,
     ready: () => library.ready(), status: () => library.status(), series, sections, getEntry, list, search, saveEntry, saveSeries, saveSection,
     snapshot: () => ({ document: { format: 'ai-tag-favorites', version: 1, revision: library.revision(), series: series(), sections: sections(), entries: rows() },
       revision: library.revision(), status: library.status(), loadError: library.status().error, migrationReport: null }),

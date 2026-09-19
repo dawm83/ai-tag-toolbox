@@ -1,9 +1,9 @@
 'use strict';
 const { isDeepStrictEqual } = require('node:util');
-const { context, fail, own, object, clone } = require('./adapter-common');
+const { context, fail, own, object, clone, collect } = require('./adapter-common');
 const { validateCommand } = require('./schema');
 const { formatTagOutput } = require('./selection');
-const normalize = value => String(value ?? '').normalize('NFKC').trim().toLowerCase().replace(/_/g, ' ').replace(/\s+/g, ' ');
+const { normalize } = require('./search');
 const precisionOf = value => ['exact', 'broad'].includes(value) ? value : 'standard';
 
 /** Canonical IDs plus read-only source audit metadata; never a second tag store.
@@ -20,7 +20,13 @@ function createCharacterAdapter({ library, characterSource } = {}) {
       fallback: Boolean(row.fallback), ...(typeof row.sourceKey === 'string' ? { sourceKey: row.sourceKey } : {}), ...(Number.isFinite(row.order) ? { order: row.order } : {}) });
   }
   const metadata = object(characterSource.manifest) ? clone(characterSource.manifest) : {};
-  let indexedRevision = -1, index = [];
+  let index = null; const recordCache = new Map(), pageCache = new Map();
+  const unsubscribe = library.subscribe(change => {
+    if (change.changedCharacterIds.length) {
+      for (const id of change.changedCharacterIds) recordCache.delete(id);
+      index = null; pageCache.clear();
+    }
+  });
   function unresolved(characterId, tagId, field) {
     throw Object.assign(new Error(`角色引用未解析：${characterId} / ${field}`), { code: 'UNRESOLVED_REFERENCE', fields: [`character.${characterId}.${field}`], characterId, tagId });
   }
@@ -31,11 +37,13 @@ function createCharacterAdapter({ library, characterSource } = {}) {
   }
   const visible = (tag, settings) => settings.includeAdult || !tag.adult;
   function record(id) {
+    if (recordCache.has(id)) return recordCache.get(id);
     const links = library.getCharacterLinks(id);
     if (!links) return null;
     const identity = requiredTag(id, links.identityTagId, 'identityTagId');
     const series = links.seriesTagIds.map(tagId => requiredTag(id, tagId, 'seriesTagIds'));
-    return { links, identity, series, audit: audit.get(id) || { trigger: '', count: 0, fallback: false } };
+    const result = { links, identity, series, audit: audit.get(id) || { trigger: '', count: 0, fallback: false } };
+    recordCache.set(id, result); return result;
   }
   function summary(row, settings = {}) {
     const series = row.series.filter(tag => visible(tag, settings));
@@ -44,7 +52,7 @@ function createCharacterAdapter({ library, characterSource } = {}) {
       seriesId: series[0]?.id || '', seriesName: series[0]?.displayName || '', seriesTagIds: series.map(tag => tag.id),
       count: row.audit.count, fallback: row.audit.fallback, hasFeatures: Boolean(row.links.generalTagIds.length || row.links.specificTagIds.length) };
   }
-  const termView = tag => ({ ...tag, en: tag.content, zh: tag.displayName, category: tag.categoryId, nsfw: tag.adult, edited: tag.revision > 0 });
+  const termView = tag => clone({ ...tag, en: tag.content, zh: tag.displayName, category: tag.categoryId, nsfw: tag.adult, edited: tag.revision > 0 });
   function get(id, settings = {}) {
     const row = record(id); if (!row || !visible(row.identity, settings)) return null;
     const terms = field => row.links[field].map(tagId => requiredTag(id, tagId, field)).filter(tag => visible(tag, settings)).map(termView);
@@ -56,35 +64,21 @@ function createCharacterAdapter({ library, characterSource } = {}) {
   }
   function indexed() {
     if (!library.status().ready) return [];
-    if (indexedRevision !== library.revision()) {
-      index = [...audit.keys()].map(id => { const row = record(id); if (!row) unresolved(id, null, 'characterId'); return row; });
-      indexedRevision = library.revision();
-    }
+    if (!index) index = [...audit.keys()].map(id => { const row = record(id); if (!row) unresolved(id, null, 'characterId'); return row; });
     return index;
-  }
-  function score(row, query, precision, settings) {
-    if (!query) return 1;
-    if (!row.identity.searchable) return 0;
-    const names = [row.identity.content, row.identity.displayName].map(normalize).filter(Boolean);
-    const aliases = row.identity.aliases.map(normalize).filter(Boolean);
-    const series = row.series.filter(tag => tag.searchable && visible(tag, settings))
-      .flatMap(tag => [tag.content, tag.displayName, ...tag.aliases]).map(normalize).filter(Boolean);
-    if (names.includes(query)) return 120;
-    if (aliases.includes(query)) return 110;
-    if (series.includes(query)) return 80;
-    if (precision === 'exact') return 0;
-    const fields = [...names, ...aliases, ...series];
-    if (fields.some(value => value.startsWith(query))) return 75;
-    if (fields.some(value => value.includes(query))) return 60;
-    if (query.split(' ').every(part => fields.some(value => value.includes(part)))) return 40;
-    if (precision === 'broad' && fields.some(value => value.replace(/[ .-]/g, '').includes(query.replace(/[ .-]/g, '')))) return 30;
-    return 0;
   }
   function page(settings = {}) {
     const query = normalize(settings.query), precision = precisionOf(settings.precision);
-    const rows = indexed().filter(row => visible(row.identity, settings) && (!settings.seriesId || row.series.some(tag => tag.id === settings.seriesId && visible(tag, settings))))
-      .map(row => ({ row, score: score(row, query, precision, settings) })).filter(entry => entry.score)
-      .sort((a, b) => b.score - a.score || b.row.audit.count - a.row.audit.count || a.row.links.characterId.localeCompare(b.row.links.characterId));
+    const key = JSON.stringify([query, precision, Boolean(settings.includeAdult), settings.seriesId, Boolean(settings.discovery)]);
+    let rows = pageCache.get(key);
+    if (!rows) {
+      if (query || settings.discovery) {
+        rows = collect(o => library.search(query, o), { scope: 'characters', includeAdult: Boolean(settings.includeAdult), seriesId: settings.seriesId, precision })
+          .flatMap(tag => (tag.characterMatches || [{ characterId: tag.characterId, score: tag.score }]).map(match => ({ row: record(match.characterId), score: match.score }))).filter(entry => entry.row);
+      } else rows = indexed().filter(row => visible(row.identity, settings) && (!settings.seriesId || row.series.some(tag => tag.id === settings.seriesId && visible(tag, settings)))).map(row => ({ row, score: 1 }));
+      rows.sort((a, b) => b.score - a.score || b.row.audit.count - a.row.audit.count || a.row.links.characterId.localeCompare(b.row.links.characterId));
+      if (library.status().ready) { pageCache.set(key, rows); if (pageCache.size > 32) pageCache.delete(pageCache.keys().next().value); }
+    }
     const offset = Math.max(0, Math.floor(Number(settings.offset) || 0)), limit = Math.min(100, Math.max(1, Math.floor(Number(settings.limit) || 50)));
     return { items: rows.slice(offset, offset + limit).map(entry => summary(entry.row, settings)), total: rows.length, offset, limit, hasMore: offset + limit < rows.length, revision: library.revision() };
   }
@@ -149,6 +143,7 @@ function createCharacterAdapter({ library, characterSource } = {}) {
     return ids.map(tagId => requiredTag(id, tagId, 'copy')).filter(tag => visible(tag, settings)).map(formatTagOutput).join(', ');
   }
   return Object.freeze({
+    dispose: unsubscribe, search: settings => page({ ...settings, discovery: true }),
     ready: () => library.ready(), status: () => library.status(), get, page, series, edit, restore, select, selected, copyText,
     size: () => indexed().length, count: () => audit.size,
     manifest: () => ({ ...clone(metadata), loadedCharacters: library.status().ready ? indexed().length : undefined, legacyFallbackCharacters: [...audit.values()].filter(row => row.fallback).length }),

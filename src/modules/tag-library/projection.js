@@ -12,10 +12,15 @@ function baseIndex(base) {
     categories: new Map(base.categories.map(row => [row.id, row])),
     subcategories: new Map(base.subcategories.map(row => [row.id, row]))
   };
+  index.characterUses = new Map();
+  for (const row of index.characters.values()) for (const id of new Set([row.identityTagId, ...row.seriesTagIds, ...row.generalTagIds, ...row.specificTagIds])) {
+    if (!index.characterUses.has(id)) index.characterUses.set(id, []); index.characterUses.get(id).push(row.characterId);
+  }
   if (Object.isFrozen(base)) bases.set(base, index);
   return index;
 }
 function merge(base, custom, overrides = [], key = 'id') {
+  if (!custom.length && !overrides.length) return base;
   const map = new Map(base);
   for (const row of custom) map.set(row[key], row);
   for (const row of overrides) map.set(row[key], { ...map.get(row[key]), ...row });
@@ -30,10 +35,19 @@ function createProjection(document, base) {
   const subcategories = merge(index.subcategories, document.customSubcategories, document.subcategoryOverrides);
   const pages = new Map(document.favoritePages.map(row => [row.id, row]));
   const groups = new Map(document.favoriteGroups.map(row => [row.id, row]));
-  const memberships = new Map(); const characterUses = new Map();
+  const memberships = new Map(); const characterUses = document.characterOverrides.length ? new Map(index.characterUses) : index.characterUses;
   for (const row of document.memberships) { if (!memberships.has(row.tagId)) memberships.set(row.tagId, []); memberships.get(row.tagId).push(row); }
-  for (const row of characters.values()) for (const id of new Set([row.identityTagId, ...row.seriesTagIds, ...row.generalTagIds, ...row.specificTagIds])) {
-    if (!characterUses.has(id)) characterUses.set(id, []); characterUses.get(id).push(row.characterId);
+  // Copy only reverse-index buckets touched by an overridden role; immutable
+  // base buckets and unchanged relations are shared across every projection.
+  for (const row of document.characterOverrides) {
+    const old = index.characters.get(row.characterId);
+    const beforeIds = old ? [old.identityTagId, ...old.seriesTagIds, ...old.generalTagIds, ...old.specificTagIds] : [];
+    const afterIds = [row.identityTagId, ...row.seriesTagIds, ...row.generalTagIds, ...row.specificTagIds];
+    for (const id of new Set([...beforeIds, ...afterIds])) {
+      const uses = (characterUses.get(id) || []).filter(characterId => characterId !== row.characterId);
+      if (afterIds.includes(id)) uses.push(row.characterId);
+      characterUses.set(id, uses);
+    }
   }
   function tag(id) {
     const record = custom.get(id) || index.tags.get(id); if (!record) return null;
