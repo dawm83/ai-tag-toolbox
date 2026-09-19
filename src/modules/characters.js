@@ -138,7 +138,7 @@ function createCharacters(options = {}) {
     const row = records.get(String(id));
     if (!row || (row.nsfw && !settings.includeAdult)) return null;
     const visible = term => term && (settings.includeAdult || !term.nsfw);
-    const generalTags = row.tagIds.map(id => tags?.get?.(id)).filter(visible).map(term => ({ id: term.id, en: term.en, zh: term.zh || '', category: term.category || 'other', nsfw: Boolean(term.nsfw), edited: Boolean(term.edited) }));
+    const generalTags = row.tagIds.map(id => tags?.get?.(id) || { id, en: id, zh: '', category: 'other', nsfw: false }).filter(visible).map(term => ({ id: term.id, en: term.en, zh: term.zh || '', category: term.category || 'other', nsfw: Boolean(term.nsfw), edited: Boolean(term.edited) }));
     const specificTags = row.specificTagIds.map(id => terms.get(id)).filter(visible).map(term => ({ id: term.id, en: term.en, zh: term.zh || '', category: 'character_specific', nsfw: Boolean(term.nsfw), review: Boolean(term.review) }));
     // The character key is the stable identity. The source trigger stays available for audit.
     const identityTags = unique([label(row.id), label(row.seriesId)].filter(Boolean));
