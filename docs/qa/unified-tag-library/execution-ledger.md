@@ -77,3 +77,7 @@ Task 2: complete — commitsa57e22c/a989888, reviewer PASS, targeted26/project33
 Task 3: running — /root/unified_tags_commands (gpt-6-astra/high), basea989888; single authoritative commands/projections/live selections/history. No production UI cutover yet.
 Task 3: review — commit0dc603e, focused44/project350 pass; reviewer /root/unified_review_commands (gpt-5.6-sol/high), review range8a21688..0dc603e. Recovery resumed2026-09-20 in exact toolbox directory; simulator untouched.
 Ruling: deleted favorite structures must relocate memberships to the explicit “未分类” destination specified in design line350, not arbitrary first remaining user group — predictable organization matters; current deviation will be closed with Task3 review findings.
+Task 3: fix round1 — review found wrong relocation destination and favoriteTag accepting a moving membershipId. Commit12ff246 fixes both; focused20/project353 pass; scoped re-review /root/unified_review_commands underway.
+Ruling: startup recovery in Task4 must support explicit retry and validated restoration of the fixed repository backup while preserving corrupt original bytes — an error string alone does not satisfy recovery design; Task9 consumes documented host APIs, renderer never supplies paths.
+Task 3: complete — commits0dc603e/12ff246; independent scoped re-review PASS; commands20 plus full353 pass. Task4 starts from12ff246.
+Task 4: running — /root/unified_tags_migration (gpt-6-astra/high); migration, strict source reader, retry/fixed-backup recovery; no live user data access.

@@ -297,7 +297,7 @@ test('failed replace retains the last committed document', async t => {
 
 **Interfaces:** `createTagLibrary({base,repository,ids?,now?})` 实现第 3 节服务；`applyLibraryCommand(document,base,command,{ids,now})` 是纯函数，返回候选文档和变更差量；ids/now 由宿主注入，测试固定。
 
-- [ ] 先写“收藏不复制”和跨入口读取测试：
+- [x] 先写“收藏不复制”和跨入口读取测试：
 
 ```js
 const { createHarness } = require('./fixtures/tag-library.cjs');
@@ -316,7 +316,7 @@ test('favorite membership shares the same mutable tag identity', async () => {
 });
 ```
 
-- [ ] 实现 execute 的提交队列：在队列执行时检查 expectedRevision → 纯变换 → 全文档引用校验 → await repository.save → 更新内存/索引revision → 单条 subscribe 事件。禁止“先通知，再保存”。
+- [x] 实现 execute 的提交队列：在队列执行时检查 expectedRevision → 纯变换 → 全文档引用校验 → await repository.save → 更新内存/索引revision → 单条 subscribe 事件。禁止“先通知，再保存”。
 
 关键内部顺序按下列骨架实现；`current/base/repository/publish` 为同一个library闭包成员，`validateLibraryDocument/applyLibraryCommand` 是上文已定义函数：
 
@@ -333,13 +333,13 @@ return { ok: true, data: prepared.data.result, revision: current.revision };
 ```
 
 `prepared.data` 的合同为 `{document:LibraryDocument,change:LibraryChange,result:CommitData,historyDelta}`；historyDelta只记录本命令影响的前后对象，未涉及数据不复制进撤销历史。保存异常由队列统一转 `STORAGE_WRITE_FAILED`，不能让未处理Promise终止UI。
-- [ ] operationId 去重比较规范化业务命令；同 ID 不同内容 `OPERATION_CONFLICT`；失败允许相同保存重试，不把失败当成功缓存。
-- [ ] 基础只读记录+字段覆盖合并；显式空值保留，别名替换而非无条件与基础合并。content可改，ID不能改。
-- [ ] favoriteTag 同tag/同group幂等；move只改指定membership；saveTag+placement中的新页/组/分类全在候选文档生成，任一无效不落盘。
-- [ ] 实现引用删除保护、restoreTag、批量操作、排序集合完整性和差量撤销/重做；通过反向引用表生成变更事件。
-- [ ] 结构化 selection 只存引用，home/favorite按tagId去重；角色组装查实时词；bundle保持原文，legacySnapshot保持原文并标状态。selection失败不改变持久化状态。
-- [ ] 测试重复收藏/双击保存/延迟写并发/版本冲突/失败无事件/清空字段/保留顺序/跨组共享/批量撤销/有引用删词拒绝/组删除搬迁/角色公共词输出。
-- [ ] `node --test tests/tag-library-commands.test.cjs tests/tag-library-selection.test.cjs tests/tag-library-history.test.cjs`；`npm run check`；提交。
+- [x] operationId 去重比较规范化业务命令；同 ID 不同内容 `OPERATION_CONFLICT`；失败允许相同保存重试，不把失败当成功缓存。
+- [x] 基础只读记录+字段覆盖合并；显式空值保留，别名替换而非无条件与基础合并。content可改，ID不能改。
+- [x] favoriteTag 同tag/同group幂等；move只改指定membership；saveTag+placement中的新页/组/分类全在候选文档生成，任一无效不落盘。
+- [x] 实现引用删除保护、restoreTag、批量操作、排序集合完整性和差量撤销/重做；通过反向引用表生成变更事件。
+- [x] 结构化 selection 只存引用，home/favorite按tagId去重；角色组装查实时词；bundle保持原文，legacySnapshot保持原文并标状态。selection失败不改变持久化状态。
+- [x] 测试重复收藏/双击保存/延迟写并发/版本冲突/失败无事件/清空字段/保留顺序/跨组共享/批量撤销/有引用删词拒绝/组删除搬迁/角色公共词输出。
+- [x] `node --test tests/tag-library-commands.test.cjs tests/tag-library-selection.test.cjs tests/tag-library-history.test.cjs`；`npm run check`；提交。
 
 **验收:** 数据上已实现 U01/U03/U06/U07/U14/U15/U16/U19；没有 UI 也可通过真实状态测试证明。提交：`V1.4.317：统一标签内容与收藏归属命令`。
 
