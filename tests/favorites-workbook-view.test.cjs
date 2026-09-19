@@ -273,3 +273,21 @@ test('save closes the editor only after storage succeeds and retains an invalid 
   assert.equal(app.$('[data-favorite-editor]').hidden, true);
   assert.equal(app.favorites.getEntry(entry.id).rawText, 'after');
 });
+
+
+test('editor destinations match the current page columns without an unfiled option', async t => {
+  const app = workbookFixture(t);
+  const page = app.favorites.series()[0];
+  const section = app.favorites.sections(page.id)[0];
+  const root = app.favorites.saveEntry({ seriesId: page.id, rawText: 'legacy' }).data;
+  app.view.render();
+  assert.equal(app.favorites.getEntry(root.id).sectionId, section.id);
+  await app.view.openEditor(root.id);
+  assert.deepEqual([...app.$('[data-favorite-field="sectionId"]').options].map(option => option.value), [section.id]);
+  await app.click('[data-favorite-action="editor-close"]');
+  await app.click('[data-favorite-action="new-series-tab"]');
+  const second = app.favorites.series().at(-1);
+  await app.view.openCreate({ seriesId: second.id, rawText: 'new tag' });
+  await app.click('[data-favorite-action="editor-save"]');
+  assert.equal(app.favorites.list({ seriesId: second.id }).items[0].sectionId, app.favorites.sections(second.id)[0].id);
+});

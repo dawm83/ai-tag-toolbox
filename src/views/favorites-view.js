@@ -163,7 +163,7 @@
       const panel = host.querySelector('[data-favorite-quick-editor]'); const draft = state.quickEditor; if (!panel || !draft) return false;
       const rawText = string(panel.querySelector('[data-favorite-quick-raw]')?.value).trim();
       if (!rawText) { notify(label('favorites.rawRequired', '原文不能为空')); panel.querySelector('[data-favorite-quick-raw]')?.focus(); return false; }
-      const result = safeCall('saveEntry', { kind: 'tag', seriesId: draft.seriesId, sectionId: draft.sectionId === 'root' ? null : draft.sectionId, title: string(panel.querySelector('[data-favorite-quick-title]')?.value).trim(), rawText, zh: string(panel.querySelector('[data-favorite-quick-title]')?.value).trim(), note: string(panel.querySelector('[data-favorite-quick-note]')?.value) });
+      const result = safeCall('saveEntry', { kind: 'tag', seriesId: draft.seriesId, sectionId: draft.sectionId, title: string(panel.querySelector('[data-favorite-quick-title]')?.value).trim(), rawText, zh: string(panel.querySelector('[data-favorite-quick-title]')?.value).trim(), note: string(panel.querySelector('[data-favorite-quick-note]')?.value) });
       if (!result?.ok) { notify(result?.error?.message || label('favorites.saveFailed', '保存失败')); return false; }
       await safeCall('flush'); closeQuickEditor(); render(); return true;
     }
@@ -346,11 +346,9 @@
       }
       const active = rows.find(row => row.id === state.seriesId) || rows.find(row => row.id === state.prefs.activeSeriesId) || rows[0];
       if (!active) return;
-      if (!sectionRows(active.id).length) {
-        state.initializing = true;
-        const created = safeCall('saveSection', { seriesId: active.id, name: label('favorites.newSectionTab', '新建标签栏') });
-        state.initializing = false; if (created?.ok) state.sectionId = created.data.id;
-      }
+      state.initializing = true;
+      try { safeCall('ensureTagColumns', active.id, label('favorites.newSectionTab', '新建标签栏')); }
+      finally { state.initializing = false; }
     }
     function renderAnchors() {
       const anchors = host.querySelector('[data-favorite-anchors]'); if (!anchors) return;
@@ -370,11 +368,7 @@
       anchors.append(tabs, zoomGroup);
     }
     function columnKey(seriesId, sectionId) { return JSON.stringify([seriesId, sectionId || 'root']); }
-    function columnsFor(seriesId) {
-      const rows = sectionRows(seriesId);
-      const rootCount = safeCall('list', { seriesId, sectionId: null, includeAdult: true, limit: 1, view: 'shelf' })?.total || 0;
-      return rootCount || !rows.length ? [{ id: 'root', name: label('favorites.unfiled', '未分类') }, ...rows] : rows;
-    }
+    function columnsFor(seriesId) { return sectionRows(seriesId); }
     function hiddenSections(seriesId = state.seriesId) { return new Set(state.prefs.hiddenSectionsBySeries[seriesId] || []); }
     function saveHiddenSections(ids, seriesId = state.seriesId) {
       savePreferences({ hiddenSectionsBySeries: { ...state.prefs.hiddenSectionsBySeries, [seriesId]: [...ids] } });
@@ -424,7 +418,7 @@
       shelf.append(content); setupColumnLoading();
     }
     function renderColumn(series, section, selected, lazy = false) {
-      const id = section.id === 'root' ? null : section.id;
+      const id = section.id;
       const limit = state.columnLimits.get(columnKey(series.id, section.id)) || INITIAL_COLUMN_BATCH;
       const rows = state.recent
         ? safeCall('list', { seriesId: series.id, sectionId: id, includeAdult: includeAdult(), limit: 20, view: 'recent' })
@@ -547,8 +541,10 @@
       if (!series || !section) return;
       series.replaceChildren(); seriesRows().forEach(row => series.append(optionNode(row.id, string(row.name, row.id))));
       series.value = selectedSeriesId || series.options[0]?.value || '';
-      section.replaceChildren(optionNode('', label('favorites.seriesRoot', '系列根部')));
-      sectionRows(series.value).forEach(row => section.append(optionNode(row.id, string(row.name, row.id)))); section.value = selectedSectionId || '';
+      safeCall('ensureTagColumns', series.value, label('favorites.newSectionTab', '新建标签栏'));
+      const rows = sectionRows(series.value);
+      section.replaceChildren(...rows.map(row => optionNode(row.id, string(row.name, row.id))));
+      section.value = rows.some(row => row.id === selectedSectionId) ? selectedSectionId : rows[0]?.id || '';
     }
     function currentVisibleIds() {
       return [...host.querySelectorAll('[data-favorite-entry]')].map(node => node.dataset.favoriteEntry);
@@ -558,10 +554,12 @@
       const order = currentVisibleIds();
       if (state.editor && !await flushEdits()) return false;
       const firstSeries = value.seriesId || state.seriesId || seriesRows()[0]?.id || '';
+      safeCall('ensureTagColumns', firstSeries, label('favorites.newSectionTab', '新建标签栏'));
+      const sectionId = sectionRows(firstSeries).find(row => row.id === (value.sectionId || state.sectionId))?.id || sectionRows(firstSeries)[0]?.id || '';
       const rawText = string(value.rawText); const kind = 'tag';
       state.returnFocus = doc.activeElement;
       state.editor = { session: ++state.editorSession, version: rawText ? 1 : 0, savePromise: null, id: null, creating: true, dirty: Boolean(rawText), saved: null, order, historyKey: `favorite-create-${Date.now()}`, draft: {
-        kind, seriesId: firstSeries, sectionId: value.sectionId || null, title: string(value.title || value.zh), rawText, zh: string(value.zh), aliases: Array.isArray(value.aliases) ? [...value.aliases] : [], note: string(value.note), globalSearchable: value.globalSearchable !== false, nsfw: value.nsfw === true
+        kind, seriesId: firstSeries, sectionId, title: string(value.title || value.zh), rawText, zh: string(value.zh), aliases: Array.isArray(value.aliases) ? [...value.aliases] : [], note: string(value.note), globalSearchable: value.globalSearchable !== false, nsfw: value.nsfw === true
       } };
       renderEditor(); return state.editor;
     }
@@ -570,6 +568,7 @@
       if (state.editor?.id === entryId && !state.editor.creating) return true;
       const order = preserveOrder && state.editor?.order?.length ? [...state.editor.order] : currentVisibleIds();
       if (state.editor && !await flushEdits()) return false;
+      const existing = safeCall('getEntry', entryId); if (existing) safeCall('ensureTagColumns', existing.seriesId, label('favorites.newSectionTab', '新建标签栏'));
       const entry = safeCall('getEntry', entryId); if (!entry) { notify(label('favorites.notFound', '收藏不存在')); return false; }
       if (!preserveOrder) state.returnFocus = doc.activeElement;
       state.editor = { session: ++state.editorSession, version: 0, savePromise: null, id: entry.id, creating: false, dirty: false, saved: { ...entry, aliases: [...(entry.aliases || [])] }, order: order.includes(entry.id) ? order : [...order, entry.id], historyKey: `favorite-edit-${entry.id}-${Date.now()}`, draft: { ...entry, title: string(entry.title || entry.zh), aliases: [...(entry.aliases || [])] } };
@@ -620,6 +619,7 @@
           const version = editor.version;
           const patch = { ...editor.draft, aliases: [...(editor.draft.aliases || [])] };
           if (!string(patch.rawText).trim()) { setSaveStatus('invalid', label('favorites.rawRequired', '原文不能为空')); return false; }
+          if (!sectionRows(patch.seriesId).some(row => row.id === patch.sectionId)) { setSaveStatus('invalid', label('favorites.columnRequired', '请选择标签栏')); return false; }
           if (!patch.seriesId) { setSaveStatus('invalid', label('favorites.seriesRequired', '请选择系列')); return false; }
           if (editor.id) patch.id = editor.id; else delete patch.id;
           setSaveStatus('saving', label('favorites.saving', '保存中'));
@@ -1048,7 +1048,7 @@
       host.addEventListener('compositionstart', handleCompositionStart); host.addEventListener('compositionend', handleCompositionEnd);
       host.addEventListener('keydown', handleKeydown); host.addEventListener('dragstart', handleDragStart); host.addEventListener('dragover', handleDragOver); host.addEventListener('drop', handleDrop); host.addEventListener('scroll', handleShelfScroll, true);
       state.unsubscribe = favorites?.subscribe?.((event = {}) => {
-        if (state.destroyed || !state.active) return;
+        if (state.destroyed || !state.active || state.initializing) return;
         if (event.structureChanged) {
           if (state.editor) { updateHistory(); return; }
           render(); return;

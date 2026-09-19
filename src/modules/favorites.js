@@ -364,6 +364,26 @@ function createFavorites(options = {}) {
     return committed;
   }
 
+  function assignTagColumn(candidate, seriesId, name = '新建标签栏') {
+    let target = candidate.sections.filter(row => row.seriesId === seriesId).sort((a, b) => a.order - b.order)[0];
+    if (!target) {
+      target = { id: makeId('section', candidate), seriesId, name, order: 0, color: PALETTE[0] };
+      candidate.sections.push(target);
+    }
+    let order = Math.max(-1, ...candidate.entries.filter(row => row.sectionId === target.id).map(row => row.order));
+    candidate.entries.filter(row => row.seriesId === seriesId && row.sectionId === null).sort((a, b) => a.order - b.order).forEach(row => { row.sectionId = target.id; row.order = ++order; });
+    return target;
+  }
+
+  function ensureTagColumns(seriesId, name = '新建标签栏') {
+    if (!document.series.some(row => row.id === seriesId)) return errorResult('SERIES_NOT_FOUND', '收藏页不存在');
+    const current = orderedSections(seriesId)[0];
+    if (current && !document.entries.some(row => row.seriesId === seriesId && row.sectionId === null)) return result(current);
+    const candidate = clone(document);
+    const target = assignTagColumn(candidate, seriesId, name);
+    return commit(candidate, target, { history: false });
+  }
+
   function deleteSection(id) {
     if (!document.sections.some(row => row.id === id)) return errorResult('SECTION_NOT_FOUND', '子分类不存在');
     const candidate = clone(document);
@@ -371,6 +391,7 @@ function createFavorites(options = {}) {
     let order = Math.max(-1, ...candidate.entries.filter(row => row.seriesId === section.seriesId && row.sectionId === null).map(row => row.order));
     candidate.entries.filter(row => row.sectionId === id).forEach(row => { row.sectionId = null; row.order = ++order; });
     candidate.sections = candidate.sections.filter(row => row.id !== id);
+    assignTagColumn(candidate, section.seriesId);
     return commit(candidate, { moved: document.entries.filter(row => row.sectionId === id).length });
   }
 
@@ -632,7 +653,7 @@ function createFavorites(options = {}) {
     series: () => orderedSeries(),
     sections: seriesId => orderedSections(seriesId),
     getEntry: id => clone(document.entries.find(row => row.id === id) || null),
-    list, saveSeries, saveSection, saveEntry, applyBatch, duplicateEntries, deleteEntries, deleteSection, deleteSeries, reorder, setSeriesColors, search,
+    list, saveSeries, saveSection, ensureTagColumns, saveEntry, applyBatch, duplicateEntries, deleteEntries, deleteSection, deleteSeries, reorder, setSeriesColors, search,
     copyText: ids => joinFavoriteBlocks((Array.isArray(ids) ? ids : []).map(id => document.entries.find(row => row.id === id)?.rawText).filter(value => typeof value === 'string' && value.length)),
     markCopied, setSelected,
     selected: settings => clone(selectedRows.filter(row => settings?.includeAdult !== false || !row.nsfw)),

@@ -177,7 +177,7 @@
       "importFailed": "导入失败",
       "seriesName": "系列名称",
       "sectionName": "子分类名称",
-      "confirmDeleteSection": "删除子分类并将内容移到系列根部？",
+      "confirmDeleteSection": "确定删除标签栏？其中的 Tag 将移入本页第一个其他标签栏；若没有其他栏，会创建一个新标签栏。",
       "confirmMoveSeries": "删除系列并将内容移到“未分类”？",
       "confirmDeleteSeries": "删除系列及其中内容？",
       "confirmDeleteEntries": "确定删除 {count} 条收藏吗？",

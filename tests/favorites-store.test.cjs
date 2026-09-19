@@ -54,7 +54,7 @@ test('CRUD validates parents, preserves stable IDs, and commits each batch once'
   assert.equal(copies.data.ids.length, 2);
   assert.ok(copies.data.ids.every(id => ![first.id, sameName.id].includes(id)));
   assert.equal(favorites.deleteSection(section.id).ok, true);
-  assert.equal(favorites.getEntry(copies.data.ids[0]).sectionId, null);
+  assert.equal(favorites.getEntry(copies.data.ids[0]).sectionId, favorites.sections(a.id)[0].id);
 });
 
 test('page name and color save together, reject invalid input atomically, and undo together', () => {
@@ -353,4 +353,38 @@ test('recent view keeps 20 unique live IDs and flush reflects storage result', a
 
   const failing = createFavorites({ storage: { get: storage.get, set: storage.set, flush: async () => false } });
   assert.equal(await failing.flush(), false);
+});
+
+
+test('opening legacy unfiled entries moves them into a real column once without changing their text', () => {
+  const { favorites, storage } = make();
+  const page = favorites.saveSeries({ name: 'Page' }).data;
+  const section = favorites.saveSection({ seriesId: page.id, name: 'First' }).data;
+  const existing = favorites.saveEntry({ seriesId: page.id, sectionId: section.id, rawText: 'existing' }).data;
+  const unfiled = favorites.saveEntry({ seriesId: page.id, rawText: '  preserved,\n text  ', title: 'old', note: 'note' }).data;
+  assert.equal(typeof favorites.ensureTagColumns, 'function');
+  const revision = favorites.snapshot().revision;
+  assert.equal(favorites.ensureTagColumns(page.id).ok, true);
+  assert.equal(favorites.snapshot().revision, revision + 1);
+  assert.deepEqual(favorites.list({ seriesId: page.id, sectionId: section.id }).items.map(row => row.id), [existing.id, unfiled.id]);
+  const restored = make({ storage }).favorites.getEntry(unfiled.id);
+  assert.equal(restored.rawText, '  preserved,\n text  ');
+  assert.equal(restored.note, 'note');
+  favorites.ensureTagColumns(page.id);
+  assert.equal(favorites.snapshot().revision, revision + 1);
+});
+
+test('deleting the last column keeps its entries in a replacement column and undo restores the original', () => {
+  const { favorites } = make();
+  const page = favorites.saveSeries({ name: 'Page' }).data;
+  const section = favorites.saveSection({ seriesId: page.id, name: 'Only' }).data;
+  const entry = favorites.saveEntry({ seriesId: page.id, sectionId: section.id, rawText: 'retained' }).data;
+  assert.equal(favorites.deleteSection(section.id).ok, true);
+  const columns = favorites.sections(page.id);
+  assert.equal(columns.length, 1);
+  assert.notEqual(columns[0].id, section.id);
+  assert.equal(favorites.getEntry(entry.id).sectionId, columns[0].id);
+  favorites.undo();
+  assert.deepEqual(favorites.sections(page.id).map(row => row.id), [section.id]);
+  assert.equal(favorites.getEntry(entry.id).sectionId, section.id);
 });

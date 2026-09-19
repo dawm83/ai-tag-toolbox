@@ -103,7 +103,7 @@ try {
   primaryTools = assistant.primaryTools || null;
 } catch (error) {
   // 标签模块加载失败时仍让页面打开，便于人工看到错误并继续迭代。
-  console.warn('[V1.4.310] 业务模块加载失败：', error && error.message ? error.message : error);
+  console.warn('[V1.4.311] 业务模块加载失败：', error && error.message ? error.message : error);
 }
 
 function safeImageId(value) {
@@ -204,7 +204,7 @@ function resolveTempForRenderer(value) {
 contextBridge.exposeInMainWorld('AppModules', {
   tags,
   favorites: favorites ? Object.fromEntries([
-    'snapshot', 'series', 'sections', 'getEntry', 'list', 'saveSeries', 'saveSection', 'saveEntry',
+    'snapshot', 'series', 'sections', 'getEntry', 'list', 'saveSeries', 'saveSection', 'ensureTagColumns', 'saveEntry',
     'applyBatch', 'duplicateEntries', 'deleteEntries', 'deleteSection', 'deleteSeries', 'reorder',
     'setSeriesColors', 'search', 'copyText', 'markCopied', 'setSelected', 'selected', 'clearSelected',
     'undo', 'redo', 'historyState', 'subscribe', 'flush', 'exportBundle', 'previewImport', 'importBundle',
@@ -369,7 +369,7 @@ contextBridge.exposeInMainWorld('AppModules', {
     profiles: comfy.profiles
   } : null,
   locales: localePacks,
-  version: '1.4.310'
+  version: '1.4.311'
 });
 
 

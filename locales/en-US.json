@@ -177,7 +177,7 @@
       "importFailed": "Import failed",
       "seriesName": "Series name",
       "sectionName": "Subcategory name",
-      "confirmDeleteSection": "Delete this subcategory and move its contents to the series root?",
+      "confirmDeleteSection": "Delete this column? Its Tags move to the first remaining column, or a new column if none remain.",
       "confirmMoveSeries": "Delete this series and move its contents to Uncategorized?",
       "confirmDeleteSeries": "Delete this series and its contents?",
       "confirmDeleteEntries": "Delete {count} favorites?",
