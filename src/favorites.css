@@ -302,3 +302,8 @@
   .favorite-entry-actions .favorite-icon-button[data-favorite-action="move-down"],
   .favorite-drag-handle{display:none}
 }
+
+.favorite-column-tab{display:inline-flex;align-items:center;gap:2px;flex:none;border:1px solid var(--border2);border-bottom:2px solid var(--favorite-accent);border-radius:7px;background:var(--card)}
+.favorite-column-tab>.favorite-action-button{border:0;background:transparent;white-space:nowrap}
+.favorite-column-tab>.favorite-icon-button{border:0;background:transparent;width:27px;min-height:28px}
+.favorite-column-tab.is-hidden{opacity:.6;border-bottom-style:dashed}

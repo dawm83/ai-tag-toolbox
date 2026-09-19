@@ -382,6 +382,7 @@
     }
     async function setSectionVisibility(sectionId, visible) {
       if (!await finishEditorBeforeMutation()) { renderSubanchors(); return false; }
+      if (!visible && state.quickEditor?.sectionId === sectionId) closeQuickEditor();
       const hidden = hiddenSections(); visible ? hidden.delete(sectionId) : hidden.add(sectionId);
       saveHiddenSections(hidden); state.bulk.clear(); renderSubanchors(); renderShelf(); updateBulkbar(); return true;
     }
@@ -413,7 +414,8 @@
       const content = el('section', 'favorite-series'); content.dataset.favoriteSeries = series.id;
       content.style.setProperty('--favorite-accent', string(series.color, 'var(--pri)')); content.setAttribute('aria-label', series.name);
       const selected = allSelectedIds(); const columns = columnsFor(series.id);
-      columns.forEach(section => content.append(renderColumn(series, section, selected, false)));
+      columns.filter(section => !hiddenSections().has(section.id)).forEach(section => content.append(renderColumn(series, section, selected, false)));
+      if (columns.length && !content.childElementCount) content.append(el('p', 'favorites-empty', label('favorites.allColumnsHidden', '标签栏已隐藏，点击上方眼睛按钮恢复显示')));
       if (!columns.length) content.append(el('p', 'favorites-empty', label('favorites.emptySection', '此收藏页暂无标签栏')));
       shelf.append(content); setupColumnLoading();
     }
@@ -917,6 +919,7 @@
       if (action === 'dialog-confirm') { submitNameDialog(); return; }
       if (action === 'new-series-tab') return void structureAction('new-series-tab', target);
       if (action === 'new-section-tab') return void structureAction('new-section-tab', target);
+      if (action === 'toggle-section') return void setSectionVisibility(target.dataset.sectionId, hiddenSections().has(target.dataset.sectionId));
       if (action === 'select-section') { state.sectionId = target.dataset.sectionId; renderSubanchors(); renderShelf(); host.querySelector(`[data-favorite-section="${cssEscape(state.sectionId)}"]`)?.scrollIntoView?.({ behavior: 'smooth', inline: 'center' }); return; }
       if (['new-series', 'rename-series', 'new-section', 'rename-section', 'delete-section', 'delete-series', 'delete-series-all'].includes(action)) return void structureAction(action, target);
       if (action === 'new-tag') return void openCreate({ kind: 'tag', seriesId: target.dataset.seriesId || state.seriesId, sectionId: target.dataset.sectionId === 'root' ? null : target.dataset.sectionId });
@@ -962,11 +965,17 @@
     }
     function renderSubanchors() {
       const nav = host.querySelector('[data-favorite-subanchors]'); nav.replaceChildren(); nav.hidden = !state.seriesId; if (!state.seriesId) return;
-      const rows = columnsFor(state.seriesId);
-      rows.forEach(row => {
-        const item = actionTextButton('select-section', string(row.name, row.id)); item.dataset.sectionId = row.id; item.dataset.seriesId = state.seriesId; item.dataset.favoriteSectionTab = row.id; item.draggable = true; item.classList.toggle('is-active', row.id === state.sectionId); item.style.setProperty('--favorite-accent', string(row.color, '#287EA4')); nav.append(item);
+      const hidden = hiddenSections();
+      columnsFor(state.seriesId).forEach(row => {
+        const visible = !hidden.has(row.id);
+        const tab = el('span', 'favorite-column-tab'); tab.dataset.favoriteSectionTab = row.id; tab.dataset.sectionId = row.id; tab.dataset.seriesId = state.seriesId; tab.draggable = true;
+        tab.style.setProperty('--favorite-accent', string(row.color, '#287EA4')); tab.classList.toggle('is-hidden', !visible);
+        const item = actionTextButton('select-section', string(row.name, row.id)); item.dataset.sectionId = row.id; item.dataset.seriesId = state.seriesId; item.classList.toggle('is-active', visible && row.id === state.sectionId);
+        const eye = button(visible ? 'eye' : 'eye-off', label(visible ? 'favorites.hideColumn' : 'favorites.showColumn', visible ? '隐藏标签栏' : '显示标签栏') + '：' + row.name, 'toggle-section');
+        eye.dataset.sectionId = row.id; eye.setAttribute('aria-pressed', String(visible));
+        tab.append(item, eye); nav.append(tab);
       });
-      const plus = button('plus', label('favorites.newSection', '新建标签栏'), 'new-section-tab'); plus.dataset.seriesId = state.seriesId; nav.append(plus);
+      const plus = button('plus', label('favorites.newSectionTab', '新建标签栏'), 'new-section-tab'); plus.dataset.seriesId = state.seriesId; nav.append(plus);
     }
     function handleInput(event) {
       if (event.target.matches('[data-favorite-import-text]')) { invalidateImportPreview(); return; }

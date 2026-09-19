@@ -291,3 +291,28 @@ test('editor destinations match the current page columns without an unfiled opti
   await app.click('[data-favorite-action="editor-save"]');
   assert.equal(app.favorites.list({ seriesId: second.id }).items[0].sectionId, app.favorites.sections(second.id)[0].id);
 });
+
+
+test('column eye buttons hide and restore columns without removing Tags and survive reopening', async t => {
+  const app = workbookFixture(t);
+  const page = app.favorites.series()[0];
+  const first = app.favorites.sections(page.id)[0];
+  const entry = app.favorites.saveEntry({ seriesId: page.id, sectionId: first.id, rawText: 'kept' }).data;
+  await app.click('[data-favorite-action="new-section-tab"]');
+  const second = app.favorites.sections(page.id)[1];
+  const eye = id => '[data-favorite-action="toggle-section"][data-section-id="' + id + '"]';
+  const original = app.favorites.exportBundle();
+  assert.ok(app.$(eye(first.id)), 'each column has a visibility control');
+  await app.click(eye(first.id));
+  assert.equal(app.$('[data-favorite-section="' + first.id + '"]'), null);
+  assert.ok(app.$('[data-favorite-section-tab="' + first.id + '"]'));
+  assert.ok(app.$('[data-favorite-section="' + second.id + '"]'));
+  assert.deepEqual(app.favorites.exportBundle(), original);
+  await app.view.leave(); app.view.enter();
+  assert.equal(app.$('[data-favorite-section="' + first.id + '"]'), null);
+  await app.click(eye(second.id));
+  assert.equal(app.$('[data-favorite-section]'), null);
+  await app.click(eye(first.id));
+  assert.ok(app.$('[data-favorite-entry="' + entry.id + '"]'));
+  assert.equal(app.$(eye(first.id)).getAttribute('aria-pressed'), 'true');
+});
