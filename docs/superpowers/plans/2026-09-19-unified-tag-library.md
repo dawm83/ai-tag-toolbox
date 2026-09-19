@@ -409,7 +409,7 @@ test('an independently edited favorite never overwrites its source tag', () => {
 | favorite.seriesId/sectionId | group所属pageId / groupId |
 | favorite.globalSearchable | searchable，仅兼容字段，不能独立写 |
 
-- [ ] 先测试两个入口确实共享：
+- [x] 先测试两个入口确实共享：
 
 ```js
 const { createHarness } = require('./fixtures/tag-library.cjs');
@@ -427,13 +427,13 @@ test('favorite edit is visible through tags immediately after save', async () =>
 });
 ```
 
-- [ ] 明确所有内容/结构写方法改为 Promise<Result>，不能让 UI 把 Promise 当 `{ok:true}`。读接口保持同步，ready前返回明确未就绪或空只读视图。
-- [ ] saveEntry有sourceTagId时收藏引用；新rawText走统一saveTag；更新entry时定位tagId后编辑共享内容。新UI仅调用统一catalog命令，旧方法留作调用兼容。
-- [ ] favorites.snapshot.document可保持旧显示投影，但该对象每次从library派生；禁止存在第二个 document/entries 写缓存。
-- [ ] list/search/copyText/selected/markCopied/historyState/reorder/颜色接口指向同一服务；撤销不是另一份旧favorites文档快照回写。
-- [ ] 修改selected语义测试：新选择实时引用；另立旧snapshot迁移测试，不能简单删除原本保护用户历史文本的覆盖。
-- [ ] duplicateEntries使用明确`mode:reference|independent`：新UI默认跨组reference，“另存独立”调用duplicateTag。原同名函数不可悄悄沿用旧复制语义。
-- [ ] 局部测试 + `npm run check`；此阶段生产preload尚未传library，不需要先改旧UI运行行为；提交。
+- [x] 明确所有内容/结构写方法改为 Promise<Result>，不能让 UI 把 Promise 当 `{ok:true}`。读接口保持同步，ready前返回明确未就绪或空只读视图。
+- [x] saveEntry有sourceTagId时收藏引用；新rawText走统一saveTag；更新entry时定位tagId后编辑共享内容。新UI仅调用统一catalog命令，旧方法留作调用兼容。
+- [x] favorites.snapshot.document可保持旧显示投影，但该对象每次从library派生；禁止存在第二个 document/entries 写缓存。
+- [x] list/search/copyText/selected/markCopied/historyState/reorder/颜色接口指向同一服务；撤销不是另一份旧favorites文档快照回写。
+- [x] 修改selected语义测试：新选择实时引用；另立旧snapshot迁移测试，不能简单删除原本保护用户历史文本的覆盖。
+- [x] duplicateEntries使用明确`mode:reference|independent`：新UI默认跨组reference，“另存独立”调用duplicateTag。原同名函数不可悄悄沿用旧复制语义。
+- [x] 局部测试 + `npm run check`；此阶段生产preload尚未传library，不需要先改旧UI运行行为；提交。
 
 **验收:** 适配器不能独立保存同一字段，正文同步和同ID选择去重均有测试。提交：`V1.4.317：将主页与收藏适配到统一词库`。
 
