@@ -3177,6 +3177,7 @@
       const fields = { nEn: value.en || value.id || '', nZh: value.zh || '', nAl: (value.aliases || []).join(' '), nSub: value.subcategory || '默认' };
       Object.entries(fields).forEach(([id, content]) => { const input = $('#' + id); if (input) input.value = content; });
       const category = $('#nCat'); if (category && value.category) category.value = value.category;
+      const restore = $('#nRestore'); if (restore) restore.hidden = value.edited !== true;
       modal.classList.add('show'); return true;
     }
     function renderManager() {
@@ -3642,17 +3643,20 @@
       });
       $("#addTagBtn")?.addEventListener("click", () => {
         ui.editingTagId = "";
+        const restore = $("#nRestore"); if (restore) restore.hidden = true;
         renderCustomCategories();
         renderCustomList();
         $("#addModal")?.classList.add("show");
       });
       $("#addClose")?.addEventListener("click", () => {
         ui.editingTagId = "";
+        const restore = $("#nRestore"); if (restore) restore.hidden = true;
         $("#addModal")?.classList.remove("show");
       },
       );
       $("#nCancel")?.addEventListener("click", () => {
         ui.editingTagId = "";
+        const restore = $("#nRestore"); if (restore) restore.hidden = true;
         $("#addModal")?.classList.remove("show");
       },
       );
@@ -4141,6 +4145,14 @@
       views.favorites?.bind?.();
       favorites?.subscribe?.(() => {
         if (ui.route === "tags") renderFavoriteMatches();
+      });
+      $("#nRestore")?.addEventListener("click", () => {
+        if (!ui.editingTagId) return;
+        tags?.restore?.(ui.editingTagId);
+        ui.editingTagId = "";
+        $("#nRestore").hidden = true;
+        $("#addModal")?.classList.remove("show");
+        renderCategories(); renderTags();
       });
       views.prompt?.bind?.();
       views.agentStatus?.bind?.();

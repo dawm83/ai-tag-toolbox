@@ -89,6 +89,12 @@ function createCharacters(options = {}) {
     storage?.set?.(EDIT_KEY, clone(overrides));
     const merged = { ...current, ...overrides[String(id)] };
     records.set(String(id), merged); reindex();
+    if ((Object.prototype.hasOwnProperty.call(patch, 'nameZh') || Object.prototype.hasOwnProperty.call(patch, 'aliases')) && tags) {
+      const identity = tags.get?.(id);
+      const identityPatch = { zh: merged.nameZh || '', aliases: Array.isArray(merged.aliases) ? merged.aliases : [] };
+      if (identity && tags.edit) tags.edit(id, identityPatch);
+      else if (!identity && tags.addCustom) tags.addCustom({ id, en: id, zh: identityPatch.zh, aliases: identityPatch.aliases, category: 'character_names', subcategory: '角色名' });
+    }
     const after = clone(merged);
     editHistory = [...editHistory, { id: String(id), action: 'edit', before, after, at: Date.now() }].slice(-100);
     storage?.set?.(EDIT_HISTORY_KEY, clone(editHistory));
@@ -99,6 +105,7 @@ function createCharacters(options = {}) {
     load();
     const current = records.get(String(id)); if (!current) return { ok: false, error: { code: 'CHARACTER_NOT_FOUND', message: '角色不存在' } };
     const before = clone(current); delete overrides[String(id)]; storage?.set?.(EDIT_KEY, clone(overrides));
+    tags?.restore?.(id);
     // Reload the bundled record for a clean source snapshot.
     loaded = false; records = new Map(); terms = new Map(); index = []; seriesIndex = []; cache.clear(); load();
     const after = clone(records.get(String(id))); editHistory = [...editHistory, { id: String(id), action: 'restore', before, after, at: Date.now() }].slice(-100); storage?.set?.(EDIT_HISTORY_KEY, clone(editHistory));
@@ -141,8 +148,9 @@ function createCharacters(options = {}) {
     const generalTags = row.tagIds.map(id => tags?.get?.(id) || { id, en: id, zh: '', category: 'other', nsfw: false }).filter(visible).map(term => ({ id: term.id, en: term.en, zh: term.zh || '', category: term.category || 'other', nsfw: Boolean(term.nsfw), edited: Boolean(term.edited) }));
     const specificTags = row.specificTagIds.map(id => terms.get(id)).filter(visible).map(term => ({ id: term.id, en: term.en, zh: term.zh || '', category: 'character_specific', nsfw: Boolean(term.nsfw), review: Boolean(term.review) }));
     // The character key is the stable identity. The source trigger stays available for audit.
+    const identity = tags?.get?.(row.id);
     const identityTags = unique([label(row.id), label(row.seriesId)].filter(Boolean));
-    return { ...summary(row), aliases: row.aliases.slice(), identityTags, generalTags, specificTags, trigger: row.trigger || identityTags.join(', ') };
+    return { ...summary(row), nameZh: identity?.zh || row.nameZh || '', aliases: unique([...list(identity?.aliases), ...row.aliases]), identityTags, generalTags, specificTags, trigger: row.trigger || identityTags.join(', ') };
   }
   function match(row, query, precision) {
     if (!query) return 1;

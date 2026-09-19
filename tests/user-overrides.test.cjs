@@ -24,18 +24,29 @@ test('tag edits persist as user overrides, expose history, and restore the sourc
 
 test('character edits persist names and tag references without changing bundled source records', () => {
   const storage = createStorage();
-  const characters = createCharacters({ storage, data: {
+  const tags = createTags({ storage, sources: { categories: [], base: [{ id: 'miku', en: 'miku', zh: '', category: 'character_names', subcategory: '角色名' }, { id: 'blue_hair', en: 'blue hair', zh: '', category: 'hair' }] } });
+  const characters = createCharacters({ storage, tags, data: {
     characters: [{ id: 'miku', name: 'hatsune_miku', nameZh: '', seriesId: 'vocaloid', seriesName: 'Vocaloid', tagIds: ['blue_hair'], specificTagIds: [] }],
     specificTags: [], manifest: { counts: { characters: 1 } }
-  }, tags: { get: id => ({ id, en: id, zh: '' }), characterNameIndex: () => [] } });
+  } });
   const edited = characters.edit('miku', { nameZh: '初音未来', aliases: ['Miku'], tagIds: ['blue_hair', 'long hair'] });
   assert.equal(edited.ok, true);
   assert.equal(characters.get('miku').nameZh, '初音未来');
+  assert.equal(tags.get('miku').zh, '初音未来');
   assert.deepEqual(characters.get('miku').generalTags.map(row => row.id), ['blue_hair', 'long hair']);
   assert.equal(characters.editHistory('miku').length, 1);
   assert.equal(characters.restore('miku').ok, true);
   assert.equal(characters.get('miku').nameZh, '');
   assert.deepEqual(characters.get('miku').generalTags.map(row => row.id), ['blue_hair']);
+});
+
+test('editing the shared character Tag is reflected by an already loaded character record', () => {
+  const storage = createStorage();
+  const tags = createTags({ storage, sources: { categories: [], base: [{ id: 'miku', en: 'miku', zh: '初音未来', category: 'character_names', subcategory: '角色名' }] } });
+  const characters = createCharacters({ storage, tags, data: { characters: [{ id: 'miku', name: 'miku', nameZh: '', seriesId: 'vocaloid', seriesName: 'Vocaloid', tagIds: [], specificTagIds: [] }], specificTags: [], manifest: { counts: { characters: 1 } } } });
+  assert.equal(characters.get('miku').nameZh, '初音未来');
+  tags.edit('miku', { zh: '未来酱' });
+  assert.equal(characters.get('miku').nameZh, '未来酱');
 });
 
 test('favorite entries retain the character source reference for role-originated favorites', () => {
