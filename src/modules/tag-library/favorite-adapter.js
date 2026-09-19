@@ -72,6 +72,7 @@ function createFavoriteAdapter({ library } = {}) {
     return records.some(row => !row) ? fail('ENTRY_NOT_FOUND', '收藏不存在') : { ok: true, data: records };
   }
   async function duplicateEntries(input = {}, options) {
+    if (!object(input)) return fail('INVALID_FIELD', '复制参数必须为对象');
     if (!['reference', 'independent'].includes(input.mode)) return fail('INVALID_MODE', '复制必须明确选择 reference 或 independent');
     const checked = checkedEntries(input.ids); if (!checked.ok) return checked;
     const operations = checked.data.map(row => ({ type: input.mode === 'reference' ? 'favoriteTag' : 'duplicateTag', tagId: row.tagId, placement: placement(input, row) }));
@@ -79,6 +80,7 @@ function createFavoriteAdapter({ library } = {}) {
     return result.ok ? { ...result, data: { ids: result.data.results.map(row => row.membershipId), changed: result.data.changed } } : result;
   }
   async function applyBatch(input = {}, options) {
+    if (!object(input)) return fail('INVALID_FIELD', '批量参数必须为对象');
     const checked = checkedEntries(input.ids); if (!checked.ok) return checked;
     const patch = input.patch || {};
     if (Object.keys(patch).some(key => !['seriesId', 'sectionId', 'pinned', 'globalSearchable', 'searchable', 'nsfw', 'adult'].includes(key))) return fail('INVALID_FIELD', '批量字段无效');
@@ -106,6 +108,7 @@ function createFavoriteAdapter({ library } = {}) {
     return result.ok ? { ...result, data: sections(seriesId).find(row => row.id === result.data.groupId) } : result;
   }
   async function setSeriesColors(ids, settings = {}, options) {
+    if (!object(settings)) return fail('INVALID_FIELD', '颜色设置必须为对象');
     if (!['auto', 'custom'].includes(settings.mode) || !Array.isArray(ids) || !ids.length) return fail('INVALID_FIELD', '颜色模式或收藏页无效');
     const pages = series(); const colors = new Map(pages.map(row => [row.id, row.color]));
     const operations = [...new Set(ids)].map(id => {
@@ -143,11 +146,20 @@ function createFavoriteAdapter({ library } = {}) {
       const row = sections(seriesId)[0]; return row ? success(row) : saveSection({ seriesId, name }, options);
     },
     deleteEntries: (ids, options) => run({ type: 'unfavorite', membershipIds: ids }, options),
-    deleteSection: (id, settings = {}, options) => run({ type: 'deleteGroup', groupId: id, mode: settings.mode ?? 'relocate' }, options),
-    deleteSeries: async (id, settings = {}, options) => own(settings, 'targetSeriesId')
-      ? fail('INVALID_FIELD', '删除归位固定使用未分类，请先显式移动')
-      : run({ type: 'deletePage', pageId: id, mode: ({ move: 'relocate', delete: 'unfavorite' })[settings.mode] || settings.mode || 'relocate' }, options),
-    reorder: (input = {}, options) => run({ type: 'reorder', kind: ({ series: 'page', section: 'group', entry: 'membership' })[input.kind] || input.kind, parentId: input.parentId, ids: input.ids }, options),
+    deleteSection: async (id, settings = {}, options) => {
+      if (!object(settings)) return fail('INVALID_FIELD', '删除设置必须为对象');
+      return run({ type: 'deleteGroup', groupId: id, mode: settings.mode ?? 'relocate' }, options);
+    },
+    deleteSeries: async (id, settings = {}, options) => {
+      if (!object(settings)) return fail('INVALID_FIELD', '删除设置必须为对象');
+      return own(settings, 'targetSeriesId')
+        ? fail('INVALID_FIELD', '删除归位固定使用未分类，请先显式移动')
+        : run({ type: 'deletePage', pageId: id, mode: ({ move: 'relocate', delete: 'unfavorite' })[settings.mode] || settings.mode || 'relocate' }, options);
+    },
+    reorder: async (input = {}, options) => {
+      if (!object(input)) return fail('INVALID_FIELD', '排序参数必须为对象');
+      return run({ type: 'reorder', kind: ({ series: 'page', section: 'group', entry: 'membership' })[input.kind] || input.kind, parentId: input.parentId, ids: input.ids }, options);
+    },
     copyText: ids => joinFavoriteBlocks([...new Set((ids || []).map(getEntry).filter(Boolean).map(row => row.tagId))].map(id => library.getTag(id).content)),
     markCopied, selected, setSelected, clearSelected: options => run({ type: 'clearSelection', kind: 'tag' }, options),
     undo: options => run({ type: 'undo' }, options), redo: options => run({ type: 'redo' }, options), historyState: () => library.historyState(),

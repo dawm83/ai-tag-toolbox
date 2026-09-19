@@ -168,6 +168,52 @@ test('malformed editable payloads resolve Result failures rather than rejecting 
   assert.equal((await h.favorites.saveSection(null)).error.code, 'INVALID_FIELD');
 });
 
+test('malformed favorite mutation arguments resolve INVALID_FIELD without changing state', async t => {
+  for (const invalid of [null, [], 'invalid', 1]) {
+    const methods = {
+      duplicateEntries: favorites => favorites.duplicateEntries(invalid),
+      applyBatch: favorites => favorites.applyBatch(invalid),
+      setSeriesColors: favorites => favorites.setSeriesColors(['home'], invalid),
+      deleteSection: favorites => favorites.deleteSection('daily', invalid),
+      deleteSeries: favorites => favorites.deleteSeries('home', invalid),
+      reorder: favorites => favorites.reorder(invalid)
+    };
+    for (const [name, call] of Object.entries(methods)) await t.test(`${name}: ${JSON.stringify(invalid)}`, async () => {
+      const h = await setup(); await favorite(h.favorites);
+      const before = await h.repository.read(), revision = h.library.revision(), saves = h.repository.saveCount;
+      let pending;
+      assert.doesNotThrow(() => { pending = call(h.favorites); });
+      assert.equal(typeof pending?.then, 'function');
+      let result; await assert.doesNotReject(async () => { result = await pending; });
+      assert.equal(result.ok, false); assert.equal(result.error.code, 'INVALID_FIELD');
+      assert.equal(h.library.revision(), revision); assert.equal(h.repository.saveCount, saves);
+      assert.deepEqual(await h.repository.read(), before);
+    });
+  }
+});
+
+test('malformed execution options on valid mutations resolve INVALID_FIELD without writes', async t => {
+  for (const invalid of [null, [], 'invalid', 1]) await t.test(JSON.stringify(invalid), async () => {
+    const h = await setup(); const entry = await favorite(h.favorites);
+    const before = await h.repository.read(), revision = h.library.revision(), saves = h.repository.saveCount;
+    const calls = [
+      () => h.tags.select('blue_hair', true, invalid),
+      () => h.tags.edit('blue_hair', { note: 'not saved' }, invalid),
+      () => h.favorites.saveEntry({ id: entry.id, title: 'not saved' }, invalid),
+      () => h.favorites.deleteSection('daily', {}, invalid),
+      () => h.favorites.reorder({ kind: 'entry', parentId: 'daily', ids: [entry.id] }, invalid)
+    ];
+    for (const call of calls) {
+      let pending; assert.doesNotThrow(() => { pending = call(); });
+      assert.equal(typeof pending?.then, 'function');
+      let result; await assert.doesNotReject(async () => { result = await pending; });
+      assert.equal(result.ok, false); assert.equal(result.error.code, 'INVALID_FIELD');
+    }
+    assert.equal(h.library.revision(), revision); assert.equal(h.repository.saveCount, saves);
+    assert.deepEqual(await h.repository.read(), before);
+  });
+});
+
 test('adding a source reference cannot overwrite shared content from a stale snapshot', async () => {
   const h = await setup(); const before = h.repository.saveCount;
   const result = await h.favorites.saveEntry({ sourceTagId: 'blue_hair', seriesId: 'home', sectionId: 'daily', rawText: 'stale hair', title: '旧名称' });

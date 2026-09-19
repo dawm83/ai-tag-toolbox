@@ -9,7 +9,10 @@ const object = value => value !== null && typeof value === 'object' && !Array.is
 function context(library) {
   if (!library || typeof library.execute !== 'function') throw new TypeError('需要统一标签库');
   return {
-    run: (command, options = {}) => library.execute(command, { operationId: options.operationId ?? `adapter:${randomUUID()}`, ...(options.expectedRevision === undefined ? {} : { expectedRevision: options.expectedRevision }) }),
+    run: (command, options = {}) => {
+      if (!object(options)) return Promise.resolve(fail('INVALID_FIELD', '操作选项必须为对象'));
+      return library.execute(command, { operationId: options.operationId ?? `adapter:${randomUUID()}`, ...(options.expectedRevision === undefined ? {} : { expectedRevision: options.expectedRevision }) });
+    },
     success: data => ({ ok: true, data, revision: library.revision() }),
     unavailable: () => fail('FEATURE_UNAVAILABLE', '请通过统一词库导入流程操作')
   };
