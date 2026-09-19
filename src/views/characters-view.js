@@ -18,7 +18,7 @@
       choose: '未选择角色', aliases: '别名', identity: '身份触发词', work: '作品 / 来源',
       includeWork: '加入作品词', general: '通用特征', specific: '角色专用特征', noFeatures: '该角色暂无参考特征',
       review: '待复核', addIdentity: '加入角色', addFeatures: '加入角色与所选特征', copyIdentity: '复制角色词',
-      copyAppearance: '复制角色与外貌词', copyFeatures: '复制角色与所选特征', copied: '已复制角色词', copyFailed: '复制失败，请检查剪贴板权限', added: '已加入角色'
+      copyAppearance: '复制角色与外貌词', copyFeatures: '复制角色与所选特征', copied: '已复制角色词', copyFailed: '复制失败，请检查剪贴板权限', added: '已加入角色', edit: '编辑角色', editTag: '编辑 Tag', favorite: '收藏', saveEdit: '保存修改', cancelEdit: '取消', restore: '恢复默认', modified: '已修改'
     },
     'en-US': {
       library: 'Character library', searchSeries: 'Search works', seriesPlaceholder: 'Type a work or source',
@@ -27,7 +27,7 @@
       choose: 'No character selected', aliases: 'Aliases', identity: 'Identity tags', work: 'Work / source',
       includeWork: 'Include work tag', general: 'General traits', specific: 'Character-specific traits', noFeatures: 'No reference traits for this character',
       review: 'Needs review', addIdentity: 'Add character', addFeatures: 'Add character with selected traits', copyIdentity: 'Copy character tags',
-      copyAppearance: 'Copy character with appearance', copyFeatures: 'Copy character with selected traits', copied: 'Character tags copied', copyFailed: 'Clipboard access failed', added: 'Character added'
+      copyAppearance: 'Copy character with appearance', copyFeatures: 'Copy character with selected traits', copied: 'Character tags copied', copyFailed: 'Clipboard access failed', added: 'Character added', edit: 'Edit character', editTag: 'Edit Tag', favorite: 'Favorite', saveEdit: 'Save changes', cancelEdit: 'Cancel', restore: 'Restore default', modified: 'Modified'
     }
   };
   const categoryLabels = {
@@ -35,7 +35,7 @@
     'en-US': { quality: 'Quality', negative: 'Negative prompt', character: 'Character', character_names: 'Character names', series: 'Series', body: 'Body', expression: 'Expression', eyes: 'Eyes', hair: 'Hair', features: 'Features', outfit: 'Outfit', footwear: 'Footwear', accessory: 'Accessories', pose: 'Pose', scene: 'Scene', camera: 'Camera', style: 'Style', time_weather: 'Time & weather', atmosphere: 'Atmosphere & light', effects: 'Effects & magic', food: 'Food & drinks', animal: 'Animals', other: 'Other', rating: 'Rating', nsfw: 'Adult', character_specific: 'Character-specific traits' }
   };
 
-  function createCharactersView({ document, characters, onChange, copy, notify, getLocale } = {}) {
+  function createCharactersView({ document, characters, tags, favorites, openFavorites, onChange, copy, notify, getLocale } = {}) {
     const doc = document || (typeof globalThis !== 'undefined' ? globalThis.document : null);
     const state = { query: '', precision: 'standard', includeAdult: false, seriesId: '', seriesQuery: '', offset: 0, detail: null, locale: '', bound: false };
     const q = selector => doc?.querySelector?.(selector);
@@ -149,12 +149,47 @@
           words.appendChild(element('b', '', text(item.en || item.id)));
           if (item.zh) words.appendChild(element('span', '', item.zh));
           if (item.review) words.appendChild(element('small', 'character-review', label('review')));
-          line.append(input, words);
+          const edit = element('button', 'character-trait-edit', '🖊'); edit.type = 'button'; edit.dataset.characterTagEdit = text(item.id || item.en); edit.title = label('editTag');
+          edit.onclick = event => { event.preventDefault(); showTagEditor(item); };
+          line.append(input, words, edit);
           group.appendChild(line);
         });
         section.appendChild(group);
       });
       return section;
+    }
+
+    function removeEditPanel() { q('[data-character-edit-panel]')?.remove(); }
+    function showTagEditor(item) {
+      removeEditPanel();
+      const host = q('#characterDetail'); if (!host) return;
+      const panel = element('form', 'character-edit-panel'); panel.dataset.characterEditPanel = 'tag';
+      panel.appendChild(element('h4', '', label('editTag')));
+      const tag = doc.createElement('input'); tag.type = 'text'; tag.value = text(item.en || item.id); tag.dataset.characterEditTag = 'en';
+      const zh = doc.createElement('input'); zh.type = 'text'; zh.value = text(item.zh); zh.dataset.characterEditTag = 'zh'; zh.dataset.characterEdit = 'zh'; zh.placeholder = '中文说明';
+      const actions = element('div', 'character-edit-actions');
+      const save = element('button', 'abtn pri btn btn-primary', label('saveEdit')); save.type = 'submit';
+      const cancel = element('button', 'abtn btn btn-secondary', label('cancelEdit')); cancel.type = 'button'; cancel.onclick = () => removeEditPanel();
+      actions.append(save, cancel); panel.append(tag, zh, actions);
+      panel.onsubmit = event => { event.preventDefault(); const result = tags?.edit?.(item.id || item.en, { en: tag.value, zh: zh.value }); if (result?.ok === false) notify?.(result.error?.message || '修改失败'); else { notify?.(label('saveEdit')); removeEditPanel(); if (state.detail) openCharacter(state.detail.id); } };
+      host.appendChild(panel); tag.focus();
+    }
+    function showCharacterEditor(record) {
+      removeEditPanel();
+      const host = q('#characterDetail'); if (!host) return;
+      const panel = element('form', 'character-edit-panel'); panel.dataset.characterEditPanel = 'character';
+      panel.appendChild(element('h4', '', label('edit')));
+      const name = doc.createElement('input'); name.type = 'text'; name.value = text(record.name); name.dataset.characterEdit = 'name'; name.placeholder = 'Tag';
+      const nameZh = doc.createElement('input'); nameZh.type = 'text'; nameZh.value = text(record.nameZh); nameZh.dataset.characterEdit = 'nameZh'; nameZh.placeholder = '中文名称';
+      const aliases = doc.createElement('input'); aliases.type = 'text'; aliases.value = (record.aliases || []).join(', '); aliases.dataset.characterEdit = 'aliases'; aliases.placeholder = '别名（逗号分隔）';
+      const identity = doc.createElement('input'); identity.type = 'text'; identity.value = (record.identityTags || []).join(', '); identity.dataset.characterEdit = 'tagIds'; identity.placeholder = '角色 Tag（逗号分隔）';
+      const actions = element('div', 'character-edit-actions');
+      const save = element('button', 'abtn pri btn btn-primary', label('saveEdit')); save.type = 'submit';
+      const restore = element('button', 'abtn btn btn-secondary', label('restore')); restore.type = 'button'; restore.onclick = () => { const result = characters?.restore?.(record.id); if (result?.ok !== false) { removeEditPanel(); openCharacter(record.id); } };
+      const cancel = element('button', 'abtn btn btn-secondary', label('cancelEdit')); cancel.type = 'button'; cancel.onclick = () => removeEditPanel();
+      actions.append(save, restore, cancel); panel.append(name, nameZh, aliases, identity, actions);
+      panel.onsubmit = event => { event.preventDefault(); const result = characters?.edit?.(record.id, { name: name.value, nameZh: nameZh.value, aliases: aliases.value.split(/[,，]/).map(value => value.trim()).filter(Boolean), tagIds: identity.value.split(/[,，]/).map(value => value.trim()).filter(Boolean) }); if (result?.ok === false) notify?.(result.error?.message || '修改失败'); else { notify?.(label('saveEdit')); removeEditPanel(); openCharacter(record.id); render(); } };
+      host.appendChild(panel); nameZh.focus();
     }
 
     function renderDetail(record) {
@@ -171,6 +206,9 @@
       titleWrap.appendChild(element('h3', '', text(record.name, record.id)));
       if (record.nameZh) titleWrap.appendChild(element('div', 'character-name-zh', record.nameZh));
       heading.appendChild(titleWrap);
+      const editButton = element('button', 'character-detail-edit', '🖊'); editButton.type = 'button'; editButton.dataset.characterEdit = record.id; editButton.title = label('edit'); editButton.onclick = () => showCharacterEditor(record);
+      const favoriteButton = element('button', 'character-detail-favorite', '★'); favoriteButton.type = 'button'; favoriteButton.title = label('favorite'); favoriteButton.onclick = async () => { const rawText = copyText(false); const result = await openFavorites?.({ kind: 'tag', rawText, title: record.nameZh || record.name, sourceCharacterId: record.id }); if (result !== false) notify?.(label('favorite')); };
+      heading.append(editButton, favoriteButton);
       host.appendChild(heading);
 
       const meta = element('div', 'character-meta');
@@ -276,6 +314,7 @@
       host?.replaceChildren();
       if (!rows.length) host?.appendChild(element('div', 'character-empty', label('noMatch')));
       rows.forEach(item => {
+        const wrap = element('div', 'character-row-wrap');
         const button = element('button', `character-row${state.detail?.id === item.id ? ' on' : ''}`);
         button.type = 'button';
         button.dataset.characterId = text(item.id);
@@ -290,7 +329,8 @@
           openCharacter(item.id);
           host?.querySelectorAll?.('.character-row').forEach(row => row.classList.toggle('on', row === button));
         };
-        host?.appendChild(button);
+        const favorite = element('button', 'character-row-favorite', '★'); favorite.type = 'button'; favorite.dataset.characterFavorite = text(item.id); favorite.title = label('favorite'); favorite.onclick = async event => { event.stopPropagation(); const record = characters?.get?.(item.id, { includeAdult: state.includeAdult }); const rawText = (record?.identityTags || [item.name || item.id, item.seriesName]).filter(Boolean).map(escapePrompt).join(', '); const result = await openFavorites?.({ kind: 'tag', rawText, title: record?.nameZh || item.name, sourceCharacterId: item.id }); if (result !== false) notify?.(label('favorite')); };
+        wrap.append(button, favorite); host?.appendChild(wrap);
       });
       const count = q('#characterCount'); if (count) count.textContent = String(Number(page.total) || 0);
       updatePaging(page);

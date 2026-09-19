@@ -19,7 +19,7 @@ const tagArray = { type: 'array', items: nonempty, maxItems: 256 };
 const attachedDataSchema = schema({ type: string, characterId: string, series: string, identityTags: tagArray, appearanceTags: tagArray });
 const tagSchema = schema({ en: nonempty, zh: string, aliases: { type: 'array', items: string, maxItems: 64 }, category: string, subcategory: string, nsfw: { type: 'boolean' }, confidence: { type: 'number' }, attachedData: attachedDataSchema }, ['en']);
 const favoriteSchema = schema({ entryId: string, kind: { type: 'string', enum: ['tag', 'bundle'] }, title: string, rawText: string, zh: string, seriesName: string, sectionName: string, memberCount: { type: 'integer', minimum: 1 }, contentOmitted: { type: 'boolean' } }, ['entryId', 'kind', 'title', 'contentOmitted']);
-const characterTagSchema = schema({ id: nonempty, en: nonempty, zh: string, category: string, nsfw: { type: 'boolean' }, review: { type: 'boolean' } }, ['id', 'en']);
+const characterTagSchema = schema({ id: nonempty, en: nonempty, zh: string, category: string, nsfw: { type: 'boolean' }, review: { type: 'boolean' }, edited: { type: 'boolean' } }, ['id', 'en']);
 const characterSchema = schema({ id: nonempty, name: string, nameZh: string, aliases: { type: 'array', items: string }, seriesId: string, seriesName: string, identityTags: tagArray, generalTags: { type: 'array', items: characterTagSchema }, specificTags: { type: 'array', items: characterTagSchema }, hasFeatures: { type: 'boolean' }, count: { type: 'number' }, trigger: string }, ['id', 'identityTags', 'generalTags', 'specificTags']);
 const generateParameters = clone(SCHEMAS.generateTags);
 delete generateParameters.properties.characterReferences;

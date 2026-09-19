@@ -103,7 +103,7 @@ try {
   primaryTools = assistant.primaryTools || null;
 } catch (error) {
   // 标签模块加载失败时仍让页面打开，便于人工看到错误并继续迭代。
-  console.warn('[V1.4.313] 业务模块加载失败：', error && error.message ? error.message : error);
+  console.warn('[V1.4.314] 业务模块加载失败：', error && error.message ? error.message : error);
 }
 
 function safeImageId(value) {
@@ -202,7 +202,9 @@ function resolveTempForRenderer(value) {
 }
 
 contextBridge.exposeInMainWorld('AppModules', {
-  tags,
+  tags: tags ? Object.fromEntries([
+    'load', 'loadFiles', 'list', 'characterNameIndex', 'all', 'allTags', 'getAll', 'search', 'setQuery', 'setCategory', 'setAdult', 'setSearchPrecision', 'searchPrecisions', 'page', 'categoryCounts', 'subcategories', 'getSubcategories', 'stateSnapshot', 'customTags', 'getCategories', 'select', 'toggleSelected', 'selected', 'selectedText', 'clearSelection', 'addCustom', 'removeCustom', 'edit', 'restore', 'restoreUserState', 'editHistory', 'has', 'size', 'isLoaded', 'snapshot'
+  ].filter(name => typeof tags[name] === 'function').map(name => [name, tags[name]])) : null,
   favorites: favorites ? Object.fromEntries([
     'snapshot', 'series', 'sections', 'getEntry', 'list', 'saveSeries', 'saveSection', 'ensureTagColumns', 'saveEntry',
     'applyBatch', 'duplicateEntries', 'deleteEntries', 'deleteSection', 'deleteSeries', 'reorder',
@@ -218,7 +220,9 @@ contextBridge.exposeInMainWorld('AppModules', {
     const settingsSaved = await storage?.flush?.();
     return favoritesSaved !== false && sessionsSaved !== false && settingsSaved !== false;
   },
-  characters,
+  characters: characters ? Object.fromEntries([
+    'get', 'page', 'series', 'select', 'selected', 'size', 'count', 'manifest', 'selectionText', 'removeSelection', 'clearSelection', 'edit', 'restore', 'editHistory'
+  ].filter(name => typeof characters[name] === 'function').map(name => [name, characters[name]])) : null,
   images: safeImageStore,
   imageStore: safeImageStore,
   imageRepository: assistant?.imageRepository ? {
@@ -369,7 +373,7 @@ contextBridge.exposeInMainWorld('AppModules', {
     profiles: comfy.profiles
   } : null,
   locales: localePacks,
-  version: '1.4.313'
+  version: '1.4.314'
 });
 
 

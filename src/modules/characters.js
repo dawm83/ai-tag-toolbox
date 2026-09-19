@@ -4,6 +4,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { normaliseSearchPrecision } = require('./tags');
 const SELECTION_KEY = 'rewrite_character_selection_v1';
+const EDIT_KEY = 'rewrite_character_edits_v1';
+const EDIT_HISTORY_KEY = 'rewrite_character_edit_history_v1';
 const key = value => String(value ?? '').normalize('NFKC').trim().toLowerCase().replace(/_/g, ' ').replace(/\s+/g, ' ');
 const list = value => Array.isArray(value) ? value : [];
 const clone = value => JSON.parse(JSON.stringify(value));
@@ -22,8 +24,11 @@ function createCharacters(options = {}) {
   let metadata = {};
   let selectedRows = [];
   let manifestCache = null;
+  let overrides = {};
+  let editHistory = [];
   const cache = new Map();
   try { selectedRows = list(storage?.get?.(SELECTION_KEY, [])).filter(row => row && typeof row.id === 'string'); } catch { /* Empty initial selection. */ }
+  try { overrides = storage?.get?.(EDIT_KEY, {}) || {}; editHistory = list(storage?.get?.(EDIT_HISTORY_KEY, [])).slice(-100); } catch { overrides = {}; editHistory = []; }
 
   function load() {
     if (loaded) return;
@@ -38,7 +43,8 @@ function createCharacters(options = {}) {
       for (const row of data.characters) {
         if (!row || typeof row.id !== 'string' || !row.id.trim() || next.has(row.id)) throw new Error('Invalid or duplicate character ID');
         const old = localNames.get(row.id);
-        const record = { ...row, name: row.name || label(row.id), nameZh: old?.zh || row.nameZh || '', aliases: unique([...list(old?.aliases), ...list(row.aliases)]), nsfw: Boolean(row.nsfw || old?.nsfw), tagIds: list(row.tagIds), specificTagIds: list(row.specificTagIds) };
+        const record = { ...row, ...(overrides[row.id] || {}), name: row.name || label(row.id), nameZh: old?.zh || row.nameZh || '', aliases: unique([...list(old?.aliases), ...list(row.aliases)]), nsfw: Boolean(row.nsfw || old?.nsfw), tagIds: list(row.tagIds), specificTagIds: list(row.specificTagIds) };
+        if (overrides[row.id]) Object.assign(record, overrides[row.id]);
         next.set(row.id, record);
       }
       // Keep saved IDs and names that the new source does not cover.
@@ -61,6 +67,42 @@ function createCharacters(options = {}) {
     } catch (cause) {
       throw Object.assign(new Error('角色资料加载失败 / Character data failed to load: ' + cause.message), { code: 'CHARACTER_DATA_INVALID' });
     }
+  }
+
+  function reindex() {
+    index = [...records.values()].map(row => ({ row, names: [row.id, row.name, row.nameZh].map(key).filter(Boolean), aliases: list(row.aliases).map(key).filter(Boolean), series: key(row.seriesId), seriesName: key(row.seriesName || row.seriesId) }));
+    seriesIndex = [...new Map([...records.values()].map(row => [row.seriesId || '', { id: row.seriesId || '', name: row.seriesName || label(row.seriesId), count: 0 }])).values()];
+    for (const row of records.values()) { const entry = seriesIndex.find(item => item.id === (row.seriesId || '')); if (entry) entry.count += 1; }
+    seriesIndex = seriesIndex.filter(row => row.id).sort((a, b) => b.count - a.count || a.id.localeCompare(b.id));
+    cache.clear();
+  }
+
+  function edit(id, patch = {}) {
+    load();
+    const current = records.get(String(id));
+    if (!current) return { ok: false, error: { code: 'CHARACTER_NOT_FOUND', message: '角色不存在' } };
+    const allowed = ['name', 'nameZh', 'aliases', 'seriesId', 'seriesName', 'tagIds', 'specificTagIds', 'trigger'];
+    const before = clone(current);
+    const next = {};
+    allowed.forEach(keyName => { if (Object.prototype.hasOwnProperty.call(patch, keyName)) next[keyName] = Array.isArray(patch[keyName]) ? [...new Set(patch[keyName].map(String))] : String(patch[keyName] ?? ''); });
+    overrides[String(id)] = { ...(overrides[String(id)] || {}), ...next, edited: true, editedAt: Date.now() };
+    storage?.set?.(EDIT_KEY, clone(overrides));
+    const merged = { ...current, ...overrides[String(id)] };
+    records.set(String(id), merged); reindex();
+    const after = clone(merged);
+    editHistory = [...editHistory, { id: String(id), action: 'edit', before, after, at: Date.now() }].slice(-100);
+    storage?.set?.(EDIT_HISTORY_KEY, clone(editHistory));
+    return { ok: true, data: get(id, { includeAdult: true }) };
+  }
+
+  function restore(id) {
+    load();
+    const current = records.get(String(id)); if (!current) return { ok: false, error: { code: 'CHARACTER_NOT_FOUND', message: '角色不存在' } };
+    const before = clone(current); delete overrides[String(id)]; storage?.set?.(EDIT_KEY, clone(overrides));
+    // Reload the bundled record for a clean source snapshot.
+    loaded = false; records = new Map(); terms = new Map(); index = []; seriesIndex = []; cache.clear(); load();
+    const after = clone(records.get(String(id))); editHistory = [...editHistory, { id: String(id), action: 'restore', before, after, at: Date.now() }].slice(-100); storage?.set?.(EDIT_HISTORY_KEY, clone(editHistory));
+    return { ok: true, data: get(id, { includeAdult: true }) };
   }
 
   function readManifest() {
@@ -96,7 +138,7 @@ function createCharacters(options = {}) {
     const row = records.get(String(id));
     if (!row || (row.nsfw && !settings.includeAdult)) return null;
     const visible = term => term && (settings.includeAdult || !term.nsfw);
-    const generalTags = row.tagIds.map(id => tags?.get?.(id)).filter(visible).map(term => ({ id: term.id, en: term.en, zh: term.zh || '', category: term.category || 'other', nsfw: Boolean(term.nsfw) }));
+    const generalTags = row.tagIds.map(id => tags?.get?.(id)).filter(visible).map(term => ({ id: term.id, en: term.en, zh: term.zh || '', category: term.category || 'other', nsfw: Boolean(term.nsfw), edited: Boolean(term.edited) }));
     const specificTags = row.specificTagIds.map(id => terms.get(id)).filter(visible).map(term => ({ id: term.id, en: term.en, zh: term.zh || '', category: 'character_specific', nsfw: Boolean(term.nsfw), review: Boolean(term.review) }));
     // The character key is the stable identity. The source trigger stays available for audit.
     const identityTags = unique([label(row.id), label(row.seriesId)].filter(Boolean));
@@ -160,7 +202,8 @@ function createCharacters(options = {}) {
     });
   }
   return Object.freeze({
-    get, page, series, select, selected,
+    get, page, series, select, selected, edit, restore,
+    editHistory: id => editHistory.filter(item => !id || item.id === String(id)).map(clone),
     size: () => { load(); return records.size; },
     count,
     manifest: () => { const info = readManifest(); return loaded ? clone(metadata) : clone(info); },

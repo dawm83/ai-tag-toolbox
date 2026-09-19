@@ -99,7 +99,7 @@ function createFavorites(options = {}) {
       next.entries.push({
         id: makeId('entry', next), kind: values.length > 1 ? 'bundle' : 'tag', seriesId: series.id, sectionId: null,
         title: text(old.name || old.title), rawText: joinFavoriteBlocks(values), zh: '', aliases: [], note: '',
-        globalSearchable: true, pinned: false, nsfw: inheritedNsfw, order: index, sourceTagId: null,
+        globalSearchable: true, pinned: false, nsfw: inheritedNsfw, order: index, sourceTagId: null, sourceCharacterId: null,
         createdAt: 0, updatedAt: 0,
         ...(bad ? { legacyInvalid: true, legacySource: clone(source) } : {})
       });
@@ -295,7 +295,7 @@ function createFavorites(options = {}) {
       const row = candidate.entries.find(item => item.id === id);
       if (!row) return errorResult('ENTRY_NOT_FOUND', '收藏不存在');
       const before = clone(row);
-      for (const key of ['kind', 'seriesId', 'sectionId', 'title', 'rawText', 'zh', 'aliases', 'note', 'globalSearchable', 'pinned', 'nsfw', 'order', 'sourceTagId']) if (Object.prototype.hasOwnProperty.call(patch, key)) row[key] = key === 'sectionId' ? sectionIdOf(patch[key]) : clone(patch[key]);
+      for (const key of ['kind', 'seriesId', 'sectionId', 'title', 'rawText', 'zh', 'aliases', 'note', 'globalSearchable', 'pinned', 'nsfw', 'order', 'sourceTagId', 'sourceCharacterId']) if (Object.prototype.hasOwnProperty.call(patch, key)) row[key] = ['sectionId', 'sourceTagId', 'sourceCharacterId'].includes(key) ? (patch[key] == null || patch[key] === '' ? null : String(patch[key])) : clone(patch[key]);
       if (Object.prototype.hasOwnProperty.call(patch, 'rawText')) { delete row.legacyInvalid; delete row.legacySource; }
       if (!same(before, row)) row.updatedAt = now;
     } else {
@@ -304,7 +304,7 @@ function createFavorites(options = {}) {
       const sectionId = sectionIdOf(patch.sectionId);
       const peers = candidate.entries.filter(row => row.seriesId === seriesId && row.sectionId === sectionId);
       const order = peers.length ? Math.max(...peers.map(row => row.order)) + 1 : 0;
-      candidate.entries.push({ id, kind: patch.kind || 'tag', seriesId, sectionId, title: text(patch.title), rawText: patch.rawText, zh: text(patch.zh), aliases: Array.isArray(patch.aliases) ? patch.aliases.map(String) : [], note: text(patch.note), globalSearchable: patch.globalSearchable !== false, pinned: Boolean(patch.pinned), nsfw: Boolean(patch.nsfw), order, sourceTagId: patch.sourceTagId ?? null, createdAt: now, updatedAt: now });
+      candidate.entries.push({ id, kind: patch.kind || 'tag', seriesId, sectionId, title: text(patch.title), rawText: patch.rawText, zh: text(patch.zh), aliases: Array.isArray(patch.aliases) ? patch.aliases.map(String) : [], note: text(patch.note), globalSearchable: patch.globalSearchable !== false, pinned: Boolean(patch.pinned), nsfw: Boolean(patch.nsfw), order, sourceTagId: patch.sourceTagId ?? null, sourceCharacterId: patch.sourceCharacterId ?? null, createdAt: now, updatedAt: now });
     }
     return commit(candidate, doc => doc.entries.find(row => row.id === id), { historyKey: settings.historyKey });
   }
@@ -641,7 +641,7 @@ function createFavorites(options = {}) {
     let order = Math.max(-1, ...candidate.entries.filter(row => row.seriesId === seriesId && row.sectionId === sectionId).map(row => row.order));
     for (const draft of preview.data.entries) {
       const id = makeId('entry', candidate);
-      candidate.entries.push({ id, kind: draft.kind, seriesId, sectionId, title: '', rawText: draft.rawText, zh: draft.zh, aliases: [], note: '', globalSearchable: true, pinned: false, nsfw: false, order: ++order, sourceTagId: null, createdAt: now, updatedAt: now });
+      candidate.entries.push({ id, kind: draft.kind, seriesId, sectionId, title: '', rawText: draft.rawText, zh: draft.zh, aliases: [], note: '', globalSearchable: true, pinned: false, nsfw: false, order: ++order, sourceTagId: null, sourceCharacterId: draft.sourceCharacterId || null, createdAt: now, updatedAt: now });
       ids.push(id);
     }
     return commit(candidate, { ids });

@@ -53,6 +53,7 @@
       galleryOrder: "oldest",
       galleryQuery: "",
       aiTabBeforeGallery: "talk",
+      editingTagId: "",
       comfyFollow: { "#talkConv": true },
       comfyCapabilities: null,
       started: false,
@@ -128,7 +129,7 @@
       prompt: viewFactories.prompt?.createPromptView?.({ document: doc, prompts, notify, download, autoBind: false }),
       agentStatus: viewFactories.agentStatus?.createAgentStatusView?.({ document: doc, runtime, api: assistant, notify, autoBind: false }),
       callMonitor: viewFactories.callMonitor?.createCallMonitorView?.({ document: doc, runtime, assistant, notify, download, confirm, autoBind: false }),
-      characters: viewFactories.characters?.createCharactersView?.({ document: doc, characters, onChange: () => renderSelection(), copy: value => copy(value), notify, getLocale: () => ui.locale }),
+      characters: viewFactories.characters?.createCharactersView?.({ document: doc, characters, tags, favorites, onChange: () => renderSelection(), copy: value => copy(value), notify, getLocale: () => ui.locale, openFavorites: async (value = {}) => { if (await route('favorites') === false) return false; return views.favorites?.openCreate?.(value); } }),
     };
     const show = (selector, yes) => {
       const el = $(selector);
@@ -449,9 +450,13 @@
       custom.slice().reverse().forEach((item) => {
         const row = doc.createElement("div");
         row.className = "crow";
-        row.innerHTML = '<span class="cen"></span><span class="czh"></span><button class="cdel btn btn-icon btn-danger">✕</button>';
+        row.innerHTML = '<span class="cen"></span><span class="czh"></span><button class="cedit btn btn-icon">🖊</button><button class="crestore btn btn-icon">↺</button><button class="cdel btn btn-icon btn-danger">✕</button>';
         $(".cen", row).textContent = item.en || item.id;
         $(".czh", row).textContent = item.zh || "";
+        row.classList.toggle('is-edited', item.edited === true);
+        $(".cedit", row).onclick = () => openTagEditor(item);
+        $(".crestore", row).hidden = item.edited !== true;
+        $(".crestore", row).onclick = () => { tags?.restore?.(item.id || item.en); renderCustomList(); renderCategories(); renderTags(); };
         $(".cdel", row).onclick = () => confirm(`确定删除自定义 Tag「${item.en || item.id}」吗？`, () => {
           tags?.removeCustom?.(item.id || item.en);
           renderCustomList();
@@ -577,21 +582,28 @@
         items.forEach((item) => {
           const button = doc.createElement("button");
           button.className = `chip btn btn-chip${chosen.has(str(item.id || item.en).toLowerCase()) ? " sel" : ""}${item.nsfw ? " nsfw" : ""}`;
+          if (item.edited) button.classList.add('is-edited');
           button.dataset.en = str(item.id || item.en).toLowerCase();
           button.style.setProperty("--c", categoryColor(item.category));
           button.innerHTML = `<span class="en">${item.en || ""}</span><span class="zh">${item.zh || (item.aliases || item.al || []).join(" ")}</span><span class="cp">${localized("ui.tag.copyOnly", "仅复制")}</span>`;
+          const wrap = doc.createElement("div");
+          wrap.className = item.category === "character_names" && characters ? "chip-with-character chip-with-actions" : "chip-with-actions";
+          const actions = doc.createElement('span'); actions.className = 'chip-actions';
+          const edit = doc.createElement('button'); edit.type = 'button'; edit.className = 'chip-action chip-edit'; edit.dataset.tagEdit = str(item.id || item.en); edit.textContent = '🖊'; edit.title = localized('ui.custom.editTitle', '编辑 Tag');
+          const star = doc.createElement('button'); star.type = 'button'; star.className = 'chip-action chip-favorite'; star.dataset.tagFavorite = str(item.id || item.en); star.textContent = '★'; star.title = localized('ui.favorites.favorite', '收藏');
+          actions.append(edit, star);
+          if (item.edited) { const restore = doc.createElement('button'); restore.type = 'button'; restore.className = 'chip-action chip-restore'; restore.dataset.tagRestore = str(item.id || item.en); restore.textContent = '↺'; restore.title = localized('ui.custom.restore', '恢复默认'); actions.append(restore); }
+          wrap.append(button, actions);
           if (item.category === "character_names" && characters) {
-            const wrap = doc.createElement("div");
-            wrap.className = "chip-with-character";
             const jump = doc.createElement("button");
             jump.type = "button";
             jump.className = "character-jump";
             jump.dataset.characterJump = str(item.id || item.en);
             jump.textContent = ui.locale === "en-US" ? "Open character" : "查看角色";
             jump.title = ui.locale === "en-US" ? "Open character library" : "跳转到角色库";
-            wrap.append(button, jump);
-            row.appendChild(wrap);
-          } else row.appendChild(button);
+            wrap.append(jump);
+          }
+          row.appendChild(wrap);
         });
         section.appendChild(row);
         host.appendChild(section);
@@ -3156,6 +3168,17 @@
         renderManager(); renderTalk(); renderConversationRepository();
       });
     }
+    function openTagEditor(item) {
+      const value = tags?.get?.(item?.id || item?.en) || item || {};
+      ui.editingTagId = str(value.id || value.en);
+      renderCustomCategories();
+      const modal = $("#addModal"); if (!modal) return false;
+      put("#addModal h3", localized("ui.custom.editTitle", "编辑 Tag"));
+      const fields = { nEn: value.en || value.id || '', nZh: value.zh || '', nAl: (value.aliases || []).join(' '), nSub: value.subcategory || '默认' };
+      Object.entries(fields).forEach(([id, content]) => { const input = $('#' + id); if (input) input.value = content; });
+      const category = $('#nCat'); if (category && value.category) category.value = value.category;
+      modal.classList.add('show'); return true;
+    }
     function renderManager() {
       const host = $("#mgrGenList");
       if (!host) return;
@@ -3529,6 +3552,21 @@
         renderTags();
       });
       $("#chips")?.addEventListener("click", (event) => {
+        const edit = event.target.closest("[data-tag-edit]");
+        if (edit) {
+          event.preventDefault(); event.stopPropagation();
+          openTagEditor(tags?.get?.(edit.dataset.tagEdit) || { id: edit.dataset.tagEdit, en: edit.dataset.tagEdit });
+          return;
+        }
+        const restore = event.target.closest("[data-tag-restore]");
+        if (restore) { event.preventDefault(); event.stopPropagation(); tags?.restore?.(restore.dataset.tagRestore); renderCategories(); renderTags(); return; }
+        const favorite = event.target.closest("[data-tag-favorite]");
+        if (favorite) {
+          event.preventDefault(); event.stopPropagation();
+          const item = tags?.get?.(favorite.dataset.tagFavorite) || { id: favorite.dataset.tagFavorite, en: favorite.dataset.tagFavorite };
+          Promise.resolve(route('favorites')).then(result => { if (result !== false) views.favorites?.openCreate?.({ kind: 'tag', rawText: item.en || item.id, title: item.zh || '' }); });
+          return;
+        }
         const jump = event.target.closest("[data-character-jump]");
         if (jump) {
           event.preventDefault();
@@ -3603,15 +3641,20 @@
         setVisionOpen(false);
       });
       $("#addTagBtn")?.addEventListener("click", () => {
+        ui.editingTagId = "";
         renderCustomCategories();
         renderCustomList();
         $("#addModal")?.classList.add("show");
       });
-      $("#addClose")?.addEventListener("click", () =>
-        $("#addModal")?.classList.remove("show"),
+      $("#addClose")?.addEventListener("click", () => {
+        ui.editingTagId = "";
+        $("#addModal")?.classList.remove("show");
+      },
       );
-      $("#nCancel")?.addEventListener("click", () =>
-        $("#addModal")?.classList.remove("show"),
+      $("#nCancel")?.addEventListener("click", () => {
+        ui.editingTagId = "";
+        $("#addModal")?.classList.remove("show");
+      },
       );
       $("#nCat")?.addEventListener("change", (event) => {
         if ($("#nNewCatWrap"))
@@ -3631,7 +3674,9 @@
           category,
         };
         if (!item.en) return notify("英文 Tag 不能为空");
-        tags?.addCustom?.(item);
+        const result = ui.editingTagId ? tags?.edit?.(ui.editingTagId, item) : tags?.addCustom?.(item);
+        if (result?.ok === false) return notify(result.error?.message || "Tag 保存失败");
+        ui.editingTagId = "";
         $("#addModal")?.classList.remove("show");
         renderCustomCategories();
         renderCustomList();

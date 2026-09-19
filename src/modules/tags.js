@@ -45,6 +45,7 @@ const DEFAULT_CATEGORIES = [
 ];
 
 const CHARACTER_NAMES_CATEGORY = 'character_names';
+const EDIT_HISTORY_KEY = 'rewrite_tag_edit_history_v1';
 
 // WD 标签文件中的 category 数字只用于识图结果。给它们一个稳定、
 // 易读的分类名即可，详细 UI 分类仍以标签目录中的分类为准。
@@ -165,7 +166,9 @@ function normaliseTag(row, source = 'base', index = 0) {
     count: Number.isFinite(Number(row.count ?? row.hits)) ? Number(row.count ?? row.hits) : null,
     confidence: Number.isFinite(Number(row.confidence ?? row.prob)) ? Number(row.confidence ?? row.prob) : null,
     source,
-    custom: source === 'custom'
+    custom: source === 'custom',
+    edited: row.edited === true ? true : undefined,
+    editedAt: Number.isFinite(Number(row.editedAt)) ? Number(row.editedAt) : null
   };
 }
 
@@ -277,6 +280,7 @@ function createTags(options = {}) {
     searchRows: [],
     searchCache: new BoundedCache(256),
     countCache: new Map()
+    ,editHistory: []
   };
 
   function stored(key, fallback) {
@@ -299,6 +303,37 @@ function createTags(options = {}) {
     if (Array.isArray(selected)) selected.map(tagKey).filter(id => state.tags.has(id)).forEach(id => state.selected.add(id));
     state.includeAdult = Boolean(stored('rewrite_adult', state.includeAdult || false));
     state.searchPrecision = normaliseSearchPrecision(stored('app.searchPrecision', state.searchPrecision));
+    const history = stored(EDIT_HISTORY_KEY, []);
+    state.editHistory = Array.isArray(history) ? history.filter(item => item && typeof item.id === 'string').map(clone).slice(-100) : [];
+  }
+
+  function edit(value, patch = {}) {
+    const current = resolve(value);
+    if (!current) return { ok: false, error: { code: 'TAG_NOT_FOUND', message: 'Tag 不存在' } };
+    const before = view(current);
+    const next = { ...current, ...patch, id: current.id, en: current.en, custom: true, edited: true, editedAt: Date.now() };
+    const saved = addCustom(next);
+    if (!saved) return { ok: false, error: { code: 'TAG_EDIT_FAILED', message: 'Tag 修改失败' } };
+    state.editHistory.push({ id: current.id, action: 'edit', before, after: saved, at: Date.now() });
+    state.editHistory = state.editHistory.slice(-100);
+    persist(EDIT_HISTORY_KEY, state.editHistory);
+    persistUserState();
+    return { ok: true, data: saved };
+  }
+
+  function restore(value) {
+    const id = tagKey(typeof value === 'string' ? value : value && (value.id || value.en));
+    const current = id ? state.tags.get(id) : null;
+    if (!id || !current) return { ok: false, error: { code: 'TAG_NOT_FOUND', message: 'Tag 不存在' } };
+    const before = view(current);
+    const result = removeCustom(id);
+    if (!result) return { ok: true, data: view(current) };
+    const restored = view(state.tags.get(id));
+    state.editHistory.push({ id, action: 'restore', before, after: restored, at: Date.now() });
+    state.editHistory = state.editHistory.slice(-100);
+    persist(EDIT_HISTORY_KEY, state.editHistory);
+    persistUserState();
+    return { ok: true, data: restored };
   }
 
   function categoryRows(input) {
@@ -632,6 +667,11 @@ function createTags(options = {}) {
     getSubcategories: subcategories,
     stateSnapshot: () => ({ query: state.query || '', category: state.category || '', includeAdult: Boolean(state.includeAdult), searchPrecision: state.searchPrecision, revision: state.revision, selected: [...state.selected], categories: state.categories.map(clone), categoryCounts: countByCategory(Boolean(state.includeAdult)) }),
     customTags: () => [...state.custom.values()].map(view),
+    edit,
+    editHistory: value => {
+      const id = tagKey(typeof value === 'string' ? value : value && (value.id || value.en));
+      return state.editHistory.filter(item => !id || item.id === id).map(clone);
+    },
     get: value => view(resolve(value)),
     categories: () => state.categories.map(clone),
     getCategories: () => state.categories.map(clone),
@@ -645,7 +685,8 @@ function createTags(options = {}) {
     clearSelection: () => { state.selected.clear(); persistUserState(); return []; },
     addCustom(value) { const result = addCustom(value); persistUserState(); return result; },
     removeCustom(value) { const result = removeCustom(value); persistUserState(); return result; },
-    restore: () => { restoreUserState(); return api.snapshot(); },
+    restore: (...args) => args.length ? restore(args[0]) : (restoreUserState(), api.snapshot()),
+    restoreUserState: () => { restoreUserState(); return api.snapshot(); },
     has: value => Boolean(resolve(value)),
     size: () => state.tags.size,
     isLoaded: () => state.loaded,

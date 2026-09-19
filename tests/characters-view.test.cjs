@@ -44,9 +44,13 @@ function fixture(overrides = {}) {
   };
   const api = require(path.join(root, 'src/views/characters-view.js'));
   let currentLocale = overrides.locale || 'zh-CN';
+  const tags = overrides.tags || { edit: () => ({ ok: true }), restore: () => ({ ok: true }) };
+  const openFavorites = overrides.openFavorites || (async () => true);
   const view = api.createCharactersView({
     document: dom.window.document,
     characters,
+    tags,
+    openFavorites,
     onChange: () => { calls.changed = (calls.changed || 0) + 1; },
     copy: async value => { calls.copy.push(value); return true; },
     notify: value => { calls.notice = value; },
@@ -54,6 +58,51 @@ function fixture(overrides = {}) {
   });
   return { dom, document: dom.window.document, view, calls, setLocale: value => { currentLocale = value; } };
 }
+
+test('character detail exposes edit and favorite actions and edits persist through the character API', async () => {
+  const edits = [];
+  const favorites = [];
+  const app = fixture({
+    characters: { edit: (id, patch) => { edits.push([id, patch]); return { ok: true }; } },
+    tags: { edit: (id, patch) => { edits.push([id, patch]); return { ok: true }; } },
+    openFavorites: async value => { favorites.push(value); return true; }
+  });
+  app.view.render({ query: '', precision: 'standard', includeAdult: false });
+  app.document.querySelector('[data-character-id="miku"]').click();
+  assert.ok(app.document.querySelector('[data-character-edit]') || app.document.querySelector('.character-detail-edit'));
+  assert.ok(app.document.querySelector('.character-detail-favorite'));
+  app.document.querySelector('.character-detail-favorite').click();
+  assert.equal(favorites[0].rawText, 'hatsune_miku_\\(vocaloid\\), vocaloid');
+  app.document.querySelector('.character-detail-edit').click();
+  app.document.querySelector('[data-character-edit="nameZh"]').value = '初音未来';
+  app.document.querySelector('[data-character-edit-panel="character"]').dispatchEvent(new app.dom.window.Event('submit', { bubbles: true, cancelable: true }));
+  assert.equal(edits[0][0], 'miku');
+  assert.equal(edits[0][1].nameZh, '初音未来');
+  app.dom.window.close();
+});
+
+test('character trait pencil edits the tag translation through the tag override API', () => {
+  const edits = [];
+  const app = fixture({ tags: { edit: (id, patch) => { edits.push([id, patch]); return { ok: true }; } } });
+  app.view.render({ query: '', precision: 'standard', includeAdult: false });
+  app.document.querySelector('[data-character-id="miku"]').click();
+  app.document.querySelector('[data-character-tag-edit="teal_hair"]').click();
+  app.document.querySelector('[data-character-edit="zh"]').value = '青绿色头发（手动）';
+  app.document.querySelector('[data-character-edit-panel="tag"]').dispatchEvent(new app.dom.window.Event('submit', { bubbles: true, cancelable: true }));
+  assert.deepEqual(edits[0], ['teal_hair', { en: 'teal hair', zh: '青绿色头发（手动）' }]);
+  app.dom.window.close();
+});
+
+test('character list rows expose a star that saves the role reference to favorites', async () => {
+  const favorites = [];
+  const app = fixture({ openFavorites: async value => { favorites.push(value); return true; } });
+  app.view.render({ query: '', precision: 'standard', includeAdult: false });
+  app.document.querySelector('[data-character-favorite="miku"]').click();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(favorites[0].sourceCharacterId, 'miku');
+  assert.match(favorites[0].rawText, /hatsune_miku|vocaloid/);
+  app.dom.window.close();
+});
 
 test('render requests a 50-row page and shows untrusted names as text', () => {
   const app = fixture();

@@ -150,7 +150,7 @@ header{flex:none;display:flex;align-items:center;gap:10px;padding:10px 18px;back
 .chip.sel::before{opacity:1}
 .chip.sel .en{color:var(--pri-h)}
 .chip.sel .zh{color:var(--pri)}
-.chip.sel::after{content:'✓';position:absolute;top:6px;right:8px;color:#fff;font-weight:700;font-size:12px;background:var(--pri);border-radius:50%;width:16px;height:16px;display:flex;align-items:center;justify-content:center}
+.chip.sel::after{display:none}
 .chip.neg.sel{border-color:transparent;background:linear-gradient(var(--neg-bg),var(--neg-bg)) padding-box,var(--neg) border-box}
 .chip.neg.sel .en{color:var(--neg)}
 .chip.neg.sel .zh{color:var(--neg)}
@@ -164,6 +164,7 @@ header{flex:none;display:flex;align-items:center;gap:10px;padding:10px 18px;back
 .chip .cp:hover{background:var(--cp-hover-bg)}
 .chip-with-character{display:inline-flex;align-items:stretch;gap:5px;min-width:0}
 .chip-with-character .chip{flex:1 1 auto}
+.chip-with-actions{display:inline-flex;align-items:stretch;gap:4px;min-width:0;position:relative}.chip-with-actions>.chip{flex:1 1 auto}.chip-actions{position:absolute;right:5px;top:4px;display:flex;gap:3px;opacity:0;pointer-events:none;transition:opacity .12s;z-index:2}.chip-with-actions:hover .chip-actions,.chip-with-actions:focus-within .chip-actions{opacity:1;pointer-events:auto}.chip-action{width:22px;height:22px;padding:0;border:1px solid var(--border2);border-radius:6px;background:var(--card);color:var(--muted);font-size:13px;line-height:1;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.12)}.chip-action:hover{border-color:var(--pri);background:var(--pri-bg);color:var(--pri)}.chip-with-actions .chip.is-edited{box-shadow:inset 0 0 0 1px #e0a52b}.chip-with-actions .chip.is-edited::before{background:#e0a52b}
 .character-jump{display:inline-flex;align-items:center;justify-content:center;padding:0 8px;border:1px solid var(--cp);border-radius:8px;background:var(--cp-bg);color:var(--cp);font-size:11px;font-weight:700;white-space:nowrap}
 .character-jump:hover{background:var(--cp-hover-bg)}
 @media(hover:none){.chip .cp{opacity:.85;pointer-events:auto}}

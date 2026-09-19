@@ -12,6 +12,7 @@
 .character-browser{min-width:0;min-height:0;display:flex;flex-direction:column;border-right:1px solid var(--border2);background:var(--card)}
 .character-list{flex:1;min-height:0;overflow:auto;padding:8px}
 .character-row{width:100%;min-height:58px;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;padding:8px 10px;border:1px solid transparent;border-radius:7px;text-align:left;color:var(--text)}
+.character-row-wrap{position:relative;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center}.character-row-wrap>.character-row{min-width:0}.character-row-favorite{position:absolute;right:7px;top:50%;transform:translateY(-50%);width:28px;height:28px;border:1px solid var(--border2);border-radius:6px;background:var(--card);color:var(--muted);opacity:0;cursor:pointer;z-index:2}.character-row-wrap:hover .character-row-favorite,.character-row-wrap:focus-within .character-row-favorite{opacity:1}.character-row-favorite:hover{border-color:var(--pri);background:var(--pri-bg);color:var(--pri)}
 .character-row+.character-row{border-top-color:var(--border)}
 .character-row:hover{background:var(--well);border-color:var(--border2)}
 .character-row.on{background:var(--pri-bg);border-color:var(--pri)}
@@ -35,6 +36,7 @@
 .character-trait-group{display:grid;grid-template-columns:minmax(90px,130px) minmax(0,1fr);gap:7px 10px;padding:7px 0}
 .character-trait-category{padding-top:6px;color:var(--muted);font-size:11.5px;overflow-wrap:anywhere}
 .character-trait{grid-column:2;display:flex;align-items:flex-start;gap:8px;min-width:0;padding:6px 8px;border:1px solid var(--border);border-radius:7px;background:var(--card)}
+.character-trait-edit{margin-left:auto;flex:none;min-width:26px;min-height:26px;padding:0;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--muted);cursor:pointer;opacity:0}.character-trait:hover .character-trait-edit,.character-trait:focus-within .character-trait-edit{opacity:1}.character-trait-edit:hover{border-color:var(--pri);background:var(--pri-bg);color:var(--pri)}
 .character-trait input{flex:none;margin-top:3px}.character-trait-text{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px;min-width:0;overflow-wrap:anywhere}.character-trait-text b{font-size:12px}.character-trait-text span{font-size:11.5px;color:var(--muted)}
 .character-review{padding:1px 5px;border-radius:5px;background:var(--neg-bg);color:var(--neg);font-size:10px}
 .character-no-features,.character-muted{padding:10px 0;color:var(--muted);font-size:12px}
@@ -42,6 +44,8 @@
 .character-actions button{min-height:34px}
 .character-actions .character-copy-action{border:1px solid var(--cp);background:var(--cp-bg);color:var(--cp);font-weight:700;box-shadow:0 2px 7px color-mix(in srgb,var(--cp) 18%,transparent)}
 .character-actions .character-copy-action:hover{background:var(--cp-hover-bg);border-color:var(--cp);transform:translateY(-1px)}
+.character-detail-edit,.character-detail-favorite{flex:none;min-width:32px;min-height:32px;padding:0;border:1px solid var(--border2);border-radius:7px;background:var(--card);color:var(--muted);cursor:pointer}.character-detail-edit:hover,.character-detail-favorite:hover{border-color:var(--pri);background:var(--pri-bg);color:var(--pri)}
+.character-edit-panel{display:flex;flex-direction:column;gap:7px;margin-top:14px;padding:10px;border:1px solid var(--border2);border-radius:8px;background:var(--well)}.character-edit-panel h4{margin:0 0 2px}.character-edit-panel input{width:100%;padding:7px 8px;border:1px solid var(--input-border);border-radius:6px;background:var(--input-bg);color:var(--text)}.character-edit-actions{display:flex;justify-content:flex-end;gap:6px;flex-wrap:wrap}
 .character-library-entry{width:100%;margin:4px 0 8px;border:1px solid color-mix(in srgb,#0E9B8E 60%,var(--border2));border-left:3px solid #0E9B8E;background:color-mix(in srgb,#0E9B8E 8%,var(--card));color:var(--text);font-size:13px}.character-library-entry:hover{border-color:#0E9B8E;background:color-mix(in srgb,#0E9B8E 15%,var(--card))}.character-library-entry::after{display:none}
 .schip.character-selection{border-color:var(--cp);background:var(--cp-bg);color:var(--cp)}
 .schip.character-selection .character-chip-text{display:flex;flex-direction:column;line-height:1.25}.schip.character-selection small{max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
