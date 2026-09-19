@@ -21,4 +21,37 @@ function emptyUserDocument(base = makeBase()) {
     favoritePages: [{ id: 'home', name: '主页', order: 0, color: '#336699', colorMode: 'auto' }],
     favoriteGroups: [{ id: 'daily', pageId: 'home', name: '日常', order: 0, color: '#336699' }], memberships: [], characterOverrides: [], selection: [], recentTagIds: [], migration: null, unresolved: [] };
 }
-module.exports = { makeRecord, makeBase, emptyUserDocument };
+function createMemoryRepository(initial, controls = {}) {
+  let stored = initial == null ? null : structuredClone(initial);
+  let fail = false, gate = null, saveCount = 0;
+  controls.failNextSave = () => { fail = true; };
+  controls.delayNextSave = () => {
+    let release, entered;
+    const started = new Promise(resolve => { entered = resolve; });
+    gate = { promise: new Promise(resolve => { release = resolve; }), entered };
+    return { release, started };
+  };
+  return {
+    get saveCount() { return saveCount; },
+    async read() { return structuredClone(stored); },
+    async save(document) {
+      saveCount += 1;
+      const waiting = gate; gate = null;
+      if (waiting) { waiting.entered(); await waiting.promise; }
+      if (fail) { fail = false; throw new Error('simulated write failure'); }
+      stored = structuredClone(document);
+    }
+  };
+}
+function createHarness(options = {}) {
+  const { createTagLibrary } = require('../../src/modules/tag-library/library');
+  const base = options.base || makeBase();
+  const controls = {};
+  const initial = Object.hasOwn(options, 'document') ? options.document : emptyUserDocument(base);
+  const repository = options.repository || createMemoryRepository(initial, controls);
+  let sequence = 0;
+  const config = { base, repository, ids: prefix => `${prefix}:fixture-${++sequence}`, now: () => 1000, ...options, controls: undefined };
+  const library = createTagLibrary(config);
+  return { library, repository, controls, ready: library.ready(), async reload() { const next = createTagLibrary(config); await next.ready(); return next; } };
+}
+module.exports = { makeRecord, makeBase, emptyUserDocument, createMemoryRepository, createHarness };

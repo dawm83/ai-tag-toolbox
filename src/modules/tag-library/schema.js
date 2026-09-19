@@ -13,19 +13,19 @@ function shape(o, required, optional, path) {
   const allowed = new Set([...required, ...optional]);
   if (required.some(k => !own(o, k)) || Object.keys(o).some(k => !allowed.has(k))) fail(path);
 }
-function str(v, path, max = LIMITS.name, nonempty = true) { if (typeof v !== 'string' || v.length > max || (nonempty && !v.trim()) || v.includes('\0')) fail(path); }
+function str(v, path, max = LIMITS.name, nonempty = true) { if (typeof v === 'string' && v.length > max) throw { validation: true, code: 'INVALID_FIELD', path, limit: max, unit: 'characters' }; if (typeof v !== 'string' || (nonempty && !v.trim()) || v.includes('\0')) fail(path); }
 function id(v, path) { str(v, path, LIMITS.id); }
 function integer(v, path) { if (!Number.isSafeInteger(v) || v < 0) fail(path); }
 function boolean(v, path) { if (typeof v !== 'boolean') fail(path); }
 function enumeration(v, values, path) { if (!values.includes(v)) fail(path); }
-function array(v, path, max = LIMITS.collection) { if (!Array.isArray(v) || v.length > max) fail(path); }
+function array(v, path, max = LIMITS.collection) { if (Array.isArray(v) && v.length > max) throw { validation: true, code: 'INVALID_FIELD', path, limit: max, unit: 'items' }; if (!Array.isArray(v)) fail(path); }
 function ids(v, path) { array(v, path); const seen = new Set(); for (const item of v) { id(item, path); if (seen.has(item)) fail(path); seen.add(item); } }
 function color(v, path) { if (typeof v !== 'string' || !/^#[0-9a-f]{6}$/i.test(v)) fail(path); }
 function result(data, fn) {
   try { fn(); return { ok: true, data }; }
   catch (error) {
     if (!error?.validation) throw error;
-    return { ok: false, error: { code: error.code, message: '标签库数据校验失败', fields: [error.path] } };
+    return { ok: false, error: { code: error.code, message: error.limit === undefined ? '标签库数据校验失败' : `字段超过上限：最多 ${error.limit} ${error.unit === 'items' ? '项' : '个字符'}`, fields: [error.path] } };
   }
 }
 function jsonSafe(value, path, ancestors = new WeakSet(), depth = 0) {
@@ -193,9 +193,13 @@ function documentStructure(doc) {
   }
   return { customCategories, customSubcategories, customTags, categoryOverrides, subcategoryOverrides, tagOverrides, pages, groups, memberships, charOverrides };
 }
-function document(doc, base) {
+function document(doc, base, preparedBase) {
   const structure = documentStructure(doc);
-  const { tags, categories, subs, characters } = baseIndexes(base);
+  // The general validator always revalidates its caller-owned base. A factory may
+  // reuse only its own private validated snapshot; each merge gets fresh Map shells.
+  const { tags, categories, subs, characters } = preparedBase
+    ? Object.fromEntries(Object.entries(preparedBase).map(([key, value]) => [key, new Map(value)]))
+    : baseIndexes(base);
   if (doc.baseFingerprint !== base.fingerprint) fail('baseFingerprint', 'INVALID_DOCUMENT');
   function append(added, map, field) { for (const [key, row] of added) { if (map.has(key)) fail(field); map.set(key, row); } }
   append(structure.customCategories, categories, 'customCategories');
@@ -221,11 +225,18 @@ function document(doc, base) {
     }
   }
   for (const value of doc.recentTagIds) ref(tags, value, 'recentTagIds');
-  if (doc.migration !== null) {
-    mapReferences(doc.migration.tagIdMap, tags, 'migration.tagIdMap');
-    mapReferences(doc.migration.favoriteIdMap, structure.memberships, 'migration.favoriteIdMap');
-    mapReferences(doc.migration.characterIdMap, characters, 'migration.characterIdMap');
-  }
+  // Migration receipts are historical metadata. Their map shape is checked above;
+  // migration/import validate targets when creating the receipt, never on later deletion.
+}
+function createLibraryDocumentValidator(base) {
+  let validate;
+  const checked = result(null, () => {
+    baseIndexes(base);
+    const snapshot = structuredClone(base);
+    const indexes = baseIndexes(snapshot);
+    validate = value => result(value, () => document(value, snapshot, indexes));
+  });
+  return checked.ok ? { ok: true, data: validate } : checked;
 }
 function choice(c, path) {
   if (!object(c)) fail(path);
@@ -277,5 +288,6 @@ module.exports = {
   validateBase: value => result(value, () => baseIndexes(value)),
   validateLibraryDocumentStructure: value => result(value, () => documentStructure(value)),
   validateLibraryDocument: (value, base) => result(value, () => document(value, base)),
+  createLibraryDocumentValidator,
   validateCommand: value => result(value, () => command(value))
 };

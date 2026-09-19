@@ -88,9 +88,22 @@ test('receipt and preserved conflicts validate structure and maps without leakin
   doc.migration = { id: 'receipt', sourceFingerprint: 'hash', completedAt: 0, tagIdMap: { old: 'blue_hair' }, favoriteIdMap: {}, characterIdMap: { oldAlice: 'alice' }, counts: { sourceTags: 1, sourceFavorites: 0, linkedFavorites: 0, independentFavorites: 0, unresolved: 1 } };
   assert.equal(validateLibraryDocument(doc, base).ok, true);
   doc.migration.tagIdMap.old = 'missing';
+  assert.equal(validateLibraryDocument(doc, base).ok, true, 'receipts remain historical after target deletion');
+  doc.migration.tagIdMap.old = '';
   const result = validateLibraryDocument(doc, base);
   assert.equal(result.ok, false);
   assert.doesNotMatch(JSON.stringify(result), /secret-token/);
+});
+test('private validator snapshots validated base while generic validation still detects later base mutation', () => {
+  const { createLibraryDocumentValidator } = require('../src/modules/tag-library/schema');
+  const base = makeBase(), doc = emptyUserDocument(base);
+  const prepared = createLibraryDocumentValidator(base);
+  assert.equal(prepared.ok, true); assert.equal(prepared.data(doc).ok, true);
+  base.tags[0].categoryId = 'missing';
+  assert.equal(validateLibraryDocument(doc, base).ok, false);
+  assert.equal(prepared.data(doc).ok, true);
+  doc.tagOverrides.push({ tagId: 'blue_hair', patch: { subcategoryId: 'missing' }, revision: 1, updatedAt: 1 });
+  assert.equal(prepared.data(doc).error.code, 'UNRESOLVED_REFERENCE');
 });
 
 test('base and custom taxonomy reject duplicate IDs, invalid references, and forged ownership', () => {
