@@ -307,3 +307,13 @@
 .favorite-column-tab>.favorite-action-button{border:0;background:transparent;white-space:nowrap}
 .favorite-column-tab>.favorite-icon-button{border:0;background:transparent;width:27px;min-height:28px}
 .favorite-column-tab.is-hidden{opacity:.6;border-bottom-style:dashed}
+
+#favoritesView{position:relative}
+.favorite-series-tab>.favorite-icon-button{width:24px;min-height:24px;border-color:transparent;background:transparent}
+.favorite-page-manager{position:absolute;left:10px;top:48px;z-index:18;width:min(430px,calc(100% - 20px));max-height:min(440px,70%);overflow:auto;padding:7px;border:1px solid var(--border2);border-radius:9px;background:var(--card);box-shadow:var(--pop-shadow)}
+.favorite-page-manager[hidden]{display:none!important}
+.favorite-page-row{display:flex;align-items:center;gap:7px;padding:5px;border-left:3px solid var(--favorite-accent);border-bottom:1px solid var(--border)}
+.favorite-page-row>.favorite-action-button{flex:1;min-width:0;justify-content:flex-start;text-align:left;overflow-wrap:anywhere;border-color:transparent}
+.favorite-page-row>.favorite-icon-button{flex:none}
+.favorite-page-status{flex:none;color:var(--muted);font-size:11px}
+.favorite-context-menu button[hidden]{display:none!important}

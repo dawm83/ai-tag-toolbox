@@ -1,8 +1,8 @@
 {
-  "version": "1.4.33",
+  "version": "1.4.313",
   "buildEvidenceFile": "build-info.json",
   "evidenceLocation": "Desktop package root, outside resources/app.asar",
-  "desktopDirectory": "C:\\Users\\admin\\Desktop\\AI绘画Tag工具箱V1.4.33",
+  "desktopDirectory": "C:\\Users\\admin\\Desktop\\AI绘画Tag工具箱V1.4.313",
   "oldDesktopDirectoryRemovedFromDesktop": true,
   "archive": {
     "sourceFilesVerifiedField": "build-info.json:sourceFiles",
@@ -31,7 +31,8 @@
       "tests/favorites-view.test.cjs",
       "tests/favorites-close.test.cjs",
       "tests/favorites-tool.test.cjs",
-      "tests/ui-dom.test.cjs"
+      "tests/ui-dom.test.cjs",
+      "tests/favorites-workbook-view.test.cjs"
     ],
     "slowUiSmokeRun": false,
     "liveProviderVerified": false,
@@ -62,6 +63,6 @@
     "published": false,
     "pushed": false
   },
-  "templateVersion": "1.4.32",
-  "templateBackup": "work/desktop-before-favorites-v1433"
+  "templateVersion": "1.4.39",
+  "templateBackup": "work/desktop-backup-v1439-final"
 }

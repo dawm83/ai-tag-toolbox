@@ -44,7 +44,7 @@ test('page and tag navigation are adjacent rows, with zoom inline and no page co
   assert.equal(app.$('[data-favorite-anchors] + [data-favorite-subanchors]') != null, true);
 });
 
-test('page plus creates and switches a complete collection page, while page context actions rename and delete it', async t => {
+test('page plus creates and switches a complete collection page, while pages are renamed through the context menu and deleted from the folder', async t => {
   const app = workbookFixture(t);
   await app.click('[data-favorite-action="new-series-tab"]');
   assert.equal(app.favorites.series().length, 2);
@@ -57,25 +57,23 @@ test('page plus creates and switches a complete collection page, while page cont
   app.$('[data-favorite-dialog-input]').value = '人物素材';
   await app.click('[data-favorite-action="dialog-confirm"]');
   assert.equal(app.favorites.series()[1].name, '人物素材');
-  let confirmed = false;
-  app.dom.window.confirm = () => confirmed;
-  tab = app.$('[data-favorite-series-tab].is-active');
-  tab.dispatchEvent(new app.dom.window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
-  await app.click('[data-favorite-action="context-delete"]');
+  const pageId = app.favorites.series()[1].id;
+  await app.click('[data-favorite-action="toggle-pages"]');
+  await app.click('[data-favorite-action="delete-page"][data-series-id="' + pageId + '"]');
+  await app.click('[data-favorite-action="cancel-delete"]');
   assert.equal(app.favorites.series().length, 2, 'cancelling confirmation preserves the page');
-  confirmed = true;
-  tab.dispatchEvent(new app.dom.window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
-  await app.click('[data-favorite-action="context-delete"]');
+  await app.click('[data-favorite-action="delete-page"][data-series-id="' + pageId + '"]');
+  await app.click('[data-favorite-action="confirm-delete"]');
   assert.equal(app.favorites.series().length, 1);
 });
 
-test('page and tag right-click menus share edit/delete actions and edit name plus color in one dialog', async t => {
+test('page and column menus share editing while only columns offer context deletion', async t => {
   const app = workbookFixture(t);
   const pageTab = app.$('[data-favorite-series-tab]');
   pageTab.dispatchEvent(new app.dom.window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
   assert.ok(app.$('[data-favorite-action="context-edit"]'));
   assert.ok(app.$('[data-favorite-action="context-delete"]'));
-  assert.deepEqual([...app.$('[data-favorite-context-menu]').querySelectorAll('button')].map(node => node.textContent), ['编辑', '删除']);
+  assert.deepEqual([...app.$('[data-favorite-context-menu]').querySelectorAll('button')].filter(node => !node.hidden).map(node => node.textContent), ['编辑']);
   assert.equal(app.$('[data-favorite-context-color]'), null);
   await app.click('[data-favorite-action="context-edit"]');
   const color = app.$('[data-favorite-dialog-color]');
@@ -139,10 +137,9 @@ test('deleting the current collection page closes its stale quick editor before 
   await settle();
   assert.equal(app.$('[data-favorite-quick-editor]').hidden, false);
 
-  const tab = app.$(`[data-favorite-series-tab][data-series-id="${page.id}"]`);
-  tab.dispatchEvent(new app.dom.window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
-  app.dom.window.confirm = () => true;
-  await app.click('[data-favorite-action="context-delete"]');
+  await app.click('[data-favorite-action="toggle-pages"]');
+  await app.click('[data-favorite-action="delete-page"][data-series-id="' + page.id + '"]');
+  await app.click('[data-favorite-action="confirm-delete"]');
 
   assert.equal(app.favorites.series().some(row => row.id === page.id), false);
   assert.equal(app.$('[data-favorite-quick-editor]').hidden, true);
@@ -315,4 +312,166 @@ test('column eye buttons hide and restore columns without removing Tags and surv
   await app.click(eye(first.id));
   assert.ok(app.$('[data-favorite-entry="' + entry.id + '"]'));
   assert.equal(app.$(eye(first.id)).getAttribute('aria-pressed'), 'true');
+});
+
+
+test('closing pages retains data, persists after reopening and restores through the folder list', async t => {
+  const app = workbookFixture(t);
+  const first = app.favorites.series()[0];
+  const firstColumn = app.favorites.sections(first.id)[0];
+  app.favorites.saveEntry({ seriesId: first.id, sectionId: firstColumn.id, rawText: 'keep me' });
+  await app.click('[data-favorite-action="new-series-tab"]');
+  const second = app.favorites.series()[1];
+  const original = app.favorites.exportBundle();
+  await app.click('[data-favorite-action="close-page"][data-series-id="' + second.id + '"]');
+  assert.equal(app.$('[data-favorite-series-tab="' + second.id + '"]'), null);
+  assert.equal(app.$('[data-favorite-series]').dataset.favoriteSeries, first.id);
+  await app.click('[data-favorite-action="close-page"][data-series-id="' + first.id + '"]');
+  assert.equal(app.$('[data-favorite-series-tab]'), null);
+  assert.equal(app.$('[data-favorite-section]'), null);
+  assert.deepEqual(app.favorites.exportBundle(), original);
+  await app.view.leave(); app.view.enter();
+  assert.equal(app.$('[data-favorite-series-tab]'), null);
+  await app.click('[data-favorite-action="toggle-pages"]');
+  assert.equal(app.$('[data-favorite-page-manager]').hidden, false);
+  assert.equal(app.dom.window.document.querySelectorAll('[data-favorite-page-row]').length, 2);
+  await app.click('[data-favorite-action="open-page"][data-series-id="' + first.id + '"]');
+  assert.equal(app.$('[data-favorite-series]').dataset.favoriteSeries, first.id);
+  assert.equal(app.$('[data-favorite-entry] .favorite-entry-title').textContent, 'keep me');
+  assert.equal(app.$('[data-favorite-series-tab="' + second.id + '"]'), null);
+});
+
+test('page deletion lives in the folder list and waits for in-page confirmation', async t => {
+  const app = workbookFixture(t);
+  app.dom.window.confirm = () => { throw new Error('Native confirm must not be used'); };
+  const first = app.favorites.series()[0];
+  await app.click('[data-favorite-action="new-series-tab"]');
+  const second = app.favorites.series()[1];
+  const tab = app.$('[data-favorite-series-tab="' + first.id + '"]');
+  tab.dispatchEvent(new app.dom.window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+  assert.equal([...app.$('[data-favorite-context-menu]').querySelectorAll('button')].filter(node => !node.hidden).some(node => node.dataset.favoriteAction === 'context-delete'), false);
+  await app.click('[data-favorite-action="toggle-pages"]');
+  await app.click('[data-favorite-action="delete-page"][data-series-id="' + first.id + '"]');
+  assert.equal(app.$('[data-favorite-delete-dialog]').hidden, false);
+  assert.equal(app.favorites.series().length, 2);
+  await app.click('[data-favorite-action="cancel-delete"]');
+  assert.equal(app.favorites.series().length, 2);
+  await app.click('[data-favorite-action="delete-page"][data-series-id="' + first.id + '"]');
+  await app.click('[data-favorite-action="confirm-delete"]');
+  assert.deepEqual(app.favorites.series().map(row => row.id), [second.id]);
+  assert.equal(app.$('[data-favorite-delete-dialog]').hidden, true);
+  assert.equal(app.$('[data-favorite-page-row="' + first.id + '"]'), null);
+  await app.click('[data-favorite-quick-new]');
+  assert.equal(app.dom.window.document.activeElement, app.$('[data-favorite-quick-raw]'));
+});
+
+test('closing a page saves its pending Tag to that page before switching', async t => {
+  const app = workbookFixture(t);
+  const first = app.favorites.series()[0];
+  await app.click('[data-favorite-action="new-series-tab"]');
+  const second = app.favorites.series()[1];
+  await app.click('[data-favorite-quick-new]');
+  app.$('[data-favorite-quick-raw]').value = 'draft preserved';
+  await app.click('[data-favorite-action="close-page"][data-series-id="' + second.id + '"]');
+  assert.equal(app.$('[data-favorite-series]').dataset.favoriteSeries, first.id);
+  assert.equal(app.favorites.list({ seriesId: second.id }).items[0].rawText, 'draft preserved');
+  assert.equal(app.$('[data-favorite-quick-editor]').hidden, true);
+});
+
+
+test('locating a Tag reopens its closed page and hidden column', async t => {
+  const app = workbookFixture(t); const page = app.favorites.series()[0]; const column = app.favorites.sections(page.id)[0];
+  const entry = app.favorites.saveEntry({ seriesId: page.id, sectionId: column.id, rawText: 'locatable' }).data;
+  await app.click('[data-favorite-action="toggle-section"][data-section-id="' + column.id + '"]');
+  await app.click('[data-favorite-action="close-page"][data-series-id="' + page.id + '"]');
+  assert.equal(await app.view.focusEntry(entry.id), true);
+  assert.ok(app.$('[data-favorite-series-tab="' + page.id + '"]'));
+  assert.ok(app.$('[data-favorite-entry="' + entry.id + '"]'));
+});
+
+test('column deletion requires page confirmation, preserves Tags and restores input afterwards', async t => {
+  const app = workbookFixture(t); const page = app.favorites.series()[0]; const column = app.favorites.sections(page.id)[0];
+  const entry = app.favorites.saveEntry({ seriesId: page.id, sectionId: column.id, rawText: 'move me' }).data;
+  app.dom.window.confirm = () => { throw new Error('No native dialog'); };
+  app.$('[data-favorite-section-tab]').dispatchEvent(new app.dom.window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+  await app.click('[data-favorite-action="context-delete"]');
+  app.$('[data-favorite-delete-dialog]').dispatchEvent(new app.dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+  assert.equal(app.favorites.sections(page.id)[0].id, column.id);
+  app.$('[data-favorite-section-tab]').dispatchEvent(new app.dom.window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+  await app.click('[data-favorite-action="context-delete"]');
+  await app.click('[data-favorite-action="confirm-delete"]');
+  assert.notEqual(app.favorites.getEntry(entry.id).sectionId, column.id);
+  assert.ok(app.$('[data-favorite-entry="' + entry.id + '"]'));
+  await app.click('[data-favorite-quick-new]');
+  assert.equal(app.dom.window.document.activeElement, app.$('[data-favorite-quick-raw]'));
+});
+
+test('invalid pending content blocks page closing without losing the draft', async t => {
+  const app = workbookFixture(t); const page = app.favorites.series()[0];
+  await app.click('[data-favorite-quick-new]');
+  app.$('[data-favorite-quick-title]').value = 'missing Tag';
+  await app.click('[data-favorite-action="close-page"][data-series-id="' + page.id + '"]');
+  assert.ok(app.$('[data-favorite-series-tab="' + page.id + '"]'));
+  assert.equal(app.$('[data-favorite-quick-editor]').hidden, false);
+  assert.equal(app.$('[data-favorite-quick-title]').value, 'missing Tag');
+  assert.equal(app.favorites.list().total, 0);
+});
+
+
+test('closed pages and hidden columns restore from stored preferences in a fresh view', async t => {
+  const app = workbookFixture(t); const page = app.favorites.series()[0]; const column = app.favorites.sections(page.id)[0];
+  await app.click('[data-favorite-action="toggle-section"][data-section-id="' + column.id + '"]');
+  await app.click('[data-favorite-action="close-page"][data-series-id="' + page.id + '"]');
+  app.view.destroy();
+  const dom = new JSDOM('<section id="favoritesView"></section>', { pretendToBeVisual: true });
+  const view = createFavoritesView({ document: dom.window.document, favorites: createFavorites({ storage: app.storage }), preferences: app.storage.namespace('favorites-view') });
+  t.after(() => { view.destroy(); dom.window.close(); }); view.enter();
+  const $ = selector => dom.window.document.querySelector(selector);
+  assert.equal($('[data-favorite-series-tab]'), null);
+  $('[data-favorite-action="toggle-pages"]').click();
+  $('[data-favorite-action="open-page"]').click(); await settle();
+  assert.ok($('[data-favorite-series-tab]'));
+  assert.equal($('[data-favorite-section]'), null);
+  $('[data-favorite-action="toggle-section"]').click(); await settle();
+  assert.ok($('[data-favorite-section]'));
+});
+
+test('quick Tag persistence failure retains input and retry does not duplicate the entry', async t => {
+  const dom = new JSDOM('<section id="favoritesView"></section>', { pretendToBeVisual: true });
+  const storage = createStorage(); let persisted = false;
+  const favorites = createFavorites({ storage: { get: storage.get, set: storage.set, flush: async () => persisted } });
+  const view = createFavoritesView({ document: dom.window.document, favorites });
+  t.after(() => { view.destroy(); dom.window.close(); }); view.enter();
+  const $ = selector => dom.window.document.querySelector(selector);
+  $('[data-favorite-quick-new]').click();
+  $('[data-favorite-quick-raw]').value = 'keep exact,  ';
+  $('[data-favorite-action="quick-save"]').click(); await settle();
+  assert.equal($('[data-favorite-quick-editor]').hidden, false);
+  assert.equal($('[data-favorite-quick-raw]').value, 'keep exact,  ');
+  assert.equal(favorites.list().total, 1);
+  persisted = true; $('[data-favorite-action="quick-save"]').click(); await settle();
+  assert.equal($('[data-favorite-quick-editor]').hidden, true);
+  assert.equal(favorites.list().total, 1);
+  assert.equal(favorites.list().items[0].rawText, 'keep exact,  ');
+});
+
+
+test('editor save failure keeps the panel open until storage accepts the saved Tag', async t => {
+  const dom = new JSDOM('<section id="favoritesView"></section>', { pretendToBeVisual: true });
+  const storage = createStorage(); let persisted = false;
+  const favorites = createFavorites({ storage: { get: storage.get, set: storage.set, flush: async () => persisted } });
+  const view = createFavoritesView({ document: dom.window.document, favorites });
+  t.after(() => { view.destroy(); dom.window.close(); }); view.enter();
+  const page = favorites.series()[0]; const column = favorites.sections(page.id)[0];
+  const entry = favorites.saveEntry({ seriesId: page.id, sectionId: column.id, rawText: 'before' }).data;
+  await view.openEditor(entry.id);
+  const $ = selector => dom.window.document.querySelector(selector);
+  const raw = $('[data-favorite-field="rawText"]'); raw.value = 'after';
+  raw.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  $('[data-favorite-action="editor-save"]').click(); await settle();
+  assert.equal($('[data-favorite-editor]').hidden, false);
+  assert.equal(raw.value, 'after');
+  persisted = true; $('[data-favorite-action="editor-save"]').click(); await settle();
+  assert.equal($('[data-favorite-editor]').hidden, true);
+  assert.equal(favorites.getEntry(entry.id).rawText, 'after');
 });
