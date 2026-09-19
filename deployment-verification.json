@@ -3,7 +3,7 @@
   "buildEvidenceFile": "build-info.json",
   "evidenceLocation": "Desktop package root, outside resources/app.asar",
   "desktopDirectory": "C:\\Users\\admin\\Desktop\\AI绘画Tag工具箱V1.4.316",
-  "oldDesktopDirectoryRemovedFromDesktop": true,
+  "oldDesktopDirectoryRemovedFromDesktop": false,
   "archive": {
     "sourceFilesVerifiedField": "build-info.json:sourceFiles",
     "sourceCommitField": "build-info.json:sourceCommit",
@@ -64,5 +64,6 @@
     "pushed": false
   },
   "templateVersion": "1.4.315",
-  "templateBackup": "work/desktop-backup-v14315-before316"
+  "templateBackup": "work/desktop-backup-v14315-before316",
+  "oldDesktopDirectoryRetainedReason": "V1.4.315 is still running; preserved its directory instead of interrupting the current session."
 }
