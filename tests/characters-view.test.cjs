@@ -93,14 +93,15 @@ test('character trait pencil edits the tag translation through the tag override 
   app.dom.window.close();
 });
 
-test('character list rows expose a star that saves the role reference to favorites', async () => {
+test('character list rows open details without a list favorite shortcut', () => {
   const favorites = [];
   const app = fixture({ openFavorites: async value => { favorites.push(value); return true; } });
   app.view.render({ query: '', precision: 'standard', includeAdult: false });
-  app.document.querySelector('[data-character-favorite="miku"]').click();
-  await new Promise(resolve => setTimeout(resolve, 0));
-  assert.equal(favorites[0].sourceCharacterId, 'miku');
-  assert.match(favorites[0].rawText, /hatsune_miku|vocaloid/);
+  assert.equal(app.document.querySelector('.character-row-favorite, [data-character-favorite]'), null);
+  app.document.querySelector('[data-character-id="miku"]').click();
+  assert.equal(app.calls.get.at(-1)[0], 'miku');
+  assert.ok(app.document.querySelector('.character-detail-favorite'));
+  assert.equal(favorites.length, 0);
   app.dom.window.close();
 });
 

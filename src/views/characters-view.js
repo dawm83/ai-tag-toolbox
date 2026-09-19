@@ -329,8 +329,7 @@
           openCharacter(item.id);
           host?.querySelectorAll?.('.character-row').forEach(row => row.classList.toggle('on', row === button));
         };
-        const favorite = element('button', 'character-row-favorite', '★'); favorite.type = 'button'; favorite.dataset.characterFavorite = text(item.id); favorite.title = label('favorite'); favorite.onclick = async event => { event.stopPropagation(); const record = characters?.get?.(item.id, { includeAdult: state.includeAdult }); const rawText = (record?.identityTags || [item.name || item.id, item.seriesName]).filter(Boolean).map(escapePrompt).join(', '); const result = await openFavorites?.({ kind: 'tag', rawText, title: record?.nameZh || item.name, sourceCharacterId: item.id }); if (result !== false) notify?.(label('favorite')); };
-        wrap.append(button, favorite); host?.appendChild(wrap);
+        wrap.appendChild(button); host?.appendChild(wrap);
       });
       const count = q('#characterCount'); if (count) count.textContent = String(Number(page.total) || 0);
       updatePaging(page);
