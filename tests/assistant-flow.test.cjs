@@ -103,7 +103,7 @@ async function testGenerationSettingsMigration() {
   assert.equal(migrated.generation.imagesPerRound, 4);
   assert.equal(migrated.generation.maxAutoRounds, 1);
   const fresh = modules.normaliseSettings({});
-  assert.equal(fresh.comfy.enabled, true);
+  assert.equal(fresh.comfy.enabled, false);
   assert.equal(fresh.generation.autoRun, true);
   assert.equal(fresh.generation.imagesPerRound, 1);
   assert.equal(fresh.generation.maxAutoRounds, 3);

@@ -45,7 +45,8 @@ function boot(options = {}) {
     sessions: () => [session], currentSession: () => session, newSession: () => session,
     getSettings: () => settings,
     setSettings: patch => { settings = { ...settings, ...patch }; if (patch.batchCount !== undefined) settings.imagesPerRound = patch.batchCount; if (patch.imagesPerRound !== undefined) settings.batchCount = patch.imagesPerRound; if (patch.maxComfyCalls !== undefined) settings.maxAutoRounds = patch.maxComfyCalls; if (patch.maxAutoRounds !== undefined) settings.maxComfyCalls = patch.maxAutoRounds; return settings; }, listModels: async () => ({ ok: true, models: ['gpt-4o-mini'] }), listVisionModels: async () => ({ ok: true, models: ['gpt-4o-mini'] }),
-    refreshCapabilities: async () => ({ comfy: { enabled: false, connected: false }, vision: { local: false, ai: false } }),
+    getCapabilities: () => ({ comfy: options.comfyCapabilities || { enabled: true, connected: true, workflowReady: true, render: true }, vision: { local: false, ai: false } }),
+    refreshCapabilities: async () => assistant.getCapabilities(),
     calls: { refreshCapabilities: async () => ({ comfy: { enabled: false, connected: false }, vision: { local: false, ai: false } }) },
     run: async input => {
       runCount += 1;
@@ -752,9 +753,10 @@ test('ComfyUI profile exposes explicit capabilities and reference bindings', () 
   app.dom.window.close();
 });
 
-test('conversation generation controls persist batch and auto/manual mode', () => {
+test('conversation generation controls persist batch and auto/manual mode', async () => {
   const app = boot();
   app.view.route('ai'); app.view.showAi('talk');
+  await new Promise(resolve => setTimeout(resolve, 0));
   const master = app.window.document.querySelector('#talkComfyOn');
   const batch = app.window.document.querySelector('#imagesPerRound');
   const rounds = app.window.document.querySelector('#maxAutoRounds');
@@ -1009,4 +1011,33 @@ test('failed replies keep progress in messages without copying it into the Comfy
     assert.match(doc.querySelector('#talkConv').textContent, /进度 步骤1/);
     assert.equal(doc.querySelector('#talkComfyDebug').textContent, '⚙');
   } finally { app.dom.window.close(); }
+});
+
+
+test('Tags-only messages expose copyable Tags without candidate images', async t => {
+  const app = boot({ initialMessages: [{ id: 'tags-result', role: 'assistant', text: 'Tag 已生成。', status: 'done', result: { outputType: 'tags', status: 'completed', prompt: '1girl, blue hair', negative: 'lowres', positiveTags: ['1girl','blue hair'], negativeTags: ['lowres'] } }] });
+  t.after(() => app.dom.window.close());
+  let copied;
+  app.window.navigator.clipboard.writeText = async value => { copied = value; };
+  app.view.route('ai'); app.view.showAi('talk');
+  const doc = app.window.document;
+  assert.match(doc.querySelector('.generation-tags-result').textContent, /blue hair/);
+  doc.querySelector('[data-copy-generation-tags="positive"]').click();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(copied, '1girl, blue hair');
+  doc.querySelector('.generation-tags-result .chip').click();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(copied, '1girl');
+});
+
+test('disconnected drawing controls stay off and automatic iteration is hidden', async t => {
+  const app = boot({ comfyCapabilities: { enabled: true, connected: false, workflowReady: true, render: false, error: 'offline' } });
+  t.after(() => app.dom.window.close());
+  app.view.route('ai'); app.view.showAi('talk');
+  await new Promise(resolve => setTimeout(resolve, 0));
+  const doc = app.window.document;
+  assert.equal(doc.querySelector('#talkComfyOn').checked, false);
+  assert.equal(doc.querySelector('#talkComfyOn').disabled, true);
+  assert.equal(doc.querySelector('#generationAutoRun').closest('label').hidden, true);
+  assert.match(doc.querySelector('#comfyStatus').textContent, /仅生成 Tag/);
 });

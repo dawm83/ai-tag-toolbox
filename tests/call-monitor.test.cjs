@@ -51,7 +51,7 @@ test('real assistant connects primary rounds and fixed-subagent output under one
   assert.equal(primary.exchanges.length, 2);
   assert.equal(primary.exchanges[0].request.body.messages.at(-1).content, '画蓝发人物');
   assert(primary.exchanges[1].request.body.messages.some(row => row.role === 'tool'));
-  assert.equal(primary.exchanges[0].request.body.tools.length, 8);
+  assert(primary.exchanges[0].request.body.tools.some(item => item.function.name === 'translation_translate'));
   const child = rows.find(row => row.kind === 'subagent:translation');
   const tool = rows.find(row => row.kind === 'tool:translation.translate');
   assert.equal(child.parentRequestId, tool.requestId);

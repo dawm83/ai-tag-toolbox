@@ -167,6 +167,7 @@ function createAssistant(options = {}) {
     cancelRender: () => comfy?.cancel?.('current'),
     preflight: async (input, context) => {
       const value = await internalTool('comfy.status', {}, context);
+      if (!value.connected || !value.workflowReady) settings.setForm({ comfyOn: false });
       const profile = comfyProfiles.active();
       const referenceReady = Boolean(profile?.bindings?.sourceImage && (profile?.capabilities?.img2img === true || profile?.capabilities?.controlImage === true));
       return { ready: value.render === true, connected: value.connected === true, error: value.error || '', workflowProfileId: profile?.id || '', workflowRevision: profile?.updatedAt ? String(profile.updatedAt) : '', recreationMode: input.mode === 'recreate' ? (referenceReady ? 'reference_image' : 'text_approximation') : '' };
@@ -295,7 +296,7 @@ function createAssistant(options = {}) {
       applyPayload(job, payload);
       const error = result.ok ? null : errorShape(result.error);
       live.status = result.ok ? 'done' : error.code === 'CANCELLED' ? 'cancelled' : error.code === 'TIMEOUT' ? 'timeout' : 'error';
-      live.result = { ...clone(payload), ok: result.ok, error, usage: clone(result.usage) };
+      live.result = { ...clone(payload), ok: result.ok, error: error || payload.error || null, usage: clone(result.usage) };
       if (!live.text && error) live.text = error.message;
       session.updatedAt = Date.now(); state.lastError = error?.message || ''; state.status = result.ok ? 'idle' : live.status; await flushPersist(); observe(input.onDelta, live.text, live.reasoning, clone(live));
       return { ...result, ...payload, ok: result.ok, error, data: clone(payload), text: live.text, status: live.status, requestId, sessionId: session.id };
@@ -479,6 +480,9 @@ function createAssistant(options = {}) {
     const result = await primaryTools?.call?.('comfy.status', {}, { caller: 'ui', sessionId: state.currentId });
     if (revision !== capabilityRevision) return clone(capabilities);
     const comfyState = result?.data || {};
+    if (result?.ok && (!comfyState.connected || !comfyState.workflowReady)) settings.setForm({ comfyOn: false });
+    comfyState.enabled = settings.snapshot().comfy.enabled === true;
+    comfyState.render = comfyState.enabled && comfyState.connected === true && comfyState.workflowReady === true;
     capabilities = { tags: Boolean(tags?.search), vision: visionService.available?.() || { metadata: Boolean(images?.get), local: false, ai: false }, comfy: { enabled: comfyState.enabled === true, connected: comfyState.connected === true, workflowReady: comfyState.workflowReady === true, render: comfyState.render === true, error: text(comfyState.error) } };
     return clone(capabilities);
   }

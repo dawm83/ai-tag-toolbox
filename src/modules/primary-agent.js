@@ -46,7 +46,9 @@ function createPrimaryAgent(options = {}) {
     const favoritesContract = options.favoritesEnabled
       ? '收藏查询补充：tags.search 的可选 favorites 字段来自用户收藏，包含单标签或组合，不代表基础词库已确认其含义。rawText 是完整原文；contentOmitted=true 时内容未返回，不得当成完整 Prompt 使用。收藏查询只读取，不会修改收藏或自动加入底部组合。'
       : '';
-    return [prompt, generationContract, characterContract, favoritesContract].filter(Boolean).join('\n\n');
+    const drawingEnabled = options.getSettings?.()?.comfy?.enabled === true;
+    const outputContract = '【输出类型协议｜优先于上方绘图默认规则】生成或修改绘图 Tag、提示词也调用 generation.execute，传 outputType="tags"；该任务共用角色解析与参考图识别，但生成 Tag 后直接完成，不检查 ComfyUI、不绘图、不评图。只有用户要求图片且当前允许绘图时才传 outputType="images"。用户明确只要 Tag 时始终传 tags。仅 Tag 的参考图分析不代表实际执行了图片复刻。needs_input 或 failed 结果中的 positiveTags、negativeTags 仍可交付，必须说明图片尚未完成，不要反复调用生成工具尝试连接。' + (drawingEnabled ? '当前允许绘图；自动迭代只决定是否继续优化图片。' : '当前绘图已关闭：生成任务只交付 Tag，不调用 comfy.status、不要求配置工作流，不恢复旧绘图任务；不得自行开启绘图。');
+    return [prompt, generationContract, characterContract, favoritesContract, outputContract].filter(Boolean).join('\n\n');
   }
   async function complete(messages, request = {}) {
     const config = { ...publicRequestConfig(options.getSettings?.()?.primaryApi), ...publicRequestConfig(request) };

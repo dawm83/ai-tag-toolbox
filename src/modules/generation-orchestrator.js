@@ -19,7 +19,7 @@ const JOB_STATES = Object.freeze([
 const RUNNING_STATES = new Set(['preparing', 'compiling', 'rendering', 'evaluating', 'revising', 'selecting', 'finishing']);
 const TERMINAL_STATES = new Set(['completed', 'failed', 'cancelled']);
 const GENERATION_STRATEGIES = Object.freeze(['quick', 'auto', 'fixed3']);
-const GENERATION_OUTCOMES = Object.freeze(['', 'accepted', 'best_available', 'user_selected', 'user_selected_with_issues', 'cancelled', 'failed']);
+const GENERATION_OUTCOMES = Object.freeze(['', 'tags_only', 'accepted', 'best_available', 'user_selected', 'user_selected_with_issues', 'cancelled', 'failed']);
 const DEFAULT_GENERATION_POLICY = Object.freeze({
   autoRun: true,
   imagesPerRound: 1,
@@ -194,6 +194,7 @@ function createGenerationOrchestrator(options = {}) {
       jobId: text(source.jobId, `job_${randomUUID()}`),
       sessionId: text(source.sessionId),
       mode: source.mode === 'recreate' ? 'recreate' : 'create',
+      outputType: source.outputType === 'tags' ? 'tags' : 'images',
       status,
       originalRequirements: text(source.originalRequirements || source.requirements),
       requirements: text(source.originalRequirements || source.requirements),
@@ -267,6 +268,7 @@ function createGenerationOrchestrator(options = {}) {
       jobId: job.jobId,
       sessionId: job.sessionId,
       mode: job.mode,
+      outputType: job.outputType,
       requirements: job.originalRequirements,
       originalRequirements: job.originalRequirements,
       sourceImageId: job.sourceImageId,
@@ -318,6 +320,7 @@ function createGenerationOrchestrator(options = {}) {
       status: job.status,
       outcome: job.outcome || '',
       mode: job.mode,
+      outputType: job.outputType,
       recreationMode: job.recreationMode || '',
       aspectRatioMode: job.aspectRatioMode || '',
       selected: selected ? {
@@ -330,6 +333,7 @@ function createGenerationOrchestrator(options = {}) {
         parameters: selected.parameters || {}
       } : null,
       selectedCandidateId: job.selectedCandidateId || '',
+      ...(!selected ? { positiveTags: job.positiveTags, negativeTags: job.negativeTags, prompt: job.positiveTags.join(', '), negative: job.negativeTags.join(', ') } : {}),
       candidates: candidates.map(candidate => ({
         candidateId: candidate.id,
         imageId: candidate.imageId,
@@ -520,6 +524,7 @@ function createGenerationOrchestrator(options = {}) {
     return true;
   }
   async function checkPreflight(job, context) {
+    if (getSettings()?.comfy?.enabled === false) return needsInput(job, context, { kind: 'workflow', message: '绘图已关闭，已生成的 Tag 可以直接使用；开启绘图后可继续。' });
     const value = unwrap(await preflight(clone({ mode: job.mode, sourceImageId: job.sourceImageId, workflowProfileId: job.workflowProfileId }), context));
     if (value?.ready === false || value?.connected === false) return needsInput(job, context, { kind: 'workflow', message: text(value?.error, value?.connected === false ? 'ComfyUI 未连接' : '当前工作流不可用'), workflowProfileId: text(value?.workflowProfileId) });
     job.workflowProfileId = text(value?.workflowProfileId, job.workflowProfileId);
@@ -769,10 +774,18 @@ function createGenerationOrchestrator(options = {}) {
     job.needsInput = null;
     job.error = null;
     try {
-      emit(job, context, 'generation.started', { mode: job.mode, autoRun: job.policy.autoRun, imagesPerRound: job.policy.imagesPerRound, maxAutoRounds: job.policy.maxAutoRounds });
+      emit(job, context, 'generation.started', { mode: job.mode, outputType: job.outputType, autoRun: job.policy.autoRun, imagesPerRound: job.policy.imagesPerRound, maxAutoRounds: job.policy.maxAutoRounds });
       const prepared = await prepare(job, context);
       if (prepared !== true) return prepared;
       await compile(job, context);
+      if (job.outputType === 'tags') {
+        guard(job, context);
+        job.outcome = 'tags_only';
+        job.stopReason = 'tags_only';
+        transition(job, 'completed');
+        emit(job, context, 'generation.completed', { outputType: 'tags', candidateCount: 0 });
+        return result(job);
+      }
       const ready = await checkPreflight(job, context);
       if (ready !== true) return ready;
       if (job.pendingFeedback) {
@@ -839,6 +852,7 @@ function createGenerationOrchestrator(options = {}) {
       jobId: `job_${randomUUID()}`,
       sessionId: text(context.sessionId),
       mode,
+      outputType: input.outputType === 'tags' || getSettings()?.comfy?.enabled === false || context.settings?.comfy?.enabled === false ? 'tags' : 'images',
       status: 'preparing',
       originalRequirements,
       requirements: originalRequirements,

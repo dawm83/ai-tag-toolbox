@@ -7,7 +7,7 @@
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' http: https: ws: wss:; font-src 'self' data:; frame-src 'self' http: https:; object-src 'none'; base-uri 'self'; form-action 'self';"
     />
-    <title>AI 绘画 Tag 工具箱 V1.4.318 · Danbooru 标签选择器</title>
+    <title>AI 绘画 Tag 工具箱 V1.4.319 · Danbooru 标签选择器</title>
     <link
       rel="icon"
       href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎨</text></svg>"
@@ -553,7 +553,8 @@
                   <div class="tk-statusline">
                     <div class="tk-comfy-module" id="comfyUiModule">
                       <div class="tk-comfy-status cstatus" id="comfyStatus">ComfyUI 状态检查中…</div>
-                      <label class="opt comfy-inline-toggle"><input id="talkComfyOn" type="checkbox" checked /> <span data-i18n="ui.ai.comfyMaster">ComfyUI</span></label>
+                      <label class="opt comfy-inline-toggle"><input id="talkComfyOn" type="checkbox" /> <span data-i18n="ui.ai.comfyMaster">启用绘图</span></label>
+                      <button id="talkComfyRefresh" class="btn btn-icon btn-ghost" type="button" title="重新检测连接" data-i18n-title="ui.ai.comfyRefresh" aria-label="重新检测连接">↻</button>
                       <button id="talkComfyDebug" class="btn btn-icon btn-ghost" type="button" title="ComfyUI 设置" data-i18n-title="ui.ai.comfySettings" aria-label="ComfyUI 设置">⚙</button>
                     </div>
                     <div class="generation-controls" role="group" data-i18n-title="ui.ai.generationControls">
@@ -563,7 +564,7 @@
                         <option value="9">每轮 9 张</option><option value="10">每轮 10 张</option>
                       </select>
                       <select id="maxAutoRounds" data-i18n-title="ui.ai.maxAutoRounds" aria-label="最多 ComfyUI 调用"><option value="1">最多 1 次</option><option value="2">最多 2 次</option><option value="3">最多 3 次</option><option value="4">最多 4 次</option><option value="5">最多 5 次</option><option value="6">最多 6 次</option><option value="7">最多 7 次</option><option value="8">最多 8 次</option><option value="9">最多 9 次</option><option value="10">最多 10 次</option></select>
-                      <label class="opt generation-auto-select"><input id="generationAutoRun" type="checkbox" checked /> <span data-i18n="ui.ai.generationAutoRun">自动执行</span></label>
+                      <label class="opt generation-auto-select"><input id="generationAutoRun" type="checkbox" checked /> <span data-i18n="ui.ai.generationAutoRun">自动迭代</span></label>
                       <span id="generationWorkflowName" class="generation-workflow-name" title="当前工作流"></span>
                     </div>
                     <button id="talkCallMonitor" class="btn btn-secondary" type="button">调用监视器</button>
