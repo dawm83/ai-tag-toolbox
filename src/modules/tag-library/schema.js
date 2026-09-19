@@ -265,7 +265,7 @@ function command(c, path = 'command', batch = false) {
     setFlags: [['tagIds'], ['adult', 'searchable']], pin: [['membershipIds', 'pinned'], []], colorPages: [['pageIds', 'colorMode'], ['color']]
   };
   if (!own(fields, c.type)) fail(path);
-  const batchTypes = ['move', 'unfavorite', 'setFlags', 'pin', 'colorPages'];
+  const batchTypes = ['move', 'unfavorite', 'setFlags', 'pin', 'colorPages', 'favoriteTag', 'duplicateTag'];
   if ((batch && !batchTypes.includes(c.type)) || (!batch && ['setFlags', 'pin', 'colorPages'].includes(c.type))) fail(path);
   const [required, optional] = fields[c.type]; shape(c, ['type', ...required], optional, path);
   for (const k of ['id', 'tagId', 'categoryId', 'pageId', 'groupId', 'characterId', 'previewId']) if (own(c, k)) id(c[k], `${path}.${k}`);

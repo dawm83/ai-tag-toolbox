@@ -217,7 +217,7 @@ function applyLibraryCommand(document, base, command, { ids, now } = {}) {
       case 'clearSelection': draft.selection = c.kind ? draft.selection.filter(row => row.kind !== c.kind) : []; return {};
       case 'markCopied':
         c.tagIds.forEach(findTag); draft.recentTagIds = [...c.tagIds, ...draft.recentTagIds.filter(id => !c.tagIds.includes(id))].slice(0, 200); return {};
-      case 'batch': for (const operation of c.operations) perform(operation); return {};
+      case 'batch': return { results: c.operations.map(operation => perform(operation)) };
       case 'setFlags':
         for (const id of c.tagIds) patchTag(id, Object.fromEntries(['adult', 'searchable'].filter(key => Object.hasOwn(c, key)).map(key => [key, c[key]]))); return {};
       case 'pin':

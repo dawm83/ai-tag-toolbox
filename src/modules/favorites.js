@@ -8,7 +8,7 @@ const SELECTION_KEY = 'favorites_selection_v1';
 const RECENT_KEY = 'favorites_recent_v1';
 const LEGACY_KEY = 'rewrite_favorites';
 const COLLECTIONS = ['series', 'sections', 'entries'];
-const PALETTE = Object.freeze(['#287EA4', '#C75450', '#5A8F50', '#B67823', '#7256A8', '#00897B', '#B04A7A', '#65737E', '#8B6F47', '#446CB3']);
+const { PALETTE } = require('./tag-library/presentation-metadata');
 const clone = value => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -33,6 +33,7 @@ function favoriteMemberCount(entry) {
 }
 
 function createFavorites(options = {}) {
+  if (options.library) return require('./tag-library/favorite-adapter').createFavoriteAdapter(options);
   const storage = options.storage;
   const tags = options.tags;
   const listeners = new Set();

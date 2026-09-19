@@ -186,6 +186,7 @@ function createTagLibrary({ base, repository, legacyInput, ids = prefix => `${pr
     getFavoritePages: () => sorted(current?.favoritePages || []),
     getFavoriteGroups: pageId => sorted((current?.favoriteGroups || []).filter(row => row.pageId === pageId)),
     getMemberships: tagId => clone((current?.memberships || []).filter(row => tagId === undefined || row.tagId === tagId)),
+    getRecentTagIds: () => clone(current?.recentTagIds || []),
     getCharacterLinks: id => clone(projection?.characters.get(id) || null),
     references: tagId => projection ? clone(projection.references(tagId)) : [],
     selected: options => projection ? resolveSelection(current.selection, projection, options) : [],

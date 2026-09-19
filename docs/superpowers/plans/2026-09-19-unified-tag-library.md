@@ -119,6 +119,7 @@ interface TagLibrary {
   getFavoritePages(): FavoritePage[];
   getFavoriteGroups(pageId: string): FavoriteGroup[];
   getMemberships(tagId?: string): FavoriteMembership[];
+  getRecentTagIds(): string[]; // copied canonical recent IDs; no adapter-owned history
   getCharacterLinks(id: string): CharacterLinks | null;
   references(tagId: string): ReferenceUse[];
   selected(options: { includeAdult: boolean }): SelectionView[];
@@ -131,7 +132,8 @@ interface TagLibrary {
   dispose(): Promise<void>;
 }
 type SelectionView = { key: string; kind: 'tag' | 'character' | 'legacySnapshot'; displayName: string; content: string; adult: boolean; tagIds: string[] };
-type CommitData = { tagId?: string; membershipId?: string; pageId?: string; groupId?: string; changed: boolean };
+type OperationData = { tagId?: string; membershipId?: string; pageId?: string; groupId?: string; categoryId?: string; subcategoryId?: string };
+type CommitData = OperationData & { changed: boolean; results?: OperationData[] }; // batch results, in input order
 ```
 
 `getTag` 是主机端明确 ID 读取；AI 查询不得直接暴露一个“忽略搜索开关读取任意库”的工具。返回对象均复制，不泄露可写引用。
@@ -168,12 +170,16 @@ type LibraryCommand =
   | { type: 'applyImport'; previewId: string }
   | { type: 'undo' | 'redo' };
 type BatchOperation =
+  | { type: 'favoriteTag'; tagId: string; placement: Extract<Placement, { kind: 'favorite' }> }
+  | { type: 'duplicateTag'; tagId: string; placement?: Placement }
   | { type: 'move'; tagId: string; placement: Placement }
   | { type: 'unfavorite'; membershipIds: string[] }
   | { type: 'setFlags'; tagIds: string[]; adult?: boolean; searchable?: boolean }
   | { type: 'pin'; membershipIds: string[]; pinned: boolean }
   | { type: 'colorPages'; pageIds: string[]; colorMode: 'auto' | 'custom'; color?: string };
 ```
+
+`batch` 的显式白名单新增 `favoriteTag` 与 `duplicateTag`，供收藏跨组引用/另存独立使用；子操作都在同一纯候选中执行，整体校验、一次保存、一次通知、一条撤销。`CommitData.results` 按输入顺序返回子操作的稳定 ID（包括幂等复用的 membershipId），不以适配器快照差推断新归属；不支持嵌套 batch、任意 callback 或通用写对象。`getRecentTagIds()` 返回当前持久化 recentTagIds 的独立副本，ready 前为空。
 
 约束：saveTag 创建时补默认值（kind=tag、其他字符串空、aliases=[]、adult=false、searchable=true、未分类位置），更新时只写出现的字段；未知字段拒绝。不能修改 id/source/usages/revision。`kind=bundle` 的记录不得作为角色身份或单个特征引用；有角色引用时从 tag 改为 bundle 返回 `TAG_IN_USE`。
 
