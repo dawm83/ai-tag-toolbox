@@ -450,7 +450,7 @@ test('favorite edit is visible through tags immediately after save', async () =>
 
 **Interfaces:** `createCharacters({library,characterSource})`；`get/page/select/selected/edit/restore` 保留用途。角色nameZh/aliases从identityTagId读取，通用/专属词均从library.getTag读取；角色edit中的内容字段和关系通过第3节的 `editCharacter {characterId,identityPatch?,links?}` 一次提交，不允许任意执行函数。
 
-- [ ] 写公共词跨角色同步测试：
+- [x] 写公共词跨角色同步测试：
 
 ```js
 const { createHarness } = require('./fixtures/tag-library.cjs');
@@ -468,13 +468,13 @@ test('editing shared traits updates both roles, unlinking affects only one', asy
 });
 ```
 
-- [ ] 移除运行时独立terms的内容权威；保留数据源读取仅用于种子构建和审计。specificTagIds不再调用独立可变表。
-- [ ] 身份输出读取Tag.content；不再固定用`label(row.id)`生成，避免英文修改后仍输出旧角色词。角色ID稳定。
-- [ ] shared标签事件清理角色名称/别名/系列及搜索缓存；恢复身份词默认也刷新，避免加载后永久停在旧nameZh。
-- [ ] 新增角色特征必须选择存在的共享tagId；普通缺词不能返回伪造 `{id,en:id}` 掩盖悬空引用，返回可定位错误。
-- [ ] 去掉人物对象第二份可写名称/别名；返回旧字段是派生兼容，作品/热度/原始trigger仍是只读审计信息。
-- [ ] 测试专属词可编辑与复制、默认不全局搜索、身份改词不改角色ID、同名异作品、删除引用保护、成人词在角色输出中过滤、已加载角色名即时刷新。
-- [ ] 跑角色相关测试 + `npm run check`；提交。
+- [x] 移除运行时独立terms的内容权威；保留数据源读取仅用于种子构建和审计。specificTagIds不再调用独立可变表。
+- [x] 身份输出读取Tag.content；不再固定用`label(row.id)`生成，避免英文修改后仍输出旧角色词。角色ID稳定。
+- [x] shared标签事件清理角色名称/别名/系列及搜索缓存；恢复身份词默认也刷新，避免加载后永久停在旧nameZh。
+- [x] 新增角色特征必须选择存在的共享tagId；普通缺词不能返回伪造 `{id,en:id}` 掩盖悬空引用，返回可定位错误。
+- [x] 去掉人物对象第二份可写名称/别名；返回旧字段是派生兼容，作品/热度/原始trigger仍是只读审计信息。
+- [x] 测试专属词可编辑与复制、默认不全局搜索、身份改词不改角色ID、同名异作品、删除引用保护、成人词在角色输出中过滤、已加载角色名即时刷新。
+- [x] 跑角色相关测试 + `npm run check`；提交。
 
 **验收:** U11/U12/U13；角色资料和标签内容职责明确。提交：`V1.4.317：统一角色身份与特征标签引用`。
 
