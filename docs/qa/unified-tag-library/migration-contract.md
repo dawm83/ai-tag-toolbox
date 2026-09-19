@@ -28,7 +28,7 @@ const result = await library.ready();
 - `library.recoverBackup(): Promise<Result<{migration}>>`：零参数；仅未 ready 时显式恢复固定 `.bak`，完成后重新初始化。ready 时返回 `RECOVERY_NOT_ALLOWED`。传入多余参数不会变成文件路径或替换数据。
 - `library.status()` 沿用 `{ready,writable,error}`；Task 9 用它控制编辑入口。初始化失败、恢复过程中都不能执行成功写库。原 `flush/dispose/execute` API 保留。
 
-两种恢复共用每实例最多 3 次实际尝试，不自动循环。并发恢复返回 `RECOVERY_IN_PROGRESS`；第四次返回 `RECOVERY_RETRY_LIMIT`，修复来源/存储后重建实例或重启。关闭后返回 `NOT_READY`。迁移不产生用户 undo/redo 历史。
+每次显式恢复调用只做一次串行尝试，不自动循环，不设实例生命周期次数上限。并发恢复返回 `RECOVERY_IN_PROGRESS`；文件或来源修复后，即使先前多次失败也可在原实例继续重试。关闭后返回 `NOT_READY`。迁移不产生用户 undo/redo 历史。
 
 Task 9 的 catalog/host adapter 应只转发 `status`、`ready`、`retryInitialization()`、`recoverBackup()` 及返回 Result，不接收路径、候选文档、validator 或任意文件名。本任务未修改 catalog/renderer，也未读取真实 AppData。
 
@@ -38,7 +38,7 @@ Task 9 的 catalog/host adapter 应只转发 `status`、`ready`、`retryInitiali
 
 `repository.recoverBackup({validate}): Promise<{document,preservedOriginalId}>` 仅宿主调用。validator 是 library 私有的完整 base/reference validator；不能向 renderer 暴露。恢复依次：读取当前原字节、拒绝合法当前文件/未知 schema、读取固定 `.bak`、结构+完整引用及 baseFingerprint 校验、独占写入 `corrupt-v2-<sha256>.bin` 并 fsync 保存损坏原字节、写并 fsync 临时新文档、确认当前字节未变化、原子替换。不会把损坏当前文件轮换为 `.bak`。失败保留原文件和有效备份；部分临时文件仅清理本次所有项。
 
-主要错误：`INVALID_LEGACY_INPUT`、`LEGACY_READ_FAILED`、`MIGRATION_FAILED`、`LEGACY_CHANGED_DURING_MIGRATION`、`INITIALIZATION_CONFLICT`、`INVALID_DOCUMENT`、`UNSUPPORTED_VERSION`、`STORAGE_READ_FAILED`、`STORAGE_WRITE_FAILED`、`RECOVERY_NOT_ALLOWED`、`RECOVERY_SOURCE_CHANGED`、`RECOVERY_IN_PROGRESS`、`RECOVERY_RETRY_LIMIT`、`RECOVERY_NOT_AVAILABLE`。错误消息不回显用户原文、路径或底层 secret。
+主要错误：`INVALID_LEGACY_INPUT`、`LEGACY_READ_FAILED`、`MIGRATION_FAILED`、`LEGACY_CHANGED_DURING_MIGRATION`、`INITIALIZATION_CONFLICT`、`INVALID_DOCUMENT`、`UNSUPPORTED_VERSION`、`STORAGE_READ_FAILED`、`STORAGE_WRITE_FAILED`、`RECOVERY_NOT_ALLOWED`、`RECOVERY_SOURCE_CHANGED`、`RECOVERY_IN_PROGRESS`、`RECOVERY_NOT_AVAILABLE`。错误消息不回显用户原文、路径或底层 secret。
 
 ## 转换与来源保留
 

@@ -30,7 +30,7 @@ function createTagLibrary({ base, repository, legacyInput, ids = prefix => `${pr
   let lastWriteSucceeded = true;
   let validateDocument;
   const listeners = new Set(), operations = new Map(), undo = [], redo = [];
-  let recoveryAttempts = 0, recoveryPending = false;
+  let recoveryPending = false;
   const readLegacy = async () => filteredInput(typeof legacyInput === 'function' ? await legacyInput() : legacyInput);
   async function initialize() {
     const validBase = createLibraryDocumentValidator(immutableBase);
@@ -74,8 +74,6 @@ function createTagLibrary({ base, repository, legacyInput, ids = prefix => `${pr
     try {
       await initialization; await queue;
       if (initialized) return mode === 'retry' ? clone(await initialization) : fail('RECOVERY_NOT_ALLOWED', '有效标签库不能用备份覆盖');
-      if (recoveryAttempts >= 3) return fail('RECOVERY_RETRY_LIMIT', '已达到本次启动的恢复上限，请修复后重新启动');
-      recoveryAttempts++;
       if (mode === 'backup') {
         if (!validateDocument || typeof repository.recoverBackup !== 'function') return fail('RECOVERY_NOT_AVAILABLE', '此存储不支持备份恢复');
         try { await repository.recoverBackup({ validate: validateDocument }); }

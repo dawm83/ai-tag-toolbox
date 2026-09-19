@@ -91,12 +91,14 @@ test('explicit backup recovery validates references and preserves corrupt bytes,
   await fs.writeFile(path.join(f.backupDir, 'tag-library-v2.json.bak'), JSON.stringify(badBackup));
   const bad = createTagLibrary({ base: b, repository: f.repository }); await bad.ready(); assert.equal((await bad.recoverBackup()).ok, false); assert.equal(await fs.readFile(f.filePath, 'utf8'), '{broken again');
 });
-test('bounded initialization retries do not create a busy recovery loop or overwrite unknown versions', async t => {
+test('each explicit retry is one attempt and repair after repeated failures works without restarting', async t => {
   const f = await disk(t); await fs.writeFile(f.filePath, '{"schemaVersion":99}');
   const lib = createTagLibrary({ base: makeBase(), repository: f.repository }); assert.equal((await lib.ready()).error.code, 'UNSUPPORTED_VERSION');
   assert.equal(typeof lib.retryInitialization, 'function');
   for (let i = 0; i < 3; i++) assert.equal((await lib.retryInitialization()).error.code, 'UNSUPPORTED_VERSION');
-  assert.equal((await lib.retryInitialization()).error.code, 'RECOVERY_RETRY_LIMIT'); assert.equal(await fs.readFile(f.filePath, 'utf8'), '{"schemaVersion":99}');
+  assert.equal(await fs.readFile(f.filePath, 'utf8'), '{"schemaVersion":99}');
+  await fs.writeFile(f.filePath, JSON.stringify(emptyUserDocument()));
+  assert.equal((await lib.retryInitialization()).ok, true); assert.equal(lib.status().writable, true);
 });
 
 test('failed favorite rows do not leak mappings or counts and same-ID structures never overwrite', () => {
