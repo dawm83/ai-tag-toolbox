@@ -252,6 +252,9 @@
 .favorite-save-status[data-status="failed"],.favorite-save-status[data-status="invalid"]{color:var(--neg)}
 .favorite-save-status[data-status="saved"]{color:var(--cp)}
 .favorite-editor-actions{flex:none;display:flex;justify-content:flex-end;gap:6px;padding:9px 12px;border-top:1px solid var(--border)}
+.favorite-editor>.favorite-editor-actions{flex-wrap:wrap}
+.favorite-editor-delete{margin-right:auto;color:var(--neg)}
+.favorite-editor-delete[hidden]{display:none!important}
 .favorite-transfer{position:absolute;right:0;top:0}
 .favorite-quick-editor{position:absolute;right:0;top:0;z-index:13;width:min(330px,38vw);height:100%;display:flex;flex-direction:column;gap:9px;padding:0 12px 12px;border-left:1px solid var(--border2);background:var(--card);box-shadow:-6px 0 18px rgba(16,18,40,.08)}
 .favorite-quick-editor[hidden]{display:none!important}
@@ -267,6 +270,7 @@
 .favorite-dialog[hidden]{display:none!important}
 .favorite-dialog-panel{width:min(360px,100%);padding:16px;border:1px solid var(--border2);border-radius:8px;background:var(--card);box-shadow:0 14px 34px rgba(16,18,40,.2)}
 .favorite-dialog-panel h3{margin:0 0 10px;font-size:14px}
+.favorite-dialog-panel>[data-favorite-delete-message]{max-height:160px;overflow:auto;overflow-wrap:anywhere;white-space:pre-wrap}
 .favorite-dialog-panel>input{width:100%;min-height:34px;padding:7px 9px;border:1px solid var(--input-border);border-radius:7px;background:var(--input-bg);color:var(--text);outline:0}
 .favorite-dialog-panel>label{display:block;margin:10px 0 5px;color:var(--muted);font-size:12px}
 .favorite-dialog-panel>label[hidden],.favorite-dialog-color[hidden]{display:none!important}

@@ -251,17 +251,20 @@
       panel.append(heading, message, status, actions); overlay.append(panel); return overlay;
     }
     function requestDelete(kind, id, returnFocus) {
-      const row = kind === 'series' ? seriesRows().find(item => item.id === id) : sectionRows(state.seriesId).find(item => item.id === id);
+      const row = kind === 'entry' ? safeCall('getEntry', id) : kind === 'series' ? seriesRows().find(item => item.id === id) : sectionRows(state.seriesId).find(item => item.id === id);
       if (!row) return false;
+      if (kind === 'entry') { win.clearTimeout(state.saveTimer); state.saveTimer = null; }
       closeContextMenu(); state.deleteTarget = { kind, id, row, returnFocus, busy: false };
       const dialog = host.querySelector('[data-favorite-delete-dialog]');
-      dialog.querySelector('[data-favorite-delete-message]').textContent = row.name + ' — ' + label(kind === 'series' ? 'favorites.confirmDeleteSeries' : 'favorites.confirmDeleteSection', '确定删除吗？');
+      const name = kind === 'entry' ? row.title || row.rawText || label('favorites.untitled', '未命名收藏') : row.name;
+      dialog.querySelector('[data-favorite-delete-message]').textContent = name + ' — ' + label(kind === 'entry' ? 'favorites.confirmDeleteEntry' : kind === 'series' ? 'favorites.confirmDeleteSeries' : 'favorites.confirmDeleteSection', '确定删除吗？');
       dialog.querySelector('[data-favorite-delete-status]').textContent = ''; dialog.hidden = false;
       dialog.querySelector('[data-favorite-action="cancel-delete"]').focus(); return true;
     }
     function cancelDelete() {
       if (state.deleteTarget?.busy) return;
       const target = state.deleteTarget; state.deleteTarget = null; host.querySelector('[data-favorite-delete-dialog]')?.setAttribute('hidden', '');
+      if (target?.kind === 'entry' && state.editor?.id === target.id && state.editor.dirty) scheduleSave();
       restoreDialogFocus(target);
     }
     async function confirmDelete() {
@@ -269,9 +272,16 @@
       const confirm = host.querySelector('[data-favorite-action="confirm-delete"]');
       target.busy = true; confirm.disabled = true;
       try {
-        if (!await finishEditorBeforeMutation()) { host.querySelector('[data-favorite-delete-status]').textContent = label('favorites.saveFailed', '保存失败'); return false; }
-        const result = target.kind === 'series' ? safeCall('deleteSeries', target.id, { mode: 'delete' }) : safeCall('deleteSection', target.id);
+        if (target.kind === 'entry') {
+          // Let an in-flight save finish, but do not require a valid draft to delete its saved entry.
+          await state.editor?.savePromise;
+        } else if (!await finishEditorBeforeMutation()) { host.querySelector('[data-favorite-delete-status]').textContent = label('favorites.saveFailed', '保存失败'); return false; }
+        const result = target.kind === 'entry' ? safeCall('deleteEntries', [target.id]) : target.kind === 'series' ? safeCall('deleteSeries', target.id, { mode: 'delete' }) : safeCall('deleteSection', target.id);
         if (!result?.ok) { host.querySelector('[data-favorite-delete-status]').textContent = result?.error?.message || label('favorites.operationFailed', '操作失败'); return false; }
+        if (target.kind === 'entry') {
+          if (state.editor?.id === target.id) discardEditor();
+          if (!await safeCall('flush')) { host.querySelector('[data-favorite-delete-status]').textContent = label('favorites.deleteSaveFailed', '删除未能保存，请重试'); return false; }
+        }
         if (target.kind === 'series') savePreferences({ closedPageIds: state.prefs.closedPageIds.filter(id => id !== target.id) });
         state.deleteTarget = null; host.querySelector('[data-favorite-delete-dialog]').hidden = true; render();
         host.querySelector('[data-favorite-action="select-series"].is-active')?.focus(); return true;
@@ -340,7 +350,8 @@
       );
       const status = el('div', 'favorite-save-status'); status.dataset.favoriteSaveStatus = ''; status.setAttribute('aria-live', 'polite');
       const actions = el('div', 'favorite-editor-actions');
-      actions.append(actionTextButton('editor-discard', label('favorites.discard', '放弃修改')), actionTextButton('editor-copy', label('favorites.copyDraft', '保存并复制')), actionTextButton('editor-save', label('favorites.save', '保存'), 'primary'));
+      const remove = actionTextButton('editor-delete', label('favorites.deleteEntry', '删除收藏'), 'danger favorite-editor-delete'); remove.hidden = true;
+      actions.append(remove, actionTextButton('editor-discard', label('favorites.discard', '放弃修改')), actionTextButton('editor-copy', label('favorites.copyDraft', '保存并复制')), actionTextButton('editor-save', label('favorites.save', '保存'), 'primary'));
       aside.append(header, location, form, status, actions); return aside;
     }
     function editorFieldShell(name, field) {
@@ -609,6 +620,7 @@
     function renderEditor() {
       const panel = host.querySelector('[data-favorite-editor]'); if (!panel || !state.editor) return;
       panel.hidden = false; panel.dataset.entryId = state.editor.id || '';
+      panel.querySelector('[data-favorite-action="editor-delete"]').hidden = !state.editor.id;
       const draft = state.editor.draft; editorSeriesOptions(draft.seriesId, draft.sectionId);
       host.querySelectorAll('[data-favorite-field]').forEach(field => {
         const key = field.dataset.favoriteField; const value = key === 'aliases' ? (draft.aliases || []).join(', ') : draft[key];
@@ -637,7 +649,7 @@
     }
     function scheduleSave() {
       win?.clearTimeout?.(state.saveTimer); state.saveTimer = null;
-      if (!state.editor || state.composing) return;
+      if (!state.editor || state.composing || (state.deleteTarget?.kind === 'entry' && state.deleteTarget.id === state.editor.id)) return;
       state.saveTimer = win.setTimeout(() => { state.saveTimer = null; commitDraft(true); }, SAVE_DELAY);
     }
     async function commitDraft(flushStorage = true) {
@@ -648,6 +660,7 @@
       if (!editor.dirty) return flushStorage ? Boolean(await safeCall('flush')) : true;
       const saving = (async () => {
         while (state.editor === editor && editor.dirty) {
+          if (state.deleteTarget?.kind === 'entry' && state.deleteTarget.id === editor.id) return false;
           const version = editor.version;
           const patch = { ...editor.draft, aliases: [...(editor.draft.aliases || [])] };
           if (!string(patch.rawText).trim()) { setSaveStatus('invalid', label('favorites.rawRequired', '原文不能为空')); return false; }
@@ -659,6 +672,7 @@
           if (!result?.ok) { setSaveStatus('failed', result?.error?.message || label('favorites.saveFailed', '保存失败')); return false; }
           if (state.editor !== editor) return true;
           editor.id = result.data.id; editor.creating = false;
+          host.querySelector('[data-favorite-action="editor-delete"]').hidden = false;
           const persisted = !flushStorage || Boolean(await safeCall('flush'));
           if (state.editor !== editor) return persisted;
           if (!persisted) { setSaveStatus('failed', label('favorites.saveFailed', '保存失败')); return false; }
@@ -816,6 +830,7 @@
       if (action === 'editor-close') { if (await flushEdits()) discardEditor(); return; }
       if (action === 'editor-discard') return void discardEditor();
       if (action === 'editor-save') return void saveEditorTransaction();
+      if (action === 'editor-delete') return void requestDelete('entry', state.editor?.id, target);
       if (action === 'editor-copy') { if (await flushEdits()) await copyEntry(state.editor.id, false); return; }
       if (action === 'move-up') return void reorderEntry(target.dataset.entryId, -1);
       if (action === 'move-down') return void reorderEntry(target.dataset.entryId, 1);

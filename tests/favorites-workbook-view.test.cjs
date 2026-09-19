@@ -475,3 +475,133 @@ test('editor save failure keeps the panel open until storage accepts the saved T
   assert.equal($('[data-favorite-editor]').hidden, true);
   assert.equal(favorites.getEntry(entry.id).rawText, 'after');
 });
+
+test('entry deletion confirms the target, cancels without losing edits and deletes only that saved favorite', async t => {
+  const app = workbookFixture(t);
+  app.dom.window.confirm = () => { throw new Error('Use the page confirmation dialog'); };
+  const page = app.favorites.series()[0]; const column = app.favorites.sections(page.id)[0];
+  const entry = app.favorites.saveEntry({ seriesId: page.id, sectionId: column.id, rawText: 'remove me', title: '待删除收藏' }).data;
+  const sibling = app.favorites.saveEntry({ seriesId: page.id, sectionId: column.id, rawText: 'keep me' }).data;
+  app.favorites.setSelected(entry.id, true);
+  await app.click('[data-favorite-edit="' + entry.id + '"]');
+  const raw = app.$('[data-favorite-field="rawText"]');
+  raw.value = ''; raw.dispatchEvent(new app.dom.window.Event('input', { bubbles: true }));
+  await app.click('[data-favorite-action="editor-delete"]');
+  assert.equal(app.$('[data-favorite-delete-dialog]').hidden, false);
+  assert.match(app.$('[data-favorite-delete-message]').textContent, /待删除收藏/);
+  assert.ok(app.favorites.getEntry(entry.id));
+  await app.click('[data-favorite-action="cancel-delete"]');
+  assert.equal(app.$('[data-favorite-editor]').hidden, false);
+  assert.equal(raw.value, '');
+  assert.ok(app.favorites.getEntry(entry.id));
+  await app.click('[data-favorite-action="editor-delete"]');
+  await app.click('[data-favorite-action="confirm-delete"]');
+  await settle(350);
+  assert.equal(app.favorites.getEntry(entry.id), null);
+  assert.equal(createFavorites({ storage: app.storage }).getEntry(entry.id), null);
+  assert.equal(app.$('[data-favorite-entry="' + entry.id + '"]'), null);
+  assert.equal(app.$('[data-favorite-editor]').hidden, true);
+  assert.equal(app.$('[data-favorite-delete-dialog]').hidden, true);
+  assert.deepEqual(app.favorites.getEntry(sibling.id), sibling);
+  assert.deepEqual(app.favorites.series(), [page]);
+  assert.deepEqual(app.favorites.sections(page.id), [column]);
+  assert.equal(app.favorites.selected()[0].rawText, 'remove me', 'the existing composed Prompt remains an independent snapshot');
+  assert.equal(app.favorites.undo().ok, true);
+  assert.equal(app.favorites.getEntry(entry.id).rawText, 'remove me');
+  await app.click('[data-favorite-quick-new]');
+  assert.equal(app.dom.window.document.activeElement, app.$('[data-favorite-quick-raw]'));
+});
+
+test('entry delete is unavailable for an unsaved draft and becomes available after its first save', async t => {
+  const app = workbookFixture(t);
+  await app.view.openCreate();
+  const remove = app.$('[data-favorite-action="editor-delete"]');
+  assert.ok(remove);
+  assert.equal(remove.hidden, true);
+  const raw = app.$('[data-favorite-field="rawText"]'); raw.value = 'new saved favorite';
+  raw.dispatchEvent(new app.dom.window.Event('input', { bubbles: true }));
+  assert.equal(await app.view.flushEdits(), true);
+  assert.equal(remove.hidden, false);
+  await app.click('[data-favorite-action="editor-delete"]');
+  await app.click('[data-favorite-action="confirm-delete"]');
+  assert.equal(app.favorites.list().total, 0);
+});
+
+test('rejected entry deletion keeps the editor and can be retried without deleting a sibling', async t => {
+  const dom = new JSDOM('<section id="favoritesView"></section>', { pretendToBeVisual: true });
+  const storage = createStorage(); let rejectDeletion = false;
+  const favorites = createFavorites({ storage: {
+    get: storage.get,
+    set(key, value) { if (rejectDeletion && key === 'favorites_shelf_v1') throw new Error('disk unavailable'); return storage.set(key, value); },
+    flush: () => storage.flush()
+  } });
+  const view = createFavoritesView({ document: dom.window.document, favorites });
+  t.after(() => { view.destroy(); dom.window.close(); }); view.enter();
+  const page = favorites.series()[0]; const column = favorites.sections(page.id)[0];
+  const entry = favorites.saveEntry({ seriesId: page.id, sectionId: column.id, rawText: 'delete later' }).data;
+  const sibling = favorites.saveEntry({ seriesId: page.id, sectionId: column.id, rawText: 'keep' }).data;
+  await view.openEditor(entry.id);
+  const $ = selector => dom.window.document.querySelector(selector);
+  assert.ok($('[data-favorite-action="editor-delete"]'));
+  $('[data-favorite-action="editor-delete"]').click();
+  rejectDeletion = true;
+  $('[data-favorite-action="confirm-delete"]').click(); await settle();
+  assert.ok(favorites.getEntry(entry.id));
+  assert.equal($('[data-favorite-editor]').hidden, false);
+  assert.equal($('[data-favorite-delete-dialog]').hidden, false);
+  assert.match($('[data-favorite-delete-status]').textContent, /disk unavailable/);
+  assert.equal($('[data-favorite-action="confirm-delete"]').disabled, false);
+  rejectDeletion = false;
+  $('[data-favorite-action="confirm-delete"]').click(); await settle();
+  assert.equal(favorites.getEntry(entry.id), null);
+  assert.deepEqual(favorites.getEntry(sibling.id), sibling);
+  assert.equal($('[data-favorite-delete-dialog]').hidden, true);
+});
+
+test('entry deletion waits for an in-flight edit save and does not recreate the removed record', async t => {
+  const dom = new JSDOM('<section id="favoritesView"></section>', { pretendToBeVisual: true });
+  const storage = createStorage(); let finishSave; let pendingSave = true;
+  const favorites = createFavorites({ storage: { get: storage.get, set: storage.set, flush: () => pendingSave ? new Promise(resolve => { finishSave = resolve; }) : Promise.resolve(true) } });
+  const view = createFavoritesView({ document: dom.window.document, favorites });
+  t.after(() => { view.destroy(); dom.window.close(); }); view.enter();
+  const page = favorites.series()[0]; const column = favorites.sections(page.id)[0];
+  const entry = favorites.saveEntry({ seriesId: page.id, sectionId: column.id, rawText: 'original' }).data;
+  await view.openEditor(entry.id);
+  const $ = selector => dom.window.document.querySelector(selector);
+  const raw = $('[data-favorite-field="rawText"]'); raw.value = 'first edit';
+  raw.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  const saving = view.flushEdits();
+  raw.value = 'later edit'; raw.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  $('[data-favorite-action="editor-delete"]').click();
+  $('[data-favorite-action="confirm-delete"]').click(); await settle();
+  assert.ok(favorites.getEntry(entry.id));
+  assert.equal($('[data-favorite-action="confirm-delete"]').disabled, true);
+  pendingSave = false; finishSave(true); await saving; await settle(350);
+  assert.equal(favorites.getEntry(entry.id), null);
+  assert.equal($('[data-favorite-editor]').hidden, true);
+  assert.equal($('[data-favorite-delete-dialog]').hidden, true);
+  assert.equal(createFavorites({ storage }).getEntry(entry.id), null);
+});
+
+test('entry deletion leaves a failed disk flush visible and retry completes persistence', async t => {
+  const dom = new JSDOM('<section id="favoritesView"></section>', { pretendToBeVisual: true });
+  const storage = createStorage(); let persisted = false;
+  const favorites = createFavorites({ storage: { get: storage.get, set: storage.set, flush: async () => persisted } });
+  const view = createFavoritesView({ document: dom.window.document, favorites });
+  t.after(() => { view.destroy(); dom.window.close(); }); view.enter();
+  const page = favorites.series()[0]; const column = favorites.sections(page.id)[0];
+  const entry = favorites.saveEntry({ seriesId: page.id, sectionId: column.id, rawText: 'remove' }).data;
+  await view.openEditor(entry.id);
+  const $ = selector => dom.window.document.querySelector(selector);
+  $('[data-favorite-action="editor-delete"]').click();
+  $('[data-favorite-action="confirm-delete"]').click(); await settle();
+  assert.equal($('[data-favorite-delete-dialog]').hidden, false);
+  assert.match($('[data-favorite-delete-status]').textContent, /删除未能保存/);
+  assert.equal($('[data-favorite-action="confirm-delete"]').disabled, false);
+  const revision = favorites.snapshot().revision;
+  persisted = true;
+  $('[data-favorite-action="confirm-delete"]').click(); await settle();
+  assert.equal(favorites.snapshot().revision, revision, 'retrying persistence does not add another deletion to history');
+  assert.equal($('[data-favorite-delete-dialog]').hidden, true);
+  assert.equal(createFavorites({ storage }).getEntry(entry.id), null);
+});
