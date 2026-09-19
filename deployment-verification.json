@@ -1,8 +1,8 @@
 {
-  "version": "1.4.313",
+  "version": "1.4.314",
   "buildEvidenceFile": "build-info.json",
   "evidenceLocation": "Desktop package root, outside resources/app.asar",
-  "desktopDirectory": "C:\\Users\\admin\\Desktop\\AI绘画Tag工具箱V1.4.313",
+  "desktopDirectory": "C:\\Users\\admin\\Desktop\\AI绘画Tag工具箱V1.4.314",
   "oldDesktopDirectoryRemovedFromDesktop": true,
   "archive": {
     "sourceFilesVerifiedField": "build-info.json:sourceFiles",
