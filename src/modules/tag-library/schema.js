@@ -161,7 +161,10 @@ function document(doc, base) {
   }, 'memberships');
   orders(pages, null, 'favoritePages.order'); orders(groups, 'pageId', 'favoriteGroups.order'); orders(memberships, 'groupId', 'memberships.order');
   const charOverrides = indexed(doc.characterOverrides, links, 'characterOverrides', 'characterId');
-  for (const [key, l] of charOverrides) characters.set(key, l);
+  for (const [key, l] of charOverrides) {
+    ref(characters, key, 'characterOverrides.characterId');
+    characters.set(key, l);
+  }
   linkReferences(characters, tags);
   array(doc.selection, 'selection'); const selected = new Set();
   for (const s of doc.selection) {

@@ -116,3 +116,16 @@ test('cleared aliases and names are authoritative overrides and validation does 
   assert.equal(validateLibraryDocument(doc, base).ok, true);
   assert.equal(JSON.stringify({ base, doc }), before);
 });
+
+test('character overrides only edit existing base identities and cannot invent selectable characters', () => {
+  const base = makeBase(), doc = emptyUserDocument(base);
+  doc.characterOverrides = [{ ...base.characterLinks[0], characterId: 'invented' }];
+  doc.selection = [{ kind: 'character', characterId: 'invented', includeSeries: false, generalTagIds: ['blue_hair'], specificTagIds: [] }];
+  assert.equal(validateLibraryDocument(doc, base).error?.code, 'UNRESOLVED_REFERENCE');
+  doc.selection = [];
+  assert.equal(validateLibraryDocument(doc, base).error?.code, 'UNRESOLVED_REFERENCE');
+  doc.characterOverrides[0].characterId = 'alice';
+  doc.characterOverrides[0].generalTagIds = ['long_hair'];
+  doc.selection = [{ kind: 'character', characterId: 'alice', includeSeries: false, generalTagIds: ['long_hair'], specificTagIds: [] }];
+  assert.equal(validateLibraryDocument(doc, base).ok, true);
+});

@@ -10,7 +10,37 @@ const terms = value => Array.isArray(value) ? value : typeof value === 'string' 
 const unique = values => [...new Set(values)];
 const label = value => String(value || '').replace(/_/g, ' ');
 const dictionary = () => Object.create(null);
-function invalid(field) { throw Object.assign(new Error('内置标签源数据不合法'), { code: 'INVALID_DOCUMENT', field }); }
+class SeedInputError extends Error {
+  constructor(field) { super('内置标签源数据不合法'); this.code = 'INVALID_DOCUMENT'; this.field = field; }
+}
+function invalid(field) { throw new SeedInputError(field); }
+
+// Provenance participates in the fingerprint. Reject values JSON would drop/coerce,
+// cycles and accessors before serialization; never evaluate user-provided getters.
+function validateProvenance(manifest) {
+  const ancestors = new WeakSet();
+  function visit(value, depth) {
+    if (depth > 100) invalid('manifest');
+    if (value === null || typeof value === 'string' || typeof value === 'boolean') return;
+    if (typeof value === 'number' && Number.isFinite(value)) return;
+    if (typeof value !== 'object' || ancestors.has(value)) invalid('manifest');
+    const isArray = Array.isArray(value);
+    if (!isArray && ![Object.prototype, null].includes(Object.getPrototypeOf(value))) invalid('manifest');
+    const keys = Reflect.ownKeys(value);
+    if (isArray && keys.length !== value.length + 1) invalid('manifest');
+    ancestors.add(value);
+    for (const key of keys) {
+      if (isArray && key === 'length') continue;
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (typeof key !== 'string' || !descriptor.enumerable || !Object.prototype.hasOwnProperty.call(descriptor, 'value')) invalid('manifest');
+      if (isArray && (!/^(0|[1-9]\d*)$/.test(key) || Number(key) >= value.length)) invalid('manifest');
+      visit(descriptor.value, depth + 1);
+    }
+    ancestors.delete(value);
+  }
+  if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) invalid('manifest');
+  visit(manifest, 0);
+}
 
 /** Adapt loadTagFiles output without constructing the old mutable tag store. */
 function ordinaryRows(sources) {
@@ -43,8 +73,11 @@ function ordinaryRows(sources) {
 }
 
 /** @returns {{ok:true,data:object}|{ok:false,error:{code:string,message:string,fields:string[]}}} */
-function buildUnifiedSeed({ tags: sources, characters = [], specificTags = [], manifest = {} } = {}) {
+function buildUnifiedSeed(input = {}) {
   try {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) invalid('input');
+    const { tags: sources, characters = [], specificTags = [], manifest = {} } = input;
+    validateProvenance(manifest);
     if (!Array.isArray(characters) || !Array.isArray(specificTags)) invalid('characters');
     const ordinary = ordinaryRows(sources);
     const tags = new Map(), categories = new Map(), subs = new Map(), characterLinks = [], metadataById = dictionary(), characterInfo = dictionary();
@@ -64,9 +97,12 @@ function buildUnifiedSeed({ tags: sources, characters = [], specificTags = [], m
       }
       return legacyIds.subcategories[key];
     }
-    for (const c of list(ordinary.categories)) {
+    if (!Array.isArray(ordinary.categories)) invalid('tags.categories');
+    for (const c of ordinary.categories) {
+      if (typeof c !== 'string' && (!c || typeof c !== 'object')) invalid('tags.categories');
       const categoryId = typeof c === 'string' ? c.toLowerCase() : Array.isArray(c) ? c[0] : c.id || c.code;
       const name = typeof c === 'string' ? c : Array.isArray(c) ? c[1] : c.name;
+      if (typeof categoryId !== 'string' || !categoryId.trim() || (name !== undefined && typeof name !== 'string')) invalid('tags.categories');
       ensureCategory(categoryId, name);
     }
     function record(id, content, displayName, categoryId, subcategory, usages, sourceKey, aliases = [], adult = false, searchable = true) {
@@ -125,7 +161,7 @@ function buildUnifiedSeed({ tags: sources, characters = [], specificTags = [], m
     base.fingerprint = hash(JSON.stringify({ base, manifest }));
     return validateBase(base);
   } catch (error) {
-    if (error?.code !== 'INVALID_DOCUMENT') throw error;
+    if (!(error instanceof SeedInputError)) throw error;
     return { ok: false, error: { code: error.code, message: '内置标签源数据校验失败', fields: [error.field] } };
   }
 }

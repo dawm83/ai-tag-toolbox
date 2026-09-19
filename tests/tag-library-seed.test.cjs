@@ -74,3 +74,25 @@ test('runtime loads independent copies of the JSON without loading the seed or l
   `], { cwd: root, encoding: 'utf8' });
   assert.match(output, /runtime-json-ok/);
 });
+
+test('malformed category inputs return sanitized INVALID_DOCUMENT rather than throwing', () => {
+  for (const categories of [[null], [3], [{ id: null }], 'not-an-array']) {
+    const result = buildUnifiedSeed({ tags: { base: ['blue hair'], categories } });
+    assert.equal(result.ok, false);
+    assert.equal(result.error.code, 'INVALID_DOCUMENT');
+  }
+  assert.equal(buildUnifiedSeed(null).error.code, 'INVALID_DOCUMENT');
+});
+
+test('non-JSON-safe provenance is rejected without evaluating getters or leaking values', () => {
+  const cyclic = {}; cyclic.self = cyclic;
+  const accessor = { get value() { throw new Error('secret-getter'); } };
+  for (const manifest of [{ private: 'secret-token', revision: 1n }, cyclic, { value: undefined }, { value: NaN }, { value: () => 1 }, { value: new Date(0) }, accessor]) {
+    const result = buildUnifiedSeed({ tags: { base: ['blue hair'] }, manifest });
+    assert.equal(result.ok, false);
+    assert.equal(result.error.code, 'INVALID_DOCUMENT');
+    assert.doesNotMatch(JSON.stringify(result), /secret-token|secret-getter/);
+  }
+  const shared = { revision: 1 };
+  assert.equal(buildUnifiedSeed({ tags: { base: ['blue hair'] }, manifest: { first: shared, second: shared, values: [true, null, 'text', 0] } }).ok, true);
+});
