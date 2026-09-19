@@ -1,69 +1,25 @@
 {
-  "version": "1.4.316",
+  "version": "1.4.320",
   "buildEvidenceFile": "build-info.json",
   "evidenceLocation": "Desktop package root, outside resources/app.asar",
-  "desktopDirectory": "C:\\Users\\admin\\Desktop\\AI绘画Tag工具箱V1.4.316",
-  "oldDesktopDirectoryRemovedFromDesktop": false,
-  "archive": {
-    "sourceFilesVerifiedField": "build-info.json:sourceFiles",
-    "sourceCommitField": "build-info.json:sourceCommit",
-    "nativeFilesUnpackedField": "build-info.json:unpackedNativeFiles",
-    "archiveSha256Field": "build-info.json:archiveSha256"
-  },
-  "data": {
-    "sourceKind": "upstream-not-live-export",
-    "sourceRows": 244932,
-    "featuredCharacters": 33599,
-    "loadedCharacters": 34122,
-    "generalAdditions": 227,
-    "specificTerms": 804,
-    "hiddenTermLeaks": 0
-  },
+  "desktopDirectory": "C:/Users/admin/Desktop/AI绘画Tag工具箱V1.4.320",
+  "sourceBranch": "codex/comfy-tags-mode",
+  "baseCommit": "b8ef70cba1cc12b30f329f95f549e4339150baef",
+  "scope": "ComfyUI transport, independent Tags generation, drawing controls and connection recovery",
+  "separateFavoritesBranchModified": false,
   "checks": {
     "command": "npm run check",
-    "resultField": "build-info.json:checks",
-    "reasoningRegressionFile": "tests/ai-reasoning.test.cjs",
-    "favoritesRegressionFiles": [
-      "tests/favorites-store.test.cjs",
-      "tests/favorites-search.test.cjs",
-      "tests/favorites-selection.test.cjs",
-      "tests/favorites-transfer.test.cjs",
-      "tests/favorites-view.test.cjs",
-      "tests/favorites-close.test.cjs",
-      "tests/favorites-tool.test.cjs",
-      "tests/ui-dom.test.cjs",
-      "tests/favorites-workbook-view.test.cjs"
-    ],
-    "slowUiSmokeRun": false,
-    "liveProviderVerified": false,
-    "characterRegressionFiles": [
-      "tests/generation-orchestrator.test.cjs",
-      "tests/assistant-flow.test.cjs",
-      "tests/ui-dom.test.cjs"
-    ]
+    "testsPassed": 322,
+    "testsFailed": 0,
+    "electronNetworkFixture": "Passed on Electron 31.7.7 with temporary userData and a local HTTP fixture",
+    "realAiOrComfyGeneration": false
   },
   "knownLimits": [
-    "AniMadex official export token was not available; data is the pinned public upstream snapshot.",
-    "No role thumbnails, original images, or LoRA files were included.",
-    "Character-specific terms stay out of ordinary tag search and are returned only through character data.",
-    "Favorites capture the composed raw prompt including character text; they do not maintain live character references.",
-    "Favorites layout, native clipboard, file dialogs, downloads and actual window-close behavior await manual Electron testing.",
-    "Reference-image reproduction requires an explicitly configured source-image binding; otherwise the result is labeled text_approximation.",
-    "Source aspect-ratio matching requires explicit writable width and height bindings; otherwise the workflow dimensions remain fixed.",
-    "Translation alignment is optional and depends on the configured AI; unavailable mappings fall back to plain translated text without another AI call.",
-    "Local translation stays plain text; long AI translation inputs use sentence or block alignment and may cost more tokens.",
-    "AI translation loading state is visual feedback only; it does not change the request timeout.",
-    "V1.4.191 and earlier use different settings and session structures; complete automatic migration is not provided. Back up old user data and check configuration after upgrading.",
-    "Older conversations may have already lost per-round reasoning; start a new conversation if the same reasoning_content HTTP 400 persists.",
-    "Original-character intent classification still depends on the configured model; the confirmation card provides a direct original-character continuation action."
+    "Launcher compatibility without CORS flags still requires a real ComfyUI manual test.",
+    "The original default fetch also reached the isolated Electron fixture; CORS is not proven as the sole cause of the original failure.",
+    "Unknown prompt submission outcomes require checking the ComfyUI queue before starting another job.",
+    "Favorites work in the separate unified-tag-library branch has not been merged into this independent test build."
   ],
-  "release": {
-    "channel": "local-test",
-    "baseTag": "v1.4.3",
-    "published": false,
-    "pushed": false
-  },
-  "templateVersion": "1.4.315",
-  "templateBackup": "work/desktop-backup-v14315-before316",
-  "oldDesktopDirectoryRetainedReason": "V1.4.315 is still running; preserved its directory instead of interrupting the current session."
+  "published": false,
+  "pushed": false
 }
