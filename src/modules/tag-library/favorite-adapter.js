@@ -2,6 +2,7 @@
 const { joinFavoriteBlocks, parseFavoritePaste, validateFavoriteBundle } = require('../favorites-transfer');
 const { segmentSourceText } = require('../translation-alignment');
 const { PALETTE } = require('./presentation-metadata');
+const { formatTagOutput } = require('./selection');
 const { fail, own, object, context, tagPatch, collect } = require('./adapter-common');
 
 /** Membership views are derived on every read; TagView owns all editable text. */
@@ -160,7 +161,7 @@ function createFavoriteAdapter({ library } = {}) {
       if (!object(input)) return fail('INVALID_FIELD', '排序参数必须为对象');
       return run({ type: 'reorder', kind: ({ series: 'page', section: 'group', entry: 'membership' })[input.kind] || input.kind, parentId: input.parentId, ids: input.ids }, options);
     },
-    copyText: ids => joinFavoriteBlocks([...new Set((ids || []).map(getEntry).filter(Boolean).map(row => row.tagId))].map(id => library.getTag(id).content)),
+    copyText: ids => joinFavoriteBlocks([...new Set((ids || []).map(getEntry).filter(Boolean).map(row => row.tagId))].map(id => formatTagOutput(library.getTag(id)))),
     markCopied, selected, setSelected, clearSelected: options => run({ type: 'clearSelection', kind: 'tag' }, options),
     undo: options => run({ type: 'undo' }, options), redo: options => run({ type: 'redo' }, options), historyState: () => library.historyState(),
     subscribe: fn => library.subscribe(event => fn({ ...event, changedEntryIds: event.changedMembershipIds })), flush: () => library.flush(),

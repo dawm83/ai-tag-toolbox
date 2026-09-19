@@ -1,5 +1,6 @@
 'use strict';
 const { DEFAULT_CATEGORIES } = require('./presentation-metadata');
+const { formatTagOutput } = require('./selection');
 const { fail, own, clone, idOf, object, context, tagPatch, collect } = require('./adapter-common');
 
 /** A read projection and command facade; never loads or saves a legacy store. */
@@ -104,8 +105,8 @@ function createTagAdapter({ library, metadataById = {}, categoryMetadata = DEFAU
     edit, addCustom, restore: (value, options) => run({ type: 'restoreTag', tagId: idOf(value) }, options),
     removeCustom: (value, options) => run({ type: 'deleteTag', tagId: idOf(value) }, options),
     select, toggleSelected: (value, options) => select(value, !selectedIds().includes(idOf(value)), options), selected,
-    selectedText: (separator = ', ') => selected().map(row => row.en).join(separator),
-    copyText: ids => [...new Set(ids || [])].map(get).filter(Boolean).map(row => row.en).join(', '),
+    selectedText: (separator = ', ') => selected().map(formatTagOutput).join(separator),
+    copyText: ids => [...new Set(ids || [])].map(get).filter(Boolean).map(formatTagOutput).join(', '),
     clearSelection: options => run({ type: 'clearSelection', kind: 'tag' }, options),
     markCopied: (tagIds, options) => run({ type: 'markCopied', tagIds }, options),
     undo: options => run({ type: 'undo' }, options), redo: options => run({ type: 'redo' }, options),

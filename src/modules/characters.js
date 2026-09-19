@@ -2,7 +2,6 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { normaliseSearchPrecision } = require('./tags');
 const SELECTION_KEY = 'rewrite_character_selection_v1';
 const EDIT_KEY = 'rewrite_character_edits_v1';
 const EDIT_HISTORY_KEY = 'rewrite_character_edit_history_v1';
@@ -14,6 +13,8 @@ const unique = values => [...new Map(values.map(value => [key(value), value])).v
 const escapePrompt = value => String(value).replace(/\\([()])/g, '$1').replace(/[()]/g, '\\$&');
 
 function createCharacters(options = {}) {
+  if (options.library) return require('./tag-library/character-adapter').createCharacterAdapter(options);
+  const { normaliseSearchPrecision } = require('./tags');
   const tags = options.tags;
   const storage = options.storage;
   let loaded = false;

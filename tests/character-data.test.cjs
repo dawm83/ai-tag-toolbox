@@ -84,3 +84,24 @@ test('generated files contain no image or browsing URL metadata', () => {
     assert.doesNotMatch(text, /"(?:image|thumbnail|url)"\s*:/i);
   }
 });
+
+test('unified seed alone supplies every canonical role and read-only audit row for preload', async () => {
+  const { createHarness } = require('./fixtures/tag-library.cjs');
+  const { createCharacters } = require('../src/modules/characters');
+  const base = readJson('assets', '数据资产', '标签', 'unified-tag-base.json');
+  const characterSource = { characters: base.characterLinks.map(links => {
+    const info = base.characterInfo[links.characterId];
+    return { id: links.characterId, trigger: info.sourceTrigger, count: info.count, fallback: info.fallback, sourceKey: info.sourceKey, order: info.order };
+  }), manifest: { fingerprint: base.fingerprint } };
+  const h = createHarness({ base }); assert.equal((await h.ready).ok, true);
+  const characters = createCharacters({ library: h.library, characterSource });
+  assert.equal(characters.size(), 34122); assert.equal(characters.count(), 34122);
+  assert.equal(characters.manifest().legacyFallbackCharacters, 523);
+  assert.equal(characters.page({ includeAdult: true, offset: 34100, limit: 100 }).items.length, 22);
+  const miku = characters.get('hatsune_miku', { includeAdult: true });
+  assert.equal(miku.identityTagId, base.legacyIds.characters.hatsune_miku);
+  assert.equal(miku.trigger, base.characterInfo.hatsune_miku.sourceTrigger);
+  assert.ok(miku.generalTags.some(tag => tag.en === 'long hair'));
+  const fallback = characterSource.characters.find(row => row.fallback);
+  assert.ok(characters.get(fallback.id, { includeAdult: true }));
+});

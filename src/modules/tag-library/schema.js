@@ -260,7 +260,7 @@ function command(c, path = 'command', batch = false) {
   const fields = {
     saveTag: [['patch'], ['tagId', 'placement', 'allowIndependent']], favoriteTag: [['tagId', 'placement'], []], unfavorite: [['membershipIds'], []], move: [['tagId', 'placement'], []],
     restoreTag: [['tagId'], []], deleteTag: [['tagId'], []], saveCategory: [['name'], ['id']], saveSubcategory: [['categoryId', 'name'], ['id']], savePage: [['name'], ['id', 'color', 'colorMode']], saveGroup: [['pageId', 'name'], ['id', 'color']],
-    deleteGroup: [['groupId', 'mode'], []], deletePage: [['pageId', 'mode'], []], saveCharacterLinks: [['links'], []], editCharacter: [['characterId'], ['identityPatch', 'links']], select: [['value', 'selected'], []], clearSelection: [[], ['kind']], markCopied: [['tagIds'], []],
+    deleteGroup: [['groupId', 'mode'], []], deletePage: [['pageId', 'mode'], []], saveCharacterLinks: [['links'], []], editCharacter: [['characterId'], ['identityPatch', 'links']], restoreCharacter: [['characterId'], []], select: [['value', 'selected'], []], clearSelection: [[], ['kind']], markCopied: [['tagIds'], []],
     batch: [['operations'], []], reorder: [['kind', 'parentId', 'ids'], []], duplicateTag: [['tagId'], ['placement']], applyImport: [['previewId'], []], undo: [[], []], redo: [[], []],
     setFlags: [['tagIds'], ['adult', 'searchable']], pin: [['membershipIds', 'pinned'], []], colorPages: [['pageIds', 'colorMode'], ['color']]
   };

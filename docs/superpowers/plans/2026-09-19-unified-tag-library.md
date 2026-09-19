@@ -161,6 +161,7 @@ type LibraryCommand =
   | { type: 'deletePage'; pageId: string; mode: 'relocate' | 'unfavorite' }
   | { type: 'saveCharacterLinks'; links: CharacterLinks }
   | { type: 'editCharacter'; characterId: string; identityPatch?: TagPatch; links?: CharacterLinks }
+  | { type: 'restoreCharacter'; characterId: string }
   | { type: 'select'; value: SelectionRef; selected: boolean }
   | { type: 'clearSelection'; kind?: SelectionRef['kind'] }
   | { type: 'markCopied'; tagIds: string[] }
@@ -184,6 +185,12 @@ type BatchOperation =
 约束：saveTag 创建时补默认值（kind=tag、其他字符串空、aliases=[]、adult=false、searchable=true、未分类位置），更新时只写出现的字段；未知字段拒绝。不能修改 id/source/usages/revision。`kind=bundle` 的记录不得作为角色身份或单个特征引用；有角色引用时从 tag 改为 bundle 返回 `TAG_IN_USE`。
 
 deleteTag 对内置标签返回 `BUNDLED_TAG_NOT_DELETABLE`；自定义且仍被角色/收藏/选择引用返回 `TAG_IN_USE`，由显式解除流程后删除。取消收藏不调用 deleteTag。editCharacter 的 identityPatch 只允许 content/displayName/aliases/note/adult/searchable 六类字段；links.characterId 必须等于命令的 characterId，不能借编辑资料替换别的角色关系。
+
+`restoreCharacter` 是窄范围原子命令：移除指定内置角色的关系覆盖，以及种子中该角色原始 identityTagId 的内容覆盖。即使当前关系已更换身份词，也恢复原始身份；不修改其他共享特征、替代身份词或收藏。候选仍完整校验引用；当前选择包含恢复后不存在的角色特征时返回 `UNRESOLVED_REFERENCE`，不偷偷重写选择。保存、通知、撤销均为一次操作；不支持任意复合回调或 batch 内嵌该命令。
+
+输出边界：`selection.js` 导出纯函数 `formatTagOutput({kind,content})`，仅 kind=tag 的括号转义为一层，bundle/legacySnapshot 原文逐字节保留。`library.selected().content`、角色 `selected/selectionText/copyText`、Tag `selectedText/copyText` 和收藏 `copyText` 均使用该边界。`getTag().content`、Tag `en`、收藏 `rawText`、角色 `name/identityTags/identity.content` 及特征 `en/content` 仍是原始可编辑内容；Task 9 直接复制注入此 helper，移除旧 UI 的重复括号转换。选中项按 SelectionRef/tagId 身份去重，不按输出文本合并。
+
+角色宿主输入：`createCharacters({library, characterSource:{characters:[{id,trigger?,count?,fallback?,sourceKey?,order?}],manifest?}})`。characters 必须覆盖种子的完整 characterLinks；Task 9 仅将 base.characterLinks 与 base.characterInfo 按 characterId 关联，分别取 sourceTrigger/count/fallback/sourceKey/order，禁止再实例化旧 tags/terms 或重新读取原始角色语料。source 文本只保留 trigger 等审计字段，不提供运行时名称、别名或系列名称回退。构造可早于 library.ready；提前查询为空，ready 后同一实例读取正式投影。公开写方法返回 Promise<Result>，调用方必须 await；edit 的 name/nameZh/nsfw/tagIds 兼容映射到 content/displayName/adult/generalTagIds，seriesTagIds 是规范 ID 数组，旧 seriesName/trigger 是只读审计字段。
 
 `exportBundle/previewImport/applyImport` 的完整实现归 Task 10；Task 3 阶段不接入这些 UI 入口，任务 9 的开发版若已展示入口则明确为尚未可用，桌面候选版启用前由 Task 10 完成。临时能力不允许作为已完成功能对用户交付。LibraryBundle/ImportPreview 在 Task 10 定义；transfer 模块负责纯转换，预览候选与 revision 由 library 实例保管，真正导入仍通过 execute，不增加第二个写入口。
 

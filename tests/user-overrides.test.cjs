@@ -58,3 +58,16 @@ test('favorite entries retain the character source reference for role-originated
   assert.equal(entry.sourceCharacterId, 'miku');
   assert.equal(favorites.getEntry(entry.id).sourceCharacterId, 'miku');
 });
+
+test('canonical character edits persist only identity Tag fields and relation overrides', async () => {
+  const { createHarness } = require('./fixtures/tag-library.cjs');
+  const h = createHarness(); await h.ready;
+  const characters = createCharacters({ library: h.library, characterSource: { characters: [{ id: 'alice' }, { id: 'bob' }] } });
+  assert.equal((await characters.edit('alice', { nameZh: '统一名称', aliases: [], tagIds: [] })).ok, true);
+  const document = await h.repository.read();
+  assert.deepEqual(document.tagOverrides[0].patch, { displayName: '统一名称' });
+  assert.deepEqual(Object.keys(document.characterOverrides[0]).sort(), ['characterId', 'generalTagIds', 'identityTagId', 'seriesTagIds', 'specificTagIds']);
+  const reopened = createCharacters({ library: await h.reload(), characterSource: { characters: [{ id: 'alice' }, { id: 'bob' }] } });
+  assert.equal(reopened.get('alice').nameZh, '统一名称'); assert.deepEqual(reopened.get('alice').generalTags, []);
+  assert.equal((await reopened.restore('alice')).ok, true); assert.equal(reopened.get('alice').nameZh, 'alice');
+});

@@ -85,3 +85,19 @@ test('character name index returns only the minimal identity fields for role loa
   assert.deepEqual(index[0], { id: 'alice_(story)', en: 'alice_(story)', zh: '爱丽丝', aliases: ['小爱'], nsfw: false, count: null });
   assert.equal(Object.prototype.hasOwnProperty.call(index[0], 'keywords'), false);
 });
+
+test('canonical factory accepts complete seed audit rows without accessing legacy tags, terms, or storage', async () => {
+  const { createHarness } = require('./fixtures/tag-library.cjs');
+  const h = createHarness(); await h.ready;
+  const source = { characters: [{ id: 'alice', trigger: 'audit trigger', count: 9 }, { id: 'bob', fallback: true }], manifest: { source: 'unified' } };
+  const options = { library: h.library, characterSource: source };
+  for (const key of ['tags', 'storage', 'data', 'dataDir']) Object.defineProperty(options, key, { get() { throw new Error('legacy source accessed'); } });
+  const characters = createCharacters(options);
+  source.characters[0].trigger = 'external mutation'; source.characters[0].count = 0;
+  assert.equal(characters.count(), 2); assert.equal(characters.size(), 2);
+  assert.equal(characters.get('alice').trigger, 'audit trigger'); assert.equal(characters.get('alice').count, 9);
+  assert.equal(characters.manifest().legacyFallbackCharacters, 1);
+  assert.equal(characters.page({ offset: 1, limit: 1 }).items[0].id, 'bob');
+  assert.equal(characters.get('missing'), null);
+  assert.equal(characters.editHistory().error.code, 'FEATURE_UNAVAILABLE');
+});

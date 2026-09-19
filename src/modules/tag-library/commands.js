@@ -199,6 +199,15 @@ function applyLibraryCommand(document, base, command, { ids, now } = {}) {
       case 'saveGroup': return { groupId: saveStructure('group', c) };
       case 'deleteGroup': case 'deletePage': deleteStructure(c); return {};
       case 'saveCharacterLinks': saveLinks(c.links); return {};
+      case 'restoreCharacter': {
+        const original = baseMaps.characters.get(c.characterId);
+        if (!original) reject('UNRESOLVED_REFERENCE', '角色不存在');
+        // Restore the original identity, even after an explicit relation change.
+        // Candidate validation rejects incompatible live selections atomically.
+        remove('characterOverrides', row => row.characterId === c.characterId);
+        remove('tagOverrides', row => row.tagId === original.identityTagId);
+        return {};
+      }
       case 'editCharacter': {
         const links = projection().characters.get(c.characterId); if (!links) reject('UNRESOLVED_REFERENCE', '角色不存在');
         if (c.identityPatch) {
