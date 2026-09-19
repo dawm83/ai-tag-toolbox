@@ -100,20 +100,27 @@ type SearchOptions = {
   scope: 'all' | 'favorites' | 'characters' | 'characterTraits';
   characterId?: string; categoryId?: string; subcategoryId?: string;
   pageId?: string; groupId?: string; includeAdult: boolean;
+  seriesId?: string; kind?: 'tag' | 'bundle' | 'all'; matchPrivate?: boolean;
   precision?: 'exact' | 'standard' | 'broad'; offset?: number; limit?: number;
 };
 type TagView = TagRecord & {
   favorite: boolean;
   favoriteLocations: { membershipId: string; pageId: string; pageName: string; groupId: string; groupName: string }[];
   characterId?: string;
+  characterIds?: string[]; characterMatches?: { characterId: string; score: number }[];
+  score?: number; matches?: { field: string; start: number; end: number }[];
 };
 interface TagLibrary {
   ready(): Promise<Result<{ migration: MigrationReceipt | null }>>;
+  retryInitialization(): Promise<Result<{ migration: MigrationReceipt | null }>>;
+  recoverBackup(): Promise<Result<{ migration: MigrationReceipt | null }>>;
   status(): { ready: boolean; writable: boolean; error: null | { code: string; message: string } };
   revision(): number;
   getTag(id: string): TagView | null;
   listTags(options: SearchOptions): Page<TagView>; // 浏览，非发现式查询
   search(query: string, options: SearchOptions): Page<TagView>;
+  tagCounts(options: { includeAdult?: boolean }): { categories: Record<string, number>; subcategories: Record<string, number> };
+  getTagIds(options: SearchOptions): string[]; // 只读浏览 ID 投影，不是 AI 任意读取工具
   getCategories(): Category[];
   getSubcategories(categoryId: string): Subcategory[];
   getFavoritePages(): FavoritePage[];
@@ -484,7 +491,7 @@ test('editing shared traits updates both roles, unlinking affects only one', asy
 
 **Interfaces:** `createTagSearchIndex({getTags,getMemberships,getCharacterLinks,getStructure})`，方法 `search(query,options)`、`invalidate(change)`；库的search返回统一Page。AI保留旧工具名，输出schema增加id/kind与收藏位置摘要，组合走有界内容投影。
 
-- [ ] 搜索资格测试：
+- [x] 搜索资格测试：
 
 ```js
 const { createHarness } = require('./fixtures/tag-library.cjs');
@@ -501,15 +508,15 @@ test('search disabled is consistent across discovery scopes, not browsing', asyn
 });
 ```
 
-- [ ] 索引更新资格谓词统一：有query时searchable；任何用户/AI可见查询都成人过滤；scope先过滤后排序/分页/total，不能先截页再过滤。
-- [ ] 名称、内容、显式别名全索引；内部收藏额外notes/页组名匹配保留，但不把备注暴露到AI普通搜索内容。高亮坐标映射Unicode原文，沿用已有normalized map。
-- [ ] Tag多收藏归属只返回一次，locations列全部合法归属；同名异ID保留独立。
-- [ ] tags.search不再将同一收藏文本作为第二份favorites结果附加；AI输出新schema清楚标kind。兼容过渡中旧字段若存在不得重复同tagId；最终prompt与schema统一。
-- [ ] characters.search先过滤身份词搜索/成人资格，再解析角色；不可独立搜索的专属词仍可从明确角色关系读取。原文输出按真实Tag.content。
-- [ ] 翻译词库索引改为仅单tag且searchable/adult满足当前设置；它可能通过tags.list/all建立词典，不能只改tags.search漏掉此旁路。
-- [ ] AI限制继续生效：tags最多200项、角色最多10项；单Tag内容过长不冒充完整值；bundle使用16000字符预算和contentOmitted，不裁出可被误用的半个权重Prompt。
-- [ ] 测试所有精度和scope、别名删除、metadata更新、hidden/成人旁路、重复收藏、分页total、Unicode高亮、角色新名称、工具结构和只读性。
-- [ ] 跑search/tool/translation目标测试 + `npm run check`；保存P2；提交。
+- [x] 索引更新资格谓词统一：有query时searchable；任何用户/AI可见查询都成人过滤；scope先过滤后排序/分页/total，不能先截页再过滤。
+- [x] 名称、内容、显式别名全索引；内部收藏额外notes/页组名匹配保留，但不把备注暴露到AI普通搜索内容。高亮坐标映射Unicode原文，沿用已有normalized map。
+- [x] Tag多收藏归属只返回一次，locations列全部合法归属；同名异ID保留独立。
+- [x] tags.search不再将同一收藏文本作为第二份favorites结果附加；AI输出新schema清楚标kind。兼容过渡中旧字段若存在不得重复同tagId；最终prompt与schema统一。
+- [x] characters.search先过滤身份词搜索/成人资格，再解析角色；不可独立搜索的专属词仍可从明确角色关系读取。原文输出按真实Tag.content。
+- [x] 翻译词库索引改为仅单tag且searchable/adult满足当前设置；它可能通过tags.list/all建立词典，不能只改tags.search漏掉此旁路。
+- [x] AI限制继续生效：tags最多200项、角色最多10项；单Tag内容过长不冒充完整值；bundle使用16000字符预算和contentOmitted，不裁出可被误用的半个权重Prompt。
+- [x] 测试所有精度和scope、别名删除、metadata更新、hidden/成人旁路、重复收藏、分页total、Unicode高亮、角色新名称、工具结构和只读性。
+- [x] 跑search/tool/translation目标测试 + `npm run check`；保存P2；提交。
 
 **验收:** U08/U09/U10，AI工具不能绕过统一检索规则。提交：`V1.4.317：统一标签搜索和AI查询投影`。
 
