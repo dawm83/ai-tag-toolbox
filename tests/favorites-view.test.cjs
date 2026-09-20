@@ -17,9 +17,11 @@ function fixture(t) {
   const section = favorites.saveSection({ seriesId: series.id, name: '发型' }).data;
   const entry = favorites.saveEntry({ seriesId: series.id, sectionId: section.id, rawText: 'blue_hair', title: '蓝发', note: '常用' }).data;
   const copied = [];
-  const view = createFavoritesView({ document: dom.window.document, favorites, preferences: storage.namespace('favorites-view'), copy: async value => { copied.push(value); return true; } });
+  const opens = []; let closeAllowed = false;
+  const tagEditor = { open: async value => { opens.push(value); return true; }, requestClose: async () => closeAllowed };
+  const view = createFavoritesView({ document: dom.window.document, favorites, tagEditor, preferences: storage.namespace('favorites-view'), copy: async value => { copied.push(value); return true; } });
   view.enter(); t.after(() => { view.destroy(); dom.window.close(); });
-  return { dom, storage, favorites, series, section, entry, view, copied };
+  return { dom, storage, favorites, series, section, entry, view, copied, opens, allowClose: () => { closeAllowed = true; } };
 }
 
 test('renders the current workbook page and preserves exact copied text', async t => {
@@ -30,22 +32,16 @@ test('renders the current workbook page and preserves exact copied text', async 
   assert.deepEqual(app.copied, ['blue_hair']);
 });
 
-test('editor saves a valid draft before closing and rejects an empty raw value', async t => {
+test('pencil delegates exact tag and membership to shared editor; leave honors its guard', async t => {
   const app = fixture(t);
+  const original = app.favorites.getEntry(app.entry.id);
   await app.view.openEditor(app.entry.id);
-  const note = app.dom.window.document.querySelector('[data-favorite-field="note"]'); note.value = '已修改'; note.dispatchEvent(new app.dom.window.Event('input', { bubbles: true }));
-  await app.view.flushEdits();
-  assert.equal(app.favorites.getEntry(app.entry.id).note, '已修改');
-  const raw = app.dom.window.document.querySelector('[data-favorite-field="rawText"]'); raw.value = ''; raw.dispatchEvent(new app.dom.window.Event('input', { bubbles: true }));
-  assert.equal(await app.view.flushEdits(), false);
-  assert.equal(app.dom.window.document.querySelector('[data-favorite-editor]').hidden, false);
+  assert.deepEqual(app.opens[0], { tagId: original.tagId, membershipId: original.id });
+  assert.equal(await app.view.leave(), false); app.allowClose(); assert.equal(await app.view.leave(), true);
+  assert.equal(app.dom.window.document.querySelector('[data-favorite-editor]'), null);
 });
-
-test('closing the quick editor removes it without changing the shelf', async t => {
-  const app = fixture(t);
-  app.dom.window.document.querySelector('[data-favorite-quick-new]').click(); await settle();
-  app.dom.window.document.querySelector('[data-favorite-quick-raw]').value = 'discarded';
-  app.dom.window.document.querySelector('[data-favorite-action="quick-close"]').click();
-  assert.equal(app.dom.window.document.querySelector('[data-favorite-quick-editor]').hidden, true);
-  assert.equal(app.favorites.list().total, 1);
+test('blank card delegates draft favorite placement without writing a tag', async t => {
+  const app = fixture(t); app.dom.window.document.querySelector('[data-favorite-quick-new]').click(); await settle();
+  assert.deepEqual(app.opens[0].placement, { kind:'favorite', page:{id:app.series.id}, group:{id:app.section.id} });
+  assert.equal(app.favorites.list().total, 1); assert.equal(app.dom.window.document.querySelector('[data-favorite-quick-editor]'), null);
 });

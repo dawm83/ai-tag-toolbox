@@ -8,7 +8,6 @@
 })(typeof globalThis !== 'undefined' ? globalThis : window, function createFactory() {
   const PAGE_SIZE = 50;
   const text = (value, fallback = '') => value == null || value === '' ? fallback : String(value);
-  const escapePrompt = value => text(value).replace(/\\([()])/g, '$1').replace(/[()]/g, '\\$&');
 
   const translations = {
     'zh-CN': {
@@ -35,8 +34,10 @@
     'en-US': { quality: 'Quality', negative: 'Negative prompt', character: 'Character', character_names: 'Character names', series: 'Series', body: 'Body', expression: 'Expression', eyes: 'Eyes', hair: 'Hair', features: 'Features', outfit: 'Outfit', footwear: 'Footwear', accessory: 'Accessories', pose: 'Pose', scene: 'Scene', camera: 'Camera', style: 'Style', time_weather: 'Time & weather', atmosphere: 'Atmosphere & light', effects: 'Effects & magic', food: 'Food & drinks', animal: 'Animals', other: 'Other', rating: 'Rating', nsfw: 'Adult', character_specific: 'Character-specific traits' }
   };
 
-  function createCharactersView({ document, characters, tags, favorites, openFavorites, onChange, copy, notify, getLocale } = {}) {
+  function createCharactersView({ document, characters, tags, catalog, tagEditor, favoriteTag, favoriteBundle, onChange, copy, notify, getLocale } = {}) {
     const doc = document || (typeof globalThis !== 'undefined' ? globalThis.document : null);
+    let relationshipDirty = false, relationshipBusy = false;
+    const listeners = [];
     const state = { query: '', precision: 'standard', includeAdult: false, seriesId: '', seriesQuery: '', offset: 0, detail: null, locale: '', bound: false };
     const q = selector => doc?.querySelector?.(selector);
     const locale = () => getLocale?.() === 'en-US' ? 'en-US' : 'zh-CN';
@@ -63,7 +64,7 @@
       const select = q('#characterSeries');
       if (!select) return [];
       let rows = [];
-      try { rows = characters?.series?.({ query: state.seriesQuery, limit: 100 }) || []; } catch { rows = []; }
+      try { rows = characters?.series?.({ query: state.seriesQuery, includeAdult: state.includeAdult, limit: 100 }) || []; } catch { rows = []; }
       select.replaceChildren();
       const all = element('option', '', label('allSeries'));
       all.value = '';
@@ -99,25 +100,10 @@
     }
 
     function copyText(withFeatures) {
-      if (!state.detail) return '';
-      const options = selectionOptions(withFeatures);
-      const general = new Set(options.generalTagIds);
-      const specific = new Set(options.specificTagIds);
-      const identityTags = state.detail.identityTags || [];
-      const values = options.includeSeries ? [...identityTags] : identityTags.slice(0, 1);
-      if (withFeatures) {
-        (state.detail.generalTags || []).forEach(item => { if (general.has(text(item.id))) values.push(text(item.en || item.id)); });
-        (state.detail.specificTags || []).forEach(item => { if (specific.has(text(item.id))) values.push(text(item.en || item.id)); });
-      }
-      return values.filter(Boolean).map(escapePrompt).join(', ');
+      return state.detail ? characters.copyText(state.detail.id, selectionOptions(withFeatures)) : '';
     }
-
     function appearanceText() {
-      if (!state.detail) return '';
-      const identityTags = state.detail.identityTags || [];
-      const values = q('[data-include-series]')?.checked === false ? identityTags.slice(0, 1) : [...identityTags];
-      (state.detail.generalTags || []).forEach(item => values.push(text(item.en || item.id)));
-      return values.filter(Boolean).map(escapePrompt).join(', ');
+      return state.detail ? characters.copyText(state.detail.id, { ...selectionOptions(false), generalTagIds: state.detail.generalTags.map(row => row.id) }) : '';
     }
 
     function appendValueList(host, values, emptyText = '') {
@@ -159,37 +145,60 @@
       return section;
     }
 
-    function removeEditPanel() { q('[data-character-edit-panel]')?.remove(); }
-    function showTagEditor(item) {
-      removeEditPanel();
-      const host = q('#characterDetail'); if (!host) return;
-      const panel = element('form', 'character-edit-panel'); panel.dataset.characterEditPanel = 'tag';
-      panel.appendChild(element('h4', '', label('editTag')));
-      const tag = doc.createElement('input'); tag.type = 'text'; tag.value = text(item.en || item.id); tag.dataset.characterEditTag = 'en';
-      const zh = doc.createElement('input'); zh.type = 'text'; zh.value = text(item.zh); zh.dataset.characterEditTag = 'zh'; zh.dataset.characterEdit = 'zh'; zh.placeholder = '中文说明';
-      const actions = element('div', 'character-edit-actions');
-      const save = element('button', 'abtn pri btn btn-primary', label('saveEdit')); save.type = 'submit';
-      const cancel = element('button', 'abtn btn btn-secondary', label('cancelEdit')); cancel.type = 'button'; cancel.onclick = () => removeEditPanel();
-      actions.append(save, cancel); panel.append(tag, zh, actions);
-      panel.onsubmit = event => { event.preventDefault(); const result = tags?.edit?.(item.id || item.en, { en: tag.value, zh: zh.value }); if (result?.ok === false) notify?.(result.error?.message || '修改失败'); else { notify?.(label('saveEdit')); removeEditPanel(); if (state.detail) openCharacter(state.detail.id); } };
-      host.appendChild(panel); tag.focus();
+    function removeEditPanel() { q('[data-character-edit-panel]')?.remove(); relationshipDirty = false; }
+    function requestClose() {
+      if (relationshipBusy || relationshipDirty) { notify?.(locale() === 'en-US' ? 'Save or cancel the relationship changes first' : '请先保存或取消角色关系修改'); return false; }
+      removeEditPanel(); return true;
+    }
+    async function showTagEditor(item) {
+      if (!await requestClose()) return false;
+      return tagEditor?.open({ tagId: item.id });
     }
     function showCharacterEditor(record) {
+      if (relationshipDirty || relationshipBusy) return;
       removeEditPanel();
-      const host = q('#characterDetail'); if (!host) return;
-      const panel = element('form', 'character-edit-panel'); panel.dataset.characterEditPanel = 'character';
-      panel.appendChild(element('h4', '', label('edit')));
-      const name = doc.createElement('input'); name.type = 'text'; name.value = text(record.name); name.dataset.characterEdit = 'name'; name.placeholder = 'Tag';
-      const nameZh = doc.createElement('input'); nameZh.type = 'text'; nameZh.value = text(record.nameZh); nameZh.dataset.characterEdit = 'nameZh'; nameZh.placeholder = '中文名称';
-      const aliases = doc.createElement('input'); aliases.type = 'text'; aliases.value = (record.aliases || []).join(', '); aliases.dataset.characterEdit = 'aliases'; aliases.placeholder = '别名（逗号分隔）';
-      const identity = doc.createElement('input'); identity.type = 'text'; identity.value = (record.identityTags || []).join(', '); identity.dataset.characterEdit = 'tagIds'; identity.placeholder = '角色 Tag（逗号分隔）';
-      const actions = element('div', 'character-edit-actions');
-      const save = element('button', 'abtn pri btn btn-primary', label('saveEdit')); save.type = 'submit';
-      const restore = element('button', 'abtn btn btn-secondary', label('restore')); restore.type = 'button'; restore.onclick = () => { const result = characters?.restore?.(record.id); if (result?.ok !== false) { removeEditPanel(); openCharacter(record.id); } };
-      const cancel = element('button', 'abtn btn btn-secondary', label('cancelEdit')); cancel.type = 'button'; cancel.onclick = () => removeEditPanel();
-      actions.append(save, restore, cancel); panel.append(name, nameZh, aliases, identity, actions);
-      panel.onsubmit = event => { event.preventDefault(); const result = characters?.edit?.(record.id, { name: name.value, nameZh: nameZh.value, aliases: aliases.value.split(/[,，]/).map(value => value.trim()).filter(Boolean), tagIds: identity.value.split(/[,，]/).map(value => value.trim()).filter(Boolean) }); if (result?.ok === false) notify?.(result.error?.message || '修改失败'); else { notify?.(label('saveEdit')); removeEditPanel(); openCharacter(record.id); render(); } };
-      host.appendChild(panel); nameZh.focus();
+      const host = q('#characterDetail'); if (!host || !catalog) return;
+      const links = catalog.getCharacterLinks(record.id), draft = {};
+      const panel = element('form', 'character-edit-panel'); panel.dataset.characterEditPanel = 'relationships';
+      panel.appendChild(element('h4', '', locale() === 'en-US' ? 'Character relationships' : '角色关系'));
+      const identity = element('button', 'btn btn-secondary', label('identity')); identity.type = 'button'; identity.dataset.characterIdentityEdit = record.identityTagId;
+      identity.onclick = () => showTagEditor({ id: record.identityTagId }); panel.append(identity);
+      for (const [field, title] of [['seriesTagIds', label('work')], ['generalTagIds', label('general')], ['specificTagIds', label('specific')]]) {
+        draft[field] = new Set(links[field]);
+        const section = element('section', 'character-relation-field'); section.dataset.characterRelation = field;
+        const heading = element('h5', '', title), search = element('input'); search.type = 'search'; search.placeholder = title; search.setAttribute('aria-label', title);
+        const selected = element('div'), choices = element('div'); section.append(heading, search, selected, choices); panel.append(section);
+        function renderSelected() {
+          selected.replaceChildren();
+          for (const id of draft[field]) {
+            const tag = catalog.getTag(id);
+            const button = element('button', 'btn btn-secondary', tag?.displayName || tag?.content || id); button.type = 'button'; button.dataset.relationRemove = id;
+            button.onclick = () => { draft[field].delete(id); relationshipDirty = true; renderSelected(); renderChoices(); }; selected.append(button);
+          }
+        }
+        function renderChoices() {
+          choices.replaceChildren();
+          const rows = catalog.search(search.value, { scope: 'all', includeAdult: state.includeAdult, limit: 40 }).items;
+          for (const tag of rows.filter(row => row.kind === 'tag' && !draft[field].has(row.id))) {
+            const button = element('button', 'btn btn-secondary', tag.displayName || tag.content); button.type = 'button'; button.dataset.relationAdd = tag.id;
+            button.title = tag.content;
+            button.onclick = () => { draft[field].add(tag.id); relationshipDirty = true; renderSelected(); renderChoices(); }; choices.append(button);
+          }
+        }
+        search.oninput = renderChoices; renderSelected(); renderChoices();
+      }
+      const status = element('p'); status.setAttribute('role', 'alert'); const save = element('button', 'btn btn-primary', label('saveEdit')); save.type = 'submit';
+      const cancel = element('button', 'btn btn-secondary', label('cancelEdit')); cancel.type = 'button'; cancel.dataset.characterRelationCancel = ''; cancel.onclick = () => { if (!relationshipBusy) removeEditPanel(); };
+      panel.append(status, save, cancel);
+      panel.onsubmit = async event => {
+        event.preventDefault(); if (relationshipBusy) return; relationshipBusy = true;
+        panel.querySelectorAll('button,input').forEach(node => { node.disabled = true; });
+        let result; try { result = await characters.edit(record.id, { links: { ...links, ...Object.fromEntries(Object.entries(draft).map(([key, values]) => [key, [...values]])) } }); } catch { result = { ok: false }; }
+        relationshipBusy = false;
+        if (result?.ok) { removeEditPanel(); openCharacter(record.id); render(); }
+        else { status.textContent = result?.error?.message || '保存失败'; panel.querySelectorAll('button,input').forEach(node => { node.disabled = false; }); }
+      };
+      host.append(panel); panel.querySelector('input')?.focus();
     }
 
     function renderDetail(record) {
@@ -207,7 +216,12 @@
       if (record.nameZh) titleWrap.appendChild(element('div', 'character-name-zh', record.nameZh));
       heading.appendChild(titleWrap);
       const editButton = element('button', 'character-detail-edit', '🖊'); editButton.type = 'button'; editButton.dataset.characterEdit = record.id; editButton.title = label('edit'); editButton.onclick = () => showCharacterEditor(record);
-      const favoriteButton = element('button', 'character-detail-favorite', '★'); favoriteButton.type = 'button'; favoriteButton.title = label('favorite'); favoriteButton.onclick = async () => { const rawText = copyText(false); const result = await openFavorites?.({ kind: 'tag', rawText, title: record.nameZh || record.name, sourceCharacterId: record.id }); if (result !== false) notify?.(label('favorite')); };
+      const favoriteButton = element('button', 'character-detail-favorite', '★'); favoriteButton.type = 'button'; favoriteButton.title = label('favorite'); favoriteButton.onclick = async () => {
+        if (!requestClose()) return;
+        const withTraits = selectedTraitIds('general').length || selectedTraitIds('specific').length;
+        const result = withTraits ? await favoriteBundle?.(copyText(true), record.nameZh || record.name) : await favoriteTag?.(record.identityTagId);
+        if (result !== false) notify?.(label('favorite'));
+      };
       heading.append(editButton, favoriteButton);
       host.appendChild(heading);
 
@@ -261,8 +275,9 @@
         const button = element('button', className, value);
         button.type = 'button';
         button.dataset.characterAction = action;
-        button.onclick = () => {
-          characters?.select?.(record.id, selectionOptions(action === 'features'));
+        button.onclick = async () => {
+          let result; try { result = await characters?.select?.(record.id, selectionOptions(action === 'features')); } catch { result = { ok: false }; }
+          if (result?.ok === false) { notify?.(result.error?.message || '选择失败'); return; }
           onChange?.();
           notify?.(label('added'));
         };
@@ -272,6 +287,7 @@
     }
 
     function openCharacter(id) {
+      if (relationshipBusy || relationshipDirty) return null;
       try {
         const record = characters?.get?.(id, { includeAdult: state.includeAdult });
         renderDetail(record);
@@ -287,7 +303,7 @@
     function render(options = {}) {
       const nextLocale = locale();
       const localeChanged = Boolean(state.locale && state.locale !== nextLocale);
-      const preservedSelection = localeChanged && state.detail ? selectionOptions(true) : null;
+      const preservedSelection = state.detail ? selectionOptions(true) : null;
       const searchChanged = options.query != null && text(options.query).trim() !== state.query;
       const precisionChanged = options.precision != null && text(options.precision, 'standard') !== state.precision;
       const adultChanged = options.includeAdult != null && Boolean(options.includeAdult) !== state.includeAdult;
@@ -296,7 +312,7 @@
       if (options.includeAdult != null) state.includeAdult = Boolean(options.includeAdult);
       state.locale = nextLocale;
       if (searchChanged || precisionChanged || adultChanged) state.offset = 0;
-      const openDetailId = adultChanged || localeChanged ? state.detail?.id : '';
+      const openDetailId = state.detail?.id;
       renderChrome();
       renderSeries();
       const host = q('#characterList');
@@ -326,6 +342,7 @@
         info.appendChild(element('small', '', String(Number(item.count) || 0)));
         button.append(names, info);
         button.onclick = () => {
+          if (!requestClose()) return;
           openCharacter(item.id);
           host?.querySelectorAll?.('.character-row').forEach(row => row.classList.toggle('on', row === button));
         };
@@ -333,7 +350,7 @@
       });
       const count = q('#characterCount'); if (count) count.textContent = String(Number(page.total) || 0);
       updatePaging(page);
-      if (openDetailId) {
+      if (openDetailId && !q('[data-character-edit-panel]')) {
         openCharacter(openDetailId);
         if (preservedSelection && !adultChanged) {
           const general = new Set(preservedSelection.generalTagIds);
@@ -357,13 +374,16 @@
       const next = q('#characterNext'); if (next) { next.textContent = label('next'); next.disabled = !page.hasMore; }
     }
 
+    function listen(selector, type, handler) {
+      const node = q(selector); node?.addEventListener(type, handler); listeners.push(() => node?.removeEventListener(type, handler));
+    }
     function bind() {
       if (state.bound) return;
       state.bound = true;
-      q('#characterSeriesQuery')?.addEventListener('input', event => { state.seriesQuery = text(event.target.value).trim(); renderSeries(); });
-      q('#characterSeries')?.addEventListener('change', event => { state.seriesId = text(event.target.value); state.offset = 0; render(); });
-      q('#characterPrev')?.addEventListener('click', () => { if (state.offset <= 0) return; state.offset = Math.max(0, state.offset - PAGE_SIZE); render(); });
-      q('#characterNext')?.addEventListener('click', () => { state.offset += PAGE_SIZE; render(); });
+      listen('#characterSeriesQuery', 'input', event => { state.seriesQuery = text(event.target.value).trim(); renderSeries(); });
+      listen('#characterSeries', 'change', event => { state.seriesId = text(event.target.value); state.offset = 0; render(); });
+      listen('#characterPrev', 'click', () => { if (state.offset <= 0) return; state.offset = Math.max(0, state.offset - PAGE_SIZE); render(); });
+      listen('#characterNext', 'click', () => { state.offset += PAGE_SIZE; render(); });
     }
 
     function resetSearch() {
@@ -374,7 +394,7 @@
 
     bind();
     renderDetail(null);
-    return { render, refresh: () => render(), resetSearch, openCharacter, getState: () => ({ ...state, detail: state.detail?.id || null }) };
+    return { requestClose, dispose() { listeners.splice(0).forEach(remove => remove()); removeEditPanel(); }, render, refresh: () => render(), resetSearch, openCharacter, getState: () => ({ ...state, detail: state.detail?.id || null }) };
   }
 
   return { createCharactersView };

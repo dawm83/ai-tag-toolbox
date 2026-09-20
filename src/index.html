@@ -15,6 +15,7 @@
     <link rel="stylesheet" href="app.css" />
     <link rel="stylesheet" href="characters.css" />
     <link rel="stylesheet" href="favorites.css" />
+    <link rel="stylesheet" href="tag-editor.css" />
   </head>
   <body>
     <header>
@@ -339,46 +340,6 @@
           >
           <div class="surl">ifdian.net/a/AI-Tag-Toolbox</div>
         </div>
-      </div>
-    </div>
-
-    <div class="modal" id="addModal">
-      <div class="box">
-        <button class="hbtn close btn btn-icon" id="addClose">✕</button>
-        <h3 data-i18n="ui.custom.title"></h3>
-        <div class="form">
-          <label
-            ><span data-i18n="ui.custom.english"></span>
-            <input id="nEn" placeholder="例如：sparkling water" />
-          </label>
-          <label
-            ><span data-i18n="ui.custom.chinese"></span>
-            <input id="nZh" placeholder="例如：气泡水" />
-          </label>
-          <label
-            ><span data-i18n="ui.custom.alias"></span>
-            <input id="nAl" placeholder="例如：苏打水 气泡饮" />
-          </label>
-          <label
-            ><span data-i18n="ui.custom.subcategory"></span>
-            <input id="nSub" placeholder="自定义" />
-          </label>
-          <label
-            ><span data-i18n="ui.custom.category"></span>
-            <select id="nCat"></select>
-          </label>
-          <label id="nNewCatWrap" style="display: none"
-            >新分类名称
-            <input id="nNewCat" placeholder="例如：机娘元素" />
-          </label>
-        </div>
-        <div class="form-acts">
-          <button class="abtn pri btn btn-primary" id="nSave" data-i18n="ui.custom.save"></button>
-          <button class="abtn ghost btn btn-secondary" id="nRestore" hidden>↺ 恢复默认</button>
-          <button class="abtn btn btn-secondary" id="nCancel" data-i18n="ui.custom.cancel"></button>
-        </div>
-        <div class="clhead" data-i18n="ui.custom.list"></div>
-        <div class="clist" id="customList"></div>
       </div>
     </div>
 
@@ -776,6 +737,8 @@
     <div class="toast" id="toast"></div>
 
     <script src="views/settings-view.js"></script>
+    <script src="views/tag-location-view.js"></script>
+    <script src="views/tag-editor-view.js"></script>
     <script src="views/favorites-view.js"></script>
     <script src="views/comfy-view.js"></script>
     <script src="views/prompt-view.js"></script>

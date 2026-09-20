@@ -104,9 +104,9 @@ function boot(options = {}) {
     save: value => { comfyProfile = structuredClone(value); return structuredClone(comfyProfile); },
     setActive: () => structuredClone(comfyProfile), remove: () => false
   };
-  const modules = { assistant, favorites: options.favorites, joinFavoriteBlocks: options.joinFavoriteBlocks, characters: options.characters, runtime: { listCallRecords: assistant.listCallRecords, clearCallRecords: assistant.clearCallRecords, ...options.runtime }, prompts, tags, images: { get: id => images.get(id), preview: id => images.get(id) }, imageRepository: repository, preferences: { get: (_k, fallback) => fallback, set: () => {} }, translation: options.translation || { findReferences: () => [] }, comfy, locales: options.locales || { 'zh-CN': {} }, version: '1.4.34' };
+  const modules = { catalog: options.catalog, formatTagOutput: options.formatTagOutput, assistant, favorites: options.favorites, joinFavoriteBlocks: options.joinFavoriteBlocks, characters: options.characters, runtime: { listCallRecords: assistant.listCallRecords, clearCallRecords: assistant.clearCallRecords, ...options.runtime }, prompts, tags, images: { get: id => images.get(id), preview: id => images.get(id) }, imageRepository: repository, preferences: { get: (_k, fallback) => fallback, set: () => {} }, translation: options.translation || { findReferences: () => [] }, comfy, locales: options.locales || { 'zh-CN': {} }, version: '1.4.34' };
 
-  for (const file of ['views/settings-view.js', 'views/comfy-view.js', 'views/prompt-view.js', 'views/agent-status-view.js', 'views/call-monitor-view.js', 'modules/translation-alignment.js', 'views/translation-view.js', 'views/favorites-view.js', 'app-view.js']) window.eval(source(file));
+  for (const file of ['views/tag-location-view.js', 'views/tag-editor-view.js', 'views/settings-view.js', 'views/comfy-view.js', 'views/prompt-view.js', 'views/agent-status-view.js', 'views/call-monitor-view.js', 'modules/translation-alignment.js', 'views/translation-view.js', 'views/favorites-view.js', 'app-view.js']) window.eval(source(file));
   if (options.favoritesView) window.AppViews.favorites = { createFavoritesView: () => options.favoritesView };
   const view = window.AppView.create(modules, window.document);
   view.start();
@@ -523,67 +523,37 @@ test('favorites route preserves draft on rejected leave and includes favorite sn
   assert.equal(snapshots.length, 0);
 });
 
-test('real favorites page creates exact content and keeps its selected snapshot independent of edits', async t => {
-  const { createFavorites } = require('../src/modules/favorites');
-  const { createStorage } = require('../src/modules/storage');
-  const { joinFavoriteBlocks } = require('../src/modules/favorites-transfer');
-  const storage = createStorage();
-  const favorites = createFavorites({ storage });
-  const app = boot({ favorites, joinFavoriteBlocks });
-  t.after(() => { app.view.views.favorites.destroy(); app.dom.window.close(); });
-  const doc = app.window.document;
-  const settle = () => new Promise(resolve => setTimeout(resolve, 0));
-  const copied = [];
+test('real canonical favorites keeps exact bundle content and live selection while preserving Comfy settings', async t => {
+  const { createHarness } = require('./fixtures/tag-library.cjs');
+  const { createFavorites, createTags } = require('../src/modules');
+  const { formatTagOutput } = require('../src/modules/tag-library');
+  const h = createHarness(); await h.ready;
+  const favorites = createFavorites({ library: h.library }), tags = createTags({ library: h.library });
+  const catalog = { ...h.library, execute: (command, options) => h.library.execute(structuredClone(command), structuredClone(options)) };
+  const app = boot({ catalog, favorites, tags, formatTagOutput });
+  t.after(() => { app.view.dispose(); favorites.dispose(); tags.dispose(); app.dom.window.close(); });
+  const doc = app.window.document, settle = () => new Promise(resolve => setImmediate(resolve)), copied = [];
   app.window.navigator.clipboard.writeText = async value => copied.push(value);
-  app.window.prompt = () => { throw new Error('Electron does not implement prompt'); };
-  doc.querySelector('#favBtn').click();
-  doc.querySelector('[data-favorite-action="new-series-tab"]').click();
-  await settle();
-  assert.equal(favorites.series().length, 2);
-  assert.match(favorites.series().at(-1).name, /新建收藏页/);
-  await app.view.views.favorites.openCreate({ kind: 'bundle', seriesId: favorites.series().at(-1).id });
-  const original = ' soft lighting, (blue_hair:1.2),\\(detail\\) \n';
-  for (const [field, value] of Object.entries({ title: 'Portrait', rawText: original })) {
-    const input = doc.querySelector(`[data-favorite-field="${field}"]`);
-    input.value = value;
-    input.dispatchEvent(new app.window.Event('input', { bubbles: true }));
-  }
-  doc.querySelector('[data-favorite-action="editor-close"]').click();
-  await settle();
-  const entry = favorites.list().items[0];
-  assert.equal(entry.rawText, original);
-  assert.equal(entry.globalSearchable, true);
-  doc.querySelector(`[data-favorite-select="${entry.id}"]`).click();
-  await settle();
-  assert.deepEqual(copied, [original]);
-  assert.equal(doc.querySelector('#preview').textContent, original);
-  const detail = doc.querySelector('.favorite-selection-details');
-  assert.ok(detail);
-  detail.open = true;
-  assert.equal(detail.querySelector('pre').textContent, original);
-  assert.ok(detail.querySelector('use').getAttribute('href').endsWith('#tag'));
-  favorites.saveEntry({ id: entry.id, rawText: 'new value' });
-  assert.equal(doc.querySelector('#preview').textContent, original);
-  doc.querySelector('#copyAll').click();
-  await settle();
-  assert.equal(copied.at(-1), original);
-  assert.equal(await app.view.route('tags'), true);
-  doc.querySelector('#favBtn').click();
-  doc.querySelector(`[data-favorite-copy="${entry.id}"]`).click();
-  await settle();
-  assert.deepEqual(copied, [original, original, 'new value']);
+  await app.view.route('favorites');
+  const original = ' soft lighting, (blue_hair:1.2),\\\\(detail\\\\) \\n';
+  await app.view.views.favorites.openCreate({ kind: 'bundle', rawText: original, seriesId: 'home', sectionId: 'daily' });
+  doc.querySelector('[data-tag-save]').click(); await settle();
+  const entry = favorites.list().items[0]; assert.equal(entry.rawText, original);
+  doc.querySelector(`[data-favorite-select="${entry.id}"]`).click(); await settle();
+  assert.equal(doc.querySelector('#preview').textContent, original); assert.equal(copied.at(-1), original);
+  await favorites.saveEntry({ id: entry.id, rawText: 'new value' });
+  assert.equal(doc.querySelector('#preview').textContent, 'new value');
+  doc.querySelector('#copyAll').click(); await settle(); assert.equal(copied.at(-1), 'new value');
   assert.equal(app.assistant.getSettings().comfyW, 768);
-  doc.querySelector(`[data-remove-favorite="${entry.id}"]`).click();
-  assert.equal(favorites.selected().length, 0);
-  assert.equal(favorites.list().total, 1);
-  assert.equal(await favorites.flush(), true);
-  assert.equal(createFavorites({ storage }).getEntry(entry.id).rawText, 'new value');
+  doc.querySelector('[data-selection-key]').click(); await settle(); assert.equal(h.library.selected().length, 0);
+  assert.equal(favorites.list().total, 1); assert.equal(await favorites.flush(), true);
 });
 
 test('global favorite results and English favorites labels use the real page and store', async t => {
   const { createFavorites } = require('../src/modules/favorites');
   const favorites = createFavorites();
   const seriesId = favorites.saveSeries({ name: 'Lighting' }).data.id;
+  favorites.saveSection({ seriesId, name: 'Main' });
   favorites.saveEntry({ seriesId, kind: 'bundle', title: 'Light group', rawText: 'soft lighting' });
   favorites.saveEntry({ seriesId, rawText: 'private lighting', globalSearchable: false });
   const tags = { stateSnapshot: () => ({ categories: [], categoryCounts: {}, selected: [], query: 'lighting', adult: false }), selected: () => [], page: () => ({ items: [], total: 0 }), restore() {}, subcategories: () => [] };
@@ -596,11 +566,13 @@ test('global favorite results and English favorites labels use the real page and
   result.click();
   await new Promise(resolve => setTimeout(resolve, 0));
   doc.querySelector('[data-remove-favorite]').click();
+  await new Promise(resolve => setImmediate(resolve));
   assert.equal(doc.querySelector('#favoriteSearchResults .chip').getAttribute('aria-pressed'), 'false');
   doc.querySelector('#favoriteSearchResults .chip').click();
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.equal(favorites.selected().length, 1);
   doc.querySelector('#clearSel').click();
+  await new Promise(resolve => setImmediate(resolve));
   assert.equal(doc.querySelector('#favoriteSearchResults .chip').getAttribute('aria-pressed'), 'false');
   app.window.document.querySelector('#localeBtn').click();
   app.window.document.querySelector('[data-locale="en-US"]').click();

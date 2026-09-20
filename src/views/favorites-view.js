@@ -6,7 +6,6 @@
   root.AppViews = root.AppViews || {};
   root.AppViews.favorites = api;
 })(typeof globalThis !== 'undefined' ? globalThis : window, function createFactory() {
-  const SAVE_DELAY = 300;
   const COLUMN_BATCH = 120;
   const INITIAL_COLUMN_BATCH = 60;
   const INITIAL_COLUMNS = 4;
@@ -23,6 +22,7 @@
     const doc = options.document || (typeof globalThis !== 'undefined' ? globalThis.document : null);
     const win = doc?.defaultView || (typeof window !== 'undefined' ? window : null);
     const favorites = options.favorites;
+    const tagEditor = options.tagEditor;
     const preferences = options.preferences;
     const copy = typeof options.copy === 'function' ? options.copy : async () => false;
     const notify = typeof options.notify === 'function' ? options.notify : () => {};
@@ -31,11 +31,11 @@
     const getIncludeAdult = typeof options.getIncludeAdult === 'function' ? options.getIncludeAdult : () => true;
     const host = doc?.querySelector?.('#favoritesView');
     const state = {
-      bound: false, active: false, destroyed: false, composing: false,
+      bound: false, active: false, destroyed: false,
       seriesId: '', sectionId: '',
       columnLimits: new Map(), loadedColumns: new Set(),
-      prefs: readPreferences(), editor: null, saveTimer: null,
-      quickEditor: null, contextTarget: null, pagesOpen: false, deleteTarget: null, draggedId: '', draggedStructure: null, returnFocus: null, dialog: null, editorSession: 0, columnObserver: null, scrollFrame: null, initializing: false
+      prefs: readPreferences(),
+      contextTarget: null, pagesOpen: false, deleteTarget: null, draggedId: '', draggedStructure: null, returnFocus: null, dialog: null, columnObserver: null, scrollFrame: null, initializing: false
     };
 
     function label(key, fallback) { return string(localize(key, fallback), fallback); }
@@ -122,53 +122,17 @@
       const body = el('div', 'favorites-body');
       const scroll = el('div', 'favorites-scroll'); scroll.dataset.favoriteScroll = '';
       const shelf = el('div', 'favorites-shelf'); shelf.dataset.favoriteShelf = '';
-      scroll.append(shelf); body.append(scroll, createEditor(), createQuickEditor());
+      scroll.append(shelf); body.append(scroll);
       host.append(anchors, subanchors, health, body, createContextMenu(), createDialog(), createPageManager(), createDeleteDialog());
       applyPreferences();
     }
 
-    function createQuickEditor() {
-      const panel = el('aside', 'favorite-quick-editor'); panel.dataset.favoriteQuickEditor = ''; panel.hidden = true;
-      const head = el('div', 'favorite-editor-head'); head.append(el('h3', '', label('favorites.quickCreate', '新增标签')), button('x', label('favorites.closeEditor', '关闭'), 'quick-close'));
-      const raw = el('input'); raw.type = 'text'; raw.dataset.favoriteQuickRaw = ''; raw.placeholder = 'Tag';
-      const title = el('input'); title.type = 'text'; title.dataset.favoriteQuickTitle = ''; title.placeholder = label('favorites.entryTitle', '名称或中文');
-      const note = el('textarea'); note.dataset.favoriteQuickNote = ''; note.placeholder = label('favorites.noteOptional', '备注（可选）');
-      const actions = el('div', 'favorite-editor-actions'); actions.append(actionTextButton('quick-cancel', label('favorites.cancel', '取消')), actionTextButton('quick-save', label('favorites.save', '保存'), 'primary'));
-      panel.append(head, raw, title, note, actions); return panel;
-    }
     function createContextMenu() {
       const menu = el('div', 'favorite-context-menu'); menu.dataset.favoriteContextMenu = ''; menu.hidden = true;
       menu.setAttribute('role', 'menu'); menu.setAttribute('aria-label', label('favorites.tabActions', '页签操作'));
       menu.append(actionTextButton('context-edit', label('favorites.edit', '编辑')), actionTextButton('context-delete', label('favorites.delete', '删除'), 'danger'));
       menu.querySelectorAll('button').forEach(item => item.setAttribute('role', 'menuitem'));
       return menu;
-    }
-    async function openQuickEditor(seriesId, sectionId, trigger = doc.activeElement) {
-      if ((state.editor || state.quickEditor) && !await finishEditorBeforeMutation()) return false;
-      const returnFocus = trigger;
-      const draft = state.quickEditor = { seriesId, sectionId };
-      const panel = host.querySelector('[data-favorite-quick-editor]'); if (!panel) return false;
-      panel.hidden = false;
-      const raw = panel.querySelector('[data-favorite-quick-raw]');
-      raw.value = ''; panel.querySelector('[data-favorite-quick-title]').value = ''; panel.querySelector('[data-favorite-quick-note]').value = '';
-      const focusRaw = () => {
-        if (state.quickEditor !== draft || !state.active || panel.hidden || !raw?.isConnected) return;
-        if (doc.activeElement === returnFocus || doc.activeElement === doc.body) raw.focus({ preventScroll: true });
-      };
-      raw.focus({ preventScroll: true });
-      win?.setTimeout?.(focusRaw, 0);
-      return true;
-    }
-    function closeQuickEditor() { state.quickEditor = null; const panel = host.querySelector('[data-favorite-quick-editor]'); if (panel) panel.hidden = true; }
-    async function saveQuickEditor() {
-      const panel = host.querySelector('[data-favorite-quick-editor]'); const draft = state.quickEditor; if (!panel || !draft) return false;
-      const rawText = string(panel.querySelector('[data-favorite-quick-raw]')?.value);
-      if (!rawText.trim()) { notify(label('favorites.rawRequired', 'Tag 不能为空')); panel.querySelector('[data-favorite-quick-raw]')?.focus(); return false; }
-      const result = safeCall('saveEntry', { ...(draft.id ? { id: draft.id } : {}), kind: 'tag', seriesId: draft.seriesId, sectionId: draft.sectionId, title: string(panel.querySelector('[data-favorite-quick-title]')?.value).trim(), rawText, zh: string(panel.querySelector('[data-favorite-quick-title]')?.value).trim(), note: string(panel.querySelector('[data-favorite-quick-note]')?.value) });
-      if (!result?.ok) { notify(result?.error?.message || label('favorites.saveFailed', '保存失败')); return false; }
-      draft.id = result.data.id;
-      if (!await safeCall('flush')) { notify(label('favorites.saveFailed', '保存失败')); return false; }
-      closeQuickEditor(); render(); return true;
     }
     function openContextMenu(kind, id, event) {
       const menu = host.querySelector('[data-favorite-context-menu]'); if (!menu) return;
@@ -246,25 +210,29 @@
       overlay.setAttribute('role', 'dialog'); overlay.setAttribute('aria-modal', 'true'); overlay.setAttribute('aria-labelledby', 'favorite-delete-heading');
       const panel = el('div', 'favorite-dialog-panel'); const heading = el('h3', '', label('favorites.delete', '删除')); heading.id = 'favorite-delete-heading';
       const message = el('p'); message.dataset.favoriteDeleteMessage = '';
+      const mode = el('select'); mode.dataset.favoriteDeleteMode = ''; mode.setAttribute('aria-label', label('favorites.deleteMode', '删除后的收藏处理'));
+      for (const [value, caption] of [['relocate', label('favorites.deleteRelocate', '移至未分类，保留收藏')], ['unfavorite', label('favorites.deleteUnfavorite', '同时取消这些收藏')]]) mode.append(optionNode(value, caption));
       const status = el('p', 'favorite-dialog-status'); status.dataset.favoriteDeleteStatus = ''; status.setAttribute('role', 'status');
-      const actions = el('div', 'favorite-editor-actions'); actions.append(actionTextButton('cancel-delete', label('favorites.cancel', '取消')), actionTextButton('confirm-delete', label('favorites.delete', '删除'), 'danger'));
-      panel.append(heading, message, status, actions); overlay.append(panel); return overlay;
+      const actions = el('div', 'favorite-dialog-actions'); actions.append(actionTextButton('cancel-delete', label('favorites.cancel', '取消')), actionTextButton('confirm-delete', label('favorites.delete', '删除'), 'danger'));
+      panel.append(heading, message, mode, status, actions); overlay.append(panel); return overlay;
     }
     function requestDelete(kind, id, returnFocus) {
       const row = kind === 'entry' ? safeCall('getEntry', id) : kind === 'series' ? seriesRows().find(item => item.id === id) : sectionRows(state.seriesId).find(item => item.id === id);
       if (!row) return false;
-      if (kind === 'entry') { win.clearTimeout(state.saveTimer); state.saveTimer = null; }
+
       closeContextMenu(); state.deleteTarget = { kind, id, row, returnFocus, busy: false };
       const dialog = host.querySelector('[data-favorite-delete-dialog]');
       const name = kind === 'entry' ? row.title || row.rawText || label('favorites.untitled', '未命名收藏') : row.name;
-      dialog.querySelector('[data-favorite-delete-message]').textContent = name + ' — ' + label(kind === 'entry' ? 'favorites.confirmDeleteEntry' : kind === 'series' ? 'favorites.confirmDeleteSeries' : 'favorites.confirmDeleteSection', '确定删除吗？');
+      dialog.querySelector('[data-favorite-delete-message]').textContent = name + ' — ' + label(kind === 'entry' ? 'favorites.confirmDeleteEntry' : 'favorites.confirmDeleteStructure', '确定删除此页或组？');
+      const mode = dialog.querySelector('[data-favorite-delete-mode]'); mode.hidden = kind === 'entry'; mode.value = 'relocate';
+      if (kind !== 'entry') { const total = safeCall('list', { ...(kind === 'series' ? { seriesId: id } : { sectionId: id }), includeAdult: true, limit: 1 })?.total || 0; dialog.querySelector('[data-favorite-delete-message]').append(doc.createTextNode(' · ' + label('favorites.deleteImpact', '影响 {count} 个收藏；标签内容保留').replace('{count}', total))); }
       dialog.querySelector('[data-favorite-delete-status]').textContent = ''; dialog.hidden = false;
       dialog.querySelector('[data-favorite-action="cancel-delete"]').focus(); return true;
     }
     function cancelDelete() {
       if (state.deleteTarget?.busy) return;
       const target = state.deleteTarget; state.deleteTarget = null; host.querySelector('[data-favorite-delete-dialog]')?.setAttribute('hidden', '');
-      if (target?.kind === 'entry' && state.editor?.id === target.id && state.editor.dirty) scheduleSave();
+
       restoreDialogFocus(target);
     }
     async function confirmDelete() {
@@ -272,14 +240,11 @@
       const confirm = host.querySelector('[data-favorite-action="confirm-delete"]');
       target.busy = true; confirm.disabled = true;
       try {
-        if (target.kind === 'entry') {
-          // Let an in-flight save finish, but do not require a valid draft to delete its saved entry.
-          await state.editor?.savePromise;
-        } else if (!await finishEditorBeforeMutation()) { host.querySelector('[data-favorite-delete-status]').textContent = label('favorites.saveFailed', '保存失败'); return false; }
-        const result = target.kind === 'entry' ? safeCall('deleteEntries', [target.id]) : target.kind === 'series' ? safeCall('deleteSeries', target.id, { mode: 'delete' }) : safeCall('deleteSection', target.id);
+        if (!await finishEditorBeforeMutation()) { host.querySelector('[data-favorite-delete-status]').textContent = label('favorites.saveFailed', '保存失败'); return false; }
+        const mode = host.querySelector('[data-favorite-delete-mode]').value;
+        const result = await (target.kind === 'entry' ? mutate('deleteEntries', [target.id]) : target.kind === 'series' ? mutate('deleteSeries', target.id, { mode }) : mutate('deleteSection', target.id, { mode }));
         if (!result?.ok) { host.querySelector('[data-favorite-delete-status]').textContent = result?.error?.message || label('favorites.operationFailed', '操作失败'); return false; }
         if (target.kind === 'entry') {
-          if (state.editor?.id === target.id) discardEditor();
           if (!await safeCall('flush')) { host.querySelector('[data-favorite-delete-status]').textContent = label('favorites.deleteSaveFailed', '删除未能保存，请重试'); return false; }
         }
         if (target.kind === 'series') savePreferences({ closedPageIds: state.prefs.closedPageIds.filter(id => id !== target.id) });
@@ -301,7 +266,7 @@
       const color = el('input', 'favorite-dialog-color'); color.type = 'color'; color.dataset.favoriteDialogColor = ''; color.hidden = true; color.id = 'favorite-dialog-color';
       const colorLabel = el('label', '', label('favorites.borderColor', '边框颜色')); colorLabel.htmlFor = color.id; colorLabel.dataset.favoriteDialogColorLabel = ''; colorLabel.hidden = true;
       const status = el('p', 'favorite-dialog-status'); status.dataset.favoriteDialogStatus = '';
-      const actions = el('div', 'favorite-editor-actions');
+      const actions = el('div', 'favorite-dialog-actions');
       const cancel = actionTextButton('dialog-cancel', label('favorites.cancel', '取消')); const confirm = actionTextButton('dialog-confirm', label('favorites.confirm', '确定'), 'primary');
       actions.append(cancel, confirm); panel.append(nameLabel, input, colorLabel, color, status, actions); dialog.append(panel); return dialog;
     }
@@ -319,61 +284,33 @@
       if (focus.dataset.sectionId) selector += `[data-section-id="${cssEscape(focus.dataset.sectionId)}"]`;
       host.querySelector(selector)?.focus();
     }
-    function submitNameDialog() {
+    async function submitNameDialog() {
       if (!state.dialog) return false;
       const input = host.querySelector('[data-favorite-dialog-input]'); const status = host.querySelector('[data-favorite-dialog-status]'); const name = string(input?.value).trim();
       if (!name) { if (status) status.textContent = label('favorites.nameRequired', '名称不能为空'); input?.focus(); return false; }
       const structure = state.dialog.structure; const color = host.querySelector('[data-favorite-dialog-color]');
       const patch = structure ? { id: structure.row.id, name, ...(structure.kind === 'section' ? { seriesId: structure.row.seriesId } : {}), ...(color.value.toUpperCase() !== structure.row.color?.toUpperCase() ? { color: color.value } : {}) } : null;
-      const result = structure ? safeCall(structure.kind === 'series' ? 'saveSeries' : 'saveSection', patch) : state.dialog.onSave(name);
+      const result = await (structure ? mutate(structure.kind === 'series' ? 'saveSeries' : 'saveSection', patch) : state.dialog.onSave(name));
       if (result?.ok === false) { if (status) status.textContent = result.error?.message || label('favorites.operationFailed', '操作失败'); return false; }
       const dialogState = state.dialog; state.dialog = null; const dialog = host.querySelector('[data-favorite-dialog]'); if (dialog) dialog.hidden = true;
       const dialogColor = host.querySelector('[data-favorite-dialog-color]'); if (dialogColor) dialogColor.hidden = true; render(); restoreDialogFocus(dialogState); return true;
     }
 
-    function createEditor() {
-      const aside = el('aside', 'favorite-editor'); aside.dataset.favoriteEditor = ''; aside.hidden = true;
-      aside.setAttribute('aria-label', label('favorites.editor', '收藏编辑器'));
-      const header = el('div', 'favorite-editor-head');
-      const title = el('h3', '', label('favorites.editor', '编辑收藏')); title.dataset.favoriteEditorTitle = '';
-      const previous = button('chevrons-left', label('favorites.previous', '上一条'), 'editor-prev'); previous.dataset.favoriteEditorPrev = '';
-      const next = button('chevrons-right', label('favorites.next', '下一条'), 'editor-next'); next.dataset.favoriteEditorNext = '';
-      header.append(title, previous, next, button('x', label('favorites.closeEditor', '关闭编辑器'), 'editor-close'));
-      const location = el('div', 'favorite-editor-location'); location.dataset.favoriteEditorLocation = '';
-      const form = el('form', 'favorite-editor-form'); form.dataset.favoriteEditorForm = '';
-      form.append(
-        editorSelect('seriesId', label('favorites.page', '收藏页'), []),
-        editorSelect('sectionId', label('favorites.column', '标签栏'), []),
-        editorTextarea('rawText', 'Tag', true),
-        editorInput('title', label('favorites.entryTitle', '名称')),
-        editorTextarea('note', label('favorites.note', '备注'))
-      );
-      const status = el('div', 'favorite-save-status'); status.dataset.favoriteSaveStatus = ''; status.setAttribute('aria-live', 'polite');
-      const actions = el('div', 'favorite-editor-actions');
-      const remove = actionTextButton('editor-delete', label('favorites.deleteEntry', '删除收藏'), 'danger favorite-editor-delete'); remove.hidden = true;
-      actions.append(remove, actionTextButton('editor-discard', label('favorites.discard', '放弃修改')), actionTextButton('editor-copy', label('favorites.copyDraft', '保存并复制')), actionTextButton('editor-save', label('favorites.save', '保存'), 'primary'));
-      aside.append(header, location, form, status, actions); return aside;
-    }
-    function editorFieldShell(name, field) {
-      const wrapper = el('label', 'favorite-field'); wrapper.append(el('span', '', name), field); return wrapper;
-    }
-    function editorInput(name, title) {
-      const field = el('input'); field.type = 'text'; field.dataset.favoriteField = name; return editorFieldShell(title, field);
-    }
-    function editorTextarea(name, title, required = false) {
-      const field = el('textarea'); field.dataset.favoriteField = name; field.required = required; return editorFieldShell(title, field);
-    }
-    function editorSelect(name, title, values) {
-      const field = el('select'); field.dataset.favoriteField = name; values.forEach(([value, textValue]) => field.append(optionNode(value, textValue))); return editorFieldShell(title, field);
-    }
     function safeCall(method, ...args) {
       try { return favorites?.[method]?.(...args); } catch (error) { notify(error.message || String(error)); return { ok: false, error: { message: error.message || String(error) } }; }
+    }
+    async function mutate(method, ...args) {
+      try {
+        const result = await favorites?.[method]?.(...args);
+        if (!result || result.ok === false) notify(result?.error?.message || label('favorites.operationFailed', '操作失败'));
+        return result || { ok: false };
+      } catch { notify(label('favorites.operationFailed', '操作失败')); return { ok: false }; }
     }
     function seriesRows() { const rows = safeCall('series'); return Array.isArray(rows) ? rows : []; }
     function sectionRows(seriesId) { const rows = safeCall('sections', seriesId); return Array.isArray(rows) ? rows : []; }
     function includeAdult() { try { return getIncludeAdult() !== false; } catch { return true; } }
     function allSelectedIds() {
-      try { return new Set((favorites?.selected?.({ includeAdult: true }) || []).map(row => row.entryId || row.id)); } catch { return new Set(); }
+      try { return new Set((favorites?.selected?.({ includeAdult: true }) || []).map(row => row.sourceTagId || row.tagId || row.entryId || row.id)); } catch { return new Set(); }
     }
 
     function render() {
@@ -388,21 +325,9 @@
       updateHistory(); applyPreferences();
     }
     function ensureWorkspace() {
-      if (state.initializing) return;
-      const snapshot = safeCall('snapshot'); if (snapshot?.loadError) return;
-      let rows = seriesRows();
-      if (!rows.length) {
-        state.initializing = true;
-        const created = safeCall('saveSeries', { name: label('favorites.newPage', '新建收藏页') });
-        state.initializing = false; rows = seriesRows();
-        if (created?.ok) { state.seriesId = created.data.id; savePreferences({ activeSeriesId: state.seriesId }); }
-      }
-      rows = openPages();
-      const active = rows.find(row => row.id === state.seriesId) || rows.find(row => row.id === state.prefs.activeSeriesId) || rows[0];
-      if (!active) return;
-      state.initializing = true;
-      try { safeCall('ensureTagColumns', active.id, label('favorites.newSectionTab', '新建标签栏')); }
-      finally { state.initializing = false; }
+      const rows = openPages();
+      if (!rows.some(row => row.id === state.seriesId)) state.seriesId = rows.find(row => row.id === state.prefs.activeSeriesId)?.id || rows[0]?.id || '';
+      if (!sectionRows(state.seriesId).some(row => row.id === state.sectionId)) state.sectionId = sectionRows(state.seriesId)[0]?.id || '';
     }
     function renderAnchors() {
       const anchors = host.querySelector('[data-favorite-anchors]'); if (!anchors) return;
@@ -438,7 +363,6 @@
     }
     async function setSectionVisibility(sectionId, visible) {
       if (!await finishEditorBeforeMutation()) { renderSubanchors(); return false; }
-      if (!visible && state.quickEditor?.sectionId === sectionId) closeQuickEditor();
       const hidden = hiddenSections(); visible ? hidden.delete(sectionId) : hidden.add(sectionId);
       saveHiddenSections(hidden); renderSubanchors(); renderShelf(); return true;
     }
@@ -527,7 +451,7 @@
       const title = el('button', 'favorite-section-title', string(section.name, section.id)); title.type = 'button'; title.dataset.favoriteAction = 'select-section'; title.dataset.sectionId = section.id; title.dataset.seriesId = series.id;
       head.append(title, el('span', 'favorite-section-count', rows.total));
       group.append(head);
-      const list = el('div', 'favorite-entry-list'); rows.items.forEach(entry => list.append(renderEntry(entry, selected.has(entry.id)))); list.append(renderQuickBlank(series, section)); group.append(list);
+      const list = el('div', 'favorite-entry-list'); rows.items.forEach(entry => list.append(renderEntry(entry, selected.has(entry.tagId || entry.id)))); list.append(renderQuickBlank(series, section)); group.append(list);
       if (rows.hasMore) { const more = actionTextButton('load-column', label('favorites.loadMore', '加载更多')); more.dataset.seriesId = series.id; more.dataset.sectionId = section.id; group.append(more); }
       return group;
     }
@@ -555,7 +479,8 @@
       const up = button('arrow-up', label('favorites.moveUp', '上移'), 'move-up'); up.dataset.entryId = entry.id;
       const down = button('arrow-down', label('favorites.moveDown', '下移'), 'move-down'); down.dataset.entryId = entry.id;
       const grip = button('grip-vertical', label('favorites.drag', '拖动排序'), '', 'favorite-drag-handle'); grip.tabIndex = -1;
-      actions.append(copyButton, edit, up, down, grip); item.append(main, actions);
+      const remove = button('trash-2', label('favorites.delete', '取消收藏'), 'delete-entry'); remove.dataset.entryId = entry.id;
+      actions.append(copyButton, edit, remove, up, down, grip); item.append(main, actions);
       if (entry.note) item.append(el('span', 'favorite-note-popover', entry.note));
       return item;
     }
@@ -568,7 +493,7 @@
       if (!host) return;
       const selected = allSelectedIds();
       host.querySelectorAll('[data-favorite-select]').forEach(node => {
-        const id = node.dataset.favoriteSelect; const active = selected.has(id); node.setAttribute('aria-pressed', String(active));
+        const id = node.dataset.favoriteSelect; const entry = safeCall('getEntry', id); const active = selected.has(entry?.tagId || id); node.setAttribute('aria-pressed', String(active));
         node.closest('[data-favorite-entry]')?.classList.toggle('is-selected', active);
       });
     }
@@ -578,163 +503,34 @@
       if (undo) undo.disabled = !value.canUndo; if (redo) redo.disabled = !value.canRedo;
     }
 
-    function editorSeriesOptions(selectedSeriesId, selectedSectionId) {
-      const series = host.querySelector('[data-favorite-field="seriesId"]'); const section = host.querySelector('[data-favorite-field="sectionId"]');
-      if (!series || !section) return;
-      series.replaceChildren(); seriesRows().forEach(row => series.append(optionNode(row.id, string(row.name, row.id))));
-      series.value = selectedSeriesId || series.options[0]?.value || '';
-      safeCall('ensureTagColumns', series.value, label('favorites.newSectionTab', '新建标签栏'));
-      const rows = sectionRows(series.value);
-      section.replaceChildren(...rows.map(row => optionNode(row.id, string(row.name, row.id))));
-      section.value = rows.some(row => row.id === selectedSectionId) ? selectedSectionId : rows[0]?.id || '';
-    }
-    function currentVisibleIds() {
-      return [...host.querySelectorAll('[data-favorite-entry]')].map(node => node.dataset.favoriteEntry);
-    }
     async function openCreate(value = {}) {
-      ensureShell();
-      const order = currentVisibleIds();
-      if (state.quickEditor && !await finishEditorBeforeMutation()) return false;
-      if (state.editor && !await flushEdits()) return false;
-      const firstSeries = value.seriesId || state.seriesId || seriesRows()[0]?.id || '';
-      safeCall('ensureTagColumns', firstSeries, label('favorites.newSectionTab', '新建标签栏'));
-      const sectionId = sectionRows(firstSeries).find(row => row.id === (value.sectionId || state.sectionId))?.id || sectionRows(firstSeries)[0]?.id || '';
-      const rawText = string(value.rawText); const kind = 'tag';
-      state.returnFocus = doc.activeElement;
-      state.editor = { session: ++state.editorSession, version: rawText ? 1 : 0, savePromise: null, id: null, creating: true, dirty: Boolean(rawText), saved: null, order, historyKey: `favorite-create-${Date.now()}`, draft: {
-        kind, seriesId: firstSeries, sectionId, sourceCharacterId: value.sourceCharacterId || null, title: string(value.title || value.zh), rawText, zh: string(value.zh), aliases: Array.isArray(value.aliases) ? [...value.aliases] : [], note: string(value.note), globalSearchable: value.globalSearchable !== false, nsfw: value.nsfw === true
-      } };
-      renderEditor(); return state.editor;
+      const pageId = value.seriesId || state.seriesId || seriesRows()[0]?.id;
+      const groupId = value.sectionId || state.sectionId || sectionRows(pageId)[0]?.id;
+      const placement = pageId && groupId ? { kind: 'favorite', page: { id: pageId }, group: { id: groupId } } : undefined;
+      return tagEditor?.open({ placement, initialValues: { kind: value.kind || 'tag', content: value.rawText || '', displayName: value.title || '' } }) ?? false;
     }
-    async function openEditor(entryId, preserveOrder = false) {
-      ensureShell();
-      if (state.editor?.id === entryId && !state.editor.creating) return true;
-      const order = preserveOrder && state.editor?.order?.length ? [...state.editor.order] : currentVisibleIds();
-      if (state.editor && !await flushEdits()) return false;
-      const existing = safeCall('getEntry', entryId); if (existing) safeCall('ensureTagColumns', existing.seriesId, label('favorites.newSectionTab', '新建标签栏'));
-      const entry = safeCall('getEntry', entryId); if (!entry) { notify(label('favorites.notFound', '收藏不存在')); return false; }
-      if (!preserveOrder) state.returnFocus = doc.activeElement;
-      state.editor = { session: ++state.editorSession, version: 0, savePromise: null, id: entry.id, creating: false, dirty: false, saved: { ...entry, aliases: [...(entry.aliases || [])] }, order: order.includes(entry.id) ? order : [...order, entry.id], historyKey: `favorite-edit-${entry.id}-${Date.now()}`, draft: { ...entry, title: string(entry.title || entry.zh), aliases: [...(entry.aliases || [])] } };
-      renderEditor(); return true;
+    async function openEditor(entryId) {
+      const entry = safeCall('getEntry', entryId);
+      return entry ? tagEditor?.open({ tagId: entry.tagId, membershipId: entry.id }) ?? false : false;
     }
-    function renderEditor() {
-      const panel = host.querySelector('[data-favorite-editor]'); if (!panel || !state.editor) return;
-      panel.hidden = false; panel.dataset.entryId = state.editor.id || '';
-      panel.querySelector('[data-favorite-action="editor-delete"]').hidden = !state.editor.id;
-      const draft = state.editor.draft; editorSeriesOptions(draft.seriesId, draft.sectionId);
-      host.querySelectorAll('[data-favorite-field]').forEach(field => {
-        const key = field.dataset.favoriteField; const value = key === 'aliases' ? (draft.aliases || []).join(', ') : draft[key];
-        if (field.type === 'checkbox') field.checked = Boolean(value); else field.value = value == null ? '' : String(value);
-      });
-      const parent = seriesRows().find(row => row.id === draft.seriesId); const section = sectionRows(draft.seriesId).find(row => row.id === draft.sectionId);
-      host.querySelector('[data-favorite-editor-location]').textContent = [parent?.name, section?.name].filter(Boolean).join(' / ');
-      host.querySelector('[data-favorite-editor-title]').textContent = state.editor.creating ? label('favorites.create', '新增收藏') : label('favorites.edit', '编辑收藏');
-      setSaveStatus('editing', label('favorites.editing', '编辑中'));
-      host.querySelector('[data-favorite-field="rawText"]')?.focus();
-    }
-    function readDraftFromFields(changedField = null) {
-      if (!state.editor) return;
-      const fields = changedField ? [changedField] : host.querySelectorAll('[data-favorite-field]');
-      fields.forEach(field => {
-        const key = field.dataset.favoriteField;
-        if (field.type === 'checkbox') state.editor.draft[key] = field.checked;
-        else if (key === 'aliases') state.editor.draft.aliases = field.value.split(/[,，\n]/).map(value => value.trim()).filter(Boolean);
-        else if (key === 'sectionId') state.editor.draft[key] = field.value || null;
-        else { state.editor.draft[key] = field.value; if (key === 'title') state.editor.draft.zh = field.value; }
-      });
-      state.editor.version += 1; state.editor.dirty = true; setSaveStatus('editing', label('favorites.editing', '编辑中'));
-    }
-    function setSaveStatus(kind, value) {
-      const status = host?.querySelector('[data-favorite-save-status]'); if (!status) return; status.dataset.status = kind; status.textContent = value;
-    }
-    function scheduleSave() {
-      win?.clearTimeout?.(state.saveTimer); state.saveTimer = null;
-      if (!state.editor || state.composing || (state.deleteTarget?.kind === 'entry' && state.deleteTarget.id === state.editor.id)) return;
-      state.saveTimer = win.setTimeout(() => { state.saveTimer = null; commitDraft(true); }, SAVE_DELAY);
-    }
-    async function commitDraft(flushStorage = true) {
-      win?.clearTimeout?.(state.saveTimer); state.saveTimer = null;
-      const editor = state.editor;
-      if (!editor) return flushStorage ? Boolean(await safeCall('flush')) : true;
-      if (editor.savePromise) return editor.savePromise;
-      if (!editor.dirty) return flushStorage ? Boolean(await safeCall('flush')) : true;
-      const saving = (async () => {
-        while (state.editor === editor && editor.dirty) {
-          if (state.deleteTarget?.kind === 'entry' && state.deleteTarget.id === editor.id) return false;
-          const version = editor.version;
-          const patch = { ...editor.draft, aliases: [...(editor.draft.aliases || [])] };
-          if (!string(patch.rawText).trim()) { setSaveStatus('invalid', label('favorites.rawRequired', '原文不能为空')); return false; }
-          if (!sectionRows(patch.seriesId).some(row => row.id === patch.sectionId)) { setSaveStatus('invalid', label('favorites.columnRequired', '请选择标签栏')); return false; }
-          if (!patch.seriesId) { setSaveStatus('invalid', label('favorites.seriesRequired', '请选择系列')); return false; }
-          if (editor.id) patch.id = editor.id; else delete patch.id;
-          setSaveStatus('saving', label('favorites.saving', '保存中'));
-          const result = safeCall('saveEntry', patch, { historyKey: editor.historyKey });
-          if (!result?.ok) { setSaveStatus('failed', result?.error?.message || label('favorites.saveFailed', '保存失败')); return false; }
-          if (state.editor !== editor) return true;
-          editor.id = result.data.id; editor.creating = false;
-          host.querySelector('[data-favorite-action="editor-delete"]').hidden = false;
-          const persisted = !flushStorage || Boolean(await safeCall('flush'));
-          if (state.editor !== editor) return persisted;
-          if (!persisted) { setSaveStatus('failed', label('favorites.saveFailed', '保存失败')); return false; }
-          if (editor.version !== version) { editor.dirty = true; setSaveStatus('editing', label('favorites.editing', '编辑中')); continue; }
-          editor.draft = { ...result.data, aliases: [...(result.data.aliases || [])] };
-          editor.saved = { ...editor.draft, aliases: [...editor.draft.aliases] };
-          editor.dirty = false; setSaveStatus('saved', label('favorites.saved', '已保存'));
-          if (editor.endTransactionAfterSave) { editor.endTransactionAfterSave = false; editor.historyKey = `favorite-edit-${editor.id}-${Date.now()}`; }
-        }
-        return true;
-      })();
-      editor.savePromise = saving;
-      try { return await saving; } finally { if (editor.savePromise === saving) editor.savePromise = null; }
-    }
-    async function flushEdits() { return commitDraft(true); }
-    function endEditorTransaction() {
-      if (!state.editor) return;
-      if (state.editor.dirty) state.editor.endTransactionAfterSave = true;
-      else state.editor.historyKey = `favorite-edit-${state.editor.id || 'new'}-${Date.now()}`;
-    }
-    async function saveEditorTransaction() {
-      if (!await flushEdits()) return false;
-      endEditorTransaction(); discardEditor(); return true;
-    }
-    async function finishEditorBeforeMutation() {
-      if (state.quickEditor) {
-        const panel = host.querySelector('[data-favorite-quick-editor]');
-        const hasDraft = [...panel.querySelectorAll('input,textarea')].some(field => field.value.trim());
-        if (hasDraft && !await saveQuickEditor()) return false;
-        closeQuickEditor();
-      }
-      if (!state.editor) return true;
-      if (!await flushEdits()) return false;
-      discardEditor(); return true;
-    }
-    async function navigateEditor(direction) {
-      if (!state.editor || !await flushEdits()) return false;
-      const order = state.editor.order; const index = order.indexOf(state.editor.id); const next = order[index + direction];
-      if (!next) return false; return openEditor(next, true);
-    }
-    function discardEditor() {
-      win?.clearTimeout?.(state.saveTimer); state.saveTimer = null;
-      const focus = state.returnFocus; state.editor = null; const panel = host.querySelector('[data-favorite-editor]'); if (panel) panel.hidden = true;
-      render(); if (focus?.isConnected) focus.focus(); return true;
-    }
+    async function finishEditorBeforeMutation() { return await tagEditor?.requestClose?.() !== false; }
+    async function flushEdits() { return finishEditorBeforeMutation(); }
 
     function refreshChangedEntries(ids) {
       const selected = allSelectedIds();
       unique(ids).forEach(id => {
-        if (state.editor?.id === id) return;
+
         const entry = safeCall('getEntry', id);
         host.querySelectorAll(`[data-favorite-entry="${cssEscape(id)}"]`).forEach(node => {
-          if (!entry) node.remove(); else node.replaceWith(renderEntry(entry, selected.has(id)));
+          if (!entry) node.remove(); else node.replaceWith(renderEntry(entry, selected.has(entry.tagId || id)));
         });
       });
     }
 
     async function copyEntry(id, select = false) {
-      if (state.editor?.id === id && state.editor.dirty && !await flushEdits()) return false;
       const entry = safeCall('getEntry', id); if (!entry || !string(entry.rawText).trim()) { notify(label('favorites.invalidFavorite', '收藏原文无效，请先编辑修复')); return false; }
       if (select) {
-        const selected = allSelectedIds(); const result = safeCall('setSelected', id, !selected.has(id));
+        const selected = allSelectedIds(); const result = await mutate('setSelected', id, !selected.has(entry.tagId || id));
         if (!result?.ok) { notify(result?.error?.message || label('favorites.selectFailed', '选择失败')); return false; }
         onSelectionChange(result.data || favorites.selected?.({ includeAdult: includeAdult() }) || []);
         syncSelection();
@@ -742,14 +538,14 @@
       const value = safeCall('copyText', [id]);
       if (!value) return false;
       let copied = false; try { copied = Boolean(await copy(value)); } catch { copied = false; }
-      if (copied) { safeCall('markCopied', [id]); notify(label('favorites.copied', '已复制')); } else notify(label('favorites.copyFailed', '复制失败，请检查剪贴板权限'));
+      if (copied) { await mutate('markCopied', [id]); notify(label('favorites.copied', '已复制')); } else notify(label('favorites.copyFailed', '复制失败，请检查剪贴板权限'));
       return copied;
     }
     function cssEscape(value) { return win?.CSS?.escape ? win.CSS.escape(value) : String(value).replace(/[^a-zA-Z0-9_-]/g, '\\$&'); }
 
     async function focusEntry(entryId) {
       let entry = safeCall('getEntry', entryId); if (!entry || (entry.nsfw && !includeAdult())) return false;
-      safeCall('ensureTagColumns', entry.seriesId, label('favorites.newSectionTab', '新建标签栏')); entry = safeCall('getEntry', entryId);
+
       if (!await finishEditorBeforeMutation()) return false;
       state.seriesId = entry.seriesId; savePreferences({ activeSeriesId: entry.seriesId, closedPageIds: state.prefs.closedPageIds.filter(id => id !== entry.seriesId) });
       const sectionId = entry.sectionId; const hidden = hiddenSections(); hidden.delete(sectionId); saveHiddenSections(hidden);
@@ -770,25 +566,25 @@
       const entry = safeCall('getEntry', id); if (!entry) return;
       const parent = entry.sectionId || entry.seriesId; const rows = readEntries(entry.seriesId, entry.sectionId || null, 10000, true).items; const ids = rows.map(row => row.id); const index = ids.indexOf(id); const next = index + direction;
       if (index < 0 || next < 0 || next >= ids.length) return;
-      [ids[index], ids[next]] = [ids[next], ids[index]]; const result = safeCall('reorder', { kind: 'entry', parentId: parent, ids }); if (result?.ok) render();
+      [ids[index], ids[next]] = [ids[next], ids[index]]; const result = await mutate('reorder', { kind: 'entry', parentId: parent, ids }); if (result?.ok) render();
     }
     async function reorderStructure(kind, id, direction, parentId = null) {
       if (!await finishEditorBeforeMutation()) return false;
       const rows = kind === 'series' ? seriesRows() : sectionRows(parentId); const ids = rows.map(row => row.id); const index = ids.indexOf(id); const next = index + direction;
       if (index < 0 || next < 0 || next >= ids.length) return false;
-      [ids[index], ids[next]] = [ids[next], ids[index]]; const result = safeCall('reorder', { kind, parentId, ids }); if (result?.ok) render(); return Boolean(result?.ok);
+      [ids[index], ids[next]] = [ids[next], ids[index]]; const result = await mutate('reorder', { kind, parentId, ids }); if (result?.ok) render(); return Boolean(result?.ok);
     }
 
     async function structureAction(action, target) {
       if (action === 'new-series-tab') {
         if (!await finishEditorBeforeMutation()) return false;
-        const result = safeCall('saveSeries', { name: `${label('favorites.newPage', '新建收藏页')} ${seriesRows().length + 1}` });
+        const result = await mutate('saveSeries', { name: `${label('favorites.newPage', '新建收藏页')} ${seriesRows().length + 1}` });
         if (result?.ok) { state.seriesId = result.data.id; state.sectionId = ''; savePreferences({ activeSeriesId: state.seriesId }); render(); }
         return Boolean(result?.ok);
       }
       if (action === 'new-section-tab') {
         if (!await finishEditorBeforeMutation()) return false;
-        const seriesId = target.dataset.seriesId || state.seriesId; const result = safeCall('saveSection', { seriesId, name: `${label('favorites.newSectionTab', '新建标签栏')} ${sectionRows(seriesId).length + 1}` });
+        const seriesId = target.dataset.seriesId || state.seriesId; const result = await mutate('saveSection', { seriesId, name: `${label('favorites.newSectionTab', '新建标签栏')} ${sectionRows(seriesId).length + 1}` });
         if (result?.ok) { state.seriesId = seriesId; state.sectionId = result.data.id; render(); }
         return Boolean(result?.ok);
       }
@@ -806,12 +602,11 @@
       if (action === 'toggle-pages') { state.pagesOpen = !state.pagesOpen; target.setAttribute('aria-expanded', String(state.pagesOpen)); renderPageManager(); return; }
       if (action === 'close-page') return void closePage(target.dataset.seriesId);
       if (action === 'open-page') return void selectSeries(target.dataset.seriesId);
+      if (action === 'delete-entry') return void requestDelete('entry', target.dataset.entryId, target);
       if (action === 'delete-page') return void requestDelete('series', target.dataset.seriesId, target);
       if (action === 'cancel-delete') return void cancelDelete();
       if (action === 'confirm-delete') return void confirmDelete();
-      if (Object.prototype.hasOwnProperty.call(target.dataset, 'favoriteQuickNew')) return void openQuickEditor(target.dataset.seriesId, target.dataset.sectionId, target);
-      if (action === 'quick-close' || action === 'quick-cancel') { closeQuickEditor(); return; }
-      if (action === 'quick-save') return void saveQuickEditor();
+      if (Object.prototype.hasOwnProperty.call(target.dataset, 'favoriteQuickNew')) return void openCreate({ seriesId: target.dataset.seriesId, sectionId: target.dataset.sectionId });
       if (action === 'context-edit') return void contextEdit();
       if (action === 'context-delete') return void contextDelete();
       if (action === 'dialog-cancel') { closeNameDialog(); return; }
@@ -820,18 +615,11 @@
       if (action === 'new-section-tab') return void structureAction('new-section-tab', target);
       if (action === 'toggle-section') return void setSectionVisibility(target.dataset.sectionId, hiddenSections().has(target.dataset.sectionId));
       if (action === 'select-section') { state.sectionId = target.dataset.sectionId; renderSubanchors(); renderShelf(); host.querySelector(`[data-favorite-section="${cssEscape(state.sectionId)}"]`)?.scrollIntoView?.({ behavior: 'smooth', inline: 'center' }); return; }
-      if (action === 'undo' || action === 'redo') { if (!await finishEditorBeforeMutation()) return; safeCall(action); render(); return; }
+      if (action === 'undo' || action === 'redo') { if (!await finishEditorBeforeMutation()) return; await mutate(action); render(); return; }
       if (action === 'zoom-out') return void setZoom(state.prefs.zoom - 10);
       if (action === 'zoom-in') return void setZoom(state.prefs.zoom + 10);
       if (action === 'zoom-reset') return void setZoom(100);
       if (action === 'select-series') return void selectSeries(target.dataset.seriesId);
-      if (action === 'editor-prev') return void navigateEditor(-1);
-      if (action === 'editor-next') return void navigateEditor(1);
-      if (action === 'editor-close') { if (await flushEdits()) discardEditor(); return; }
-      if (action === 'editor-discard') return void discardEditor();
-      if (action === 'editor-save') return void saveEditorTransaction();
-      if (action === 'editor-delete') return void requestDelete('entry', state.editor?.id, target);
-      if (action === 'editor-copy') { if (await flushEdits()) await copyEntry(state.editor.id, false); return; }
       if (action === 'move-up') return void reorderEntry(target.dataset.entryId, -1);
       if (action === 'move-down') return void reorderEntry(target.dataset.entryId, 1);
       if (action === 'move-series-up') return void reorderStructure('series', target.dataset.seriesId, -1, null);
@@ -863,9 +651,6 @@
       });
       const plus = button('plus', label('favorites.newSectionTab', '新建标签栏'), 'new-section-tab'); plus.dataset.seriesId = state.seriesId; nav.append(plus);
     }
-    function handleInput(event) {
-      if (event.target.matches('[data-favorite-field]')) { readDraftFromFields(event.target); scheduleSave(); }
-    }
     function handleContextMenu(event) {
       const series = event.target.closest?.('[data-favorite-series-tab]'); const section = event.target.closest?.('[data-favorite-section-tab], [data-favorite-section-head]');
       if (!series && !section) return;
@@ -878,11 +663,7 @@
       if (target.matches('[data-favorite-primary]')) { savePreferences({ primary: target.value }); renderShelf(); return; }
       if (target.matches('[data-favorite-secondary]')) { savePreferences({ showSecondary: target.checked }); renderShelf(); return; }
       if (target.matches('[data-favorite-compact]')) { savePreferences({ compact: target.checked }); return; }
-      if (target.matches('[data-favorite-field="seriesId"]')) { readDraftFromFields(target); editorSeriesOptions(target.value, null); readDraftFromFields(host.querySelector('[data-favorite-field="sectionId"]')); scheduleSave(); }
     }
-    function handleCompositionStart(event) { if (event.target.matches('[data-favorite-field]')) { state.composing = true; win.clearTimeout(state.saveTimer); state.saveTimer = null; } }
-    function handleCompositionEnd(event) { if (event.target.matches('[data-favorite-field]')) { state.composing = false; readDraftFromFields(event.target); scheduleSave(); } }
-    function handleFocusOut(event) { if (event.target.matches?.('[data-favorite-field]') && !event.relatedTarget?.matches?.('[data-favorite-field]')) endEditorTransaction(); }
     async function handleKeydown(event) {
       if (!state.active || state.destroyed) return;
       if (state.deleteTarget && event.key === 'Escape') { event.preventDefault(); cancelDelete(); return; }
@@ -897,11 +678,11 @@
       }
       if (state.dialog && event.key === 'Enter' && event.target.matches?.('[data-favorite-dialog-input]')) { event.preventDefault(); submitNameDialog(); return; }
       const editable = event.target.matches?.('input, textarea, select, [contenteditable="true"]');
-      if (event.key === 'Escape') { if (state.dialog) { event.preventDefault(); closeNameDialog(); } else if (state.editor) { event.preventDefault(); discardEditor(); } return; }
+      if (event.key === 'Escape') { if (state.dialog) { event.preventDefault(); closeNameDialog(); } return; }
       if (event.key === 'F2') { const entry = event.target.closest?.('[data-favorite-entry]'); if (entry) { event.preventDefault(); openEditor(entry.dataset.favoriteEntry); } return; }
       if ((event.ctrlKey || event.metaKey) && !editable && event.key.toLowerCase() === 'c' && !win.getSelection?.()?.toString()) { const entry = event.target.closest?.('[data-favorite-entry]'); if (entry) { event.preventDefault(); copyEntry(entry.dataset.favoriteEntry, false); } }
-      if ((event.ctrlKey || event.metaKey) && !editable && event.key.toLowerCase() === 'z') { event.preventDefault(); if (await finishEditorBeforeMutation()) { safeCall(event.shiftKey ? 'redo' : 'undo'); render(); } }
-      if ((event.ctrlKey || event.metaKey) && !editable && event.key.toLowerCase() === 'y') { event.preventDefault(); if (await finishEditorBeforeMutation()) { safeCall('redo'); render(); } }
+      if ((event.ctrlKey || event.metaKey) && !editable && event.key.toLowerCase() === 'z') { event.preventDefault(); if (await finishEditorBeforeMutation()) { await mutate(event.shiftKey ? 'redo' : 'undo'); render(); } }
+      if ((event.ctrlKey || event.metaKey) && !editable && event.key.toLowerCase() === 'y') { event.preventDefault(); if (await finishEditorBeforeMutation()) { await mutate('redo'); render(); } }
     }
     function handleDragStart(event) {
       const entry = event.target.closest?.('[data-favorite-entry]');
@@ -919,30 +700,31 @@
         event.preventDefault(); const kind = state.draggedStructure.kind; const targetId = structureTarget.dataset.sectionId || structureTarget.dataset.favoriteSectionHead || structureTarget.dataset.seriesId;
         if (targetId && targetId !== state.draggedStructure.id && (kind === 'series' || structureTarget.dataset.seriesId === state.draggedStructure.seriesId)) {
           const rows = kind === 'series' ? seriesRows() : sectionRows(state.draggedStructure.seriesId); const ids = rows.map(row => row.id); const from = ids.indexOf(state.draggedStructure.id); const to = ids.indexOf(targetId);
-          if (from >= 0 && to >= 0) { ids.splice(from, 1); ids.splice(to, 0, state.draggedStructure.id); safeCall('reorder', { kind, parentId: kind === 'series' ? null : state.draggedStructure.seriesId, ids }); render(); }
+          if (from >= 0 && to >= 0) { ids.splice(from, 1); ids.splice(to, 0, state.draggedStructure.id); await mutate('reorder', { kind, parentId: kind === 'series' ? null : state.draggedStructure.seriesId, ids }); render(); }
         }
         state.draggedStructure = null; return;
       }
       const target = event.target.closest?.('[data-favorite-entry]'); const sourceId = state.draggedId || event.dataTransfer?.getData?.('text/plain'); if (!target || !sourceId || target.dataset.favoriteEntry === sourceId) return;
       event.preventDefault(); const source = safeCall('getEntry', sourceId); const destination = safeCall('getEntry', target.dataset.favoriteEntry); if (!source || !destination || source.seriesId !== destination.seriesId || source.sectionId !== destination.sectionId) return;
       if (!await finishEditorBeforeMutation()) return;
-      const rows = readEntries(source.seriesId, source.sectionId || null, 10000, true).items.map(row => row.id); const from = rows.indexOf(sourceId); const to = rows.indexOf(destination.id); rows.splice(from, 1); rows.splice(to, 0, sourceId); safeCall('reorder', { kind: 'entry', parentId: source.sectionId || source.seriesId, ids: rows }); state.draggedId = ''; render();
+      const rows = readEntries(source.seriesId, source.sectionId || null, 10000, true).items.map(row => row.id); const from = rows.indexOf(sourceId); const to = rows.indexOf(destination.id); rows.splice(from, 1); rows.splice(to, 0, sourceId); await mutate('reorder', { kind: 'entry', parentId: source.sectionId || source.seriesId, ids: rows }); state.draggedId = ''; render();
     }
 
     function bind() {
       if (!host || state.bound || state.destroyed) return;
       ensureShell(); state.bound = true;
-      host.addEventListener('click', handleClick); host.addEventListener('contextmenu', handleContextMenu); host.addEventListener('input', handleInput); host.addEventListener('change', handleChange); host.addEventListener('submit', handleSubmit); host.addEventListener('focusout', handleFocusOut);
+      host.addEventListener('click', handleClick); host.addEventListener('contextmenu', handleContextMenu); host.addEventListener('change', handleChange); host.addEventListener('submit', handleSubmit);
       doc.addEventListener('pointerdown', dismissContextMenu); doc.addEventListener('pointerdown', dismissPageManager);
-      host.addEventListener('compositionstart', handleCompositionStart); host.addEventListener('compositionend', handleCompositionEnd);
+
       host.addEventListener('keydown', handleKeydown); host.addEventListener('dragstart', handleDragStart); host.addEventListener('dragover', handleDragOver); host.addEventListener('drop', handleDrop); host.addEventListener('scroll', handleShelfScroll, true);
       state.unsubscribe = favorites?.subscribe?.((event = {}) => {
         if (state.destroyed || !state.active || state.initializing) return;
         if (event.structureChanged) {
-          if (state.editor) { updateHistory(); return; }
           render(); return;
         }
-        refreshChangedEntries(event.changedEntryIds || []); renderHealth(); updateHistory();
+        const changed = new Set(event.changedTagIds || []);
+        const ids = [...(event.changedEntryIds || []), ...[...host.querySelectorAll('[data-favorite-entry]')].map(node => node.dataset.favoriteEntry).filter(id => changed.has(safeCall('getEntry', id)?.tagId))];
+        refreshChangedEntries(ids); syncSelection(); renderHealth(); updateHistory();
       }) || null;
     }
     function enter() { if (state.destroyed) return; bind(); state.active = true; host.hidden = false; state.prefs = readPreferences(); savePreferences({ favoriteViewVersion: 2 }); render(); }
@@ -951,14 +733,7 @@
       const dialogInput = host.querySelector('[data-favorite-dialog-input]'); const dialogStatus = host.querySelector('[data-favorite-dialog-status]');
       const dialogSnapshot = state.dialog ? { value: dialogInput?.value || '', color: host.querySelector('[data-favorite-dialog-color]')?.value, status: dialogStatus?.textContent || '', focused: doc.activeElement === dialogInput } : null;
       closeContextMenu(); cancelDelete();
-      const quickPanel = host.querySelector('[data-favorite-quick-editor]');
-      const quickSnapshot = state.quickEditor ? [...quickPanel.querySelectorAll('input,textarea')].map(field => ({ value: field.value, focused: field === doc.activeElement })) : null;
       host.replaceChildren(); delete host.dataset.favoritesReady; ensureShell(); render();
-      if (state.editor) renderEditor();
-      if (quickSnapshot) {
-        const panel = host.querySelector('[data-favorite-quick-editor]'); panel.hidden = false;
-        [...panel.querySelectorAll('input,textarea')].forEach((field, index) => { field.value = quickSnapshot[index].value; if (quickSnapshot[index].focused) field.focus(); });
-      }
       if (dialogSnapshot && state.dialog) {
         const dialog = host.querySelector('[data-favorite-dialog]'); const input = host.querySelector('[data-favorite-dialog-input]'); const status = host.querySelector('[data-favorite-dialog-status]');
         const title = typeof state.dialog.title === 'function' ? state.dialog.title() : state.dialog.titleText;
@@ -977,10 +752,10 @@
     }
     function destroy() {
       if (!host || state.destroyed) return;
-      state.destroyed = true; state.active = false; win.clearTimeout(state.saveTimer); state.saveTimer = null;
-      host.removeEventListener('click', handleClick); host.removeEventListener('contextmenu', handleContextMenu); host.removeEventListener('input', handleInput); host.removeEventListener('change', handleChange); host.removeEventListener('submit', handleSubmit); host.removeEventListener('focusout', handleFocusOut);
+      state.destroyed = true; state.active = false;
+      host.removeEventListener('click', handleClick); host.removeEventListener('contextmenu', handleContextMenu); host.removeEventListener('change', handleChange); host.removeEventListener('submit', handleSubmit);
       doc.removeEventListener('pointerdown', dismissContextMenu); doc.removeEventListener('pointerdown', dismissPageManager);
-      host.removeEventListener('compositionstart', handleCompositionStart); host.removeEventListener('compositionend', handleCompositionEnd);
+
       host.removeEventListener('keydown', handleKeydown); host.removeEventListener('dragstart', handleDragStart); host.removeEventListener('dragover', handleDragOver); host.removeEventListener('drop', handleDrop); host.removeEventListener('scroll', handleShelfScroll, true); cancelColumnLoading();
       try { state.unsubscribe?.(); } catch { /* optional subscription */ } state.unsubscribe = null;
     }

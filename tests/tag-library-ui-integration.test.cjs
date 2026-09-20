@@ -1,0 +1,113 @@
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { JSDOM } = require('jsdom');
+const { createHarness, makeBase, makeRecord, emptyUserDocument } = require('./fixtures/tag-library.cjs');
+const modules = require('../src/modules');
+const { formatTagOutput } = require('../src/modules/tag-library');
+const root = path.resolve(__dirname, '..');
+const settle = () => new Promise(resolve => setImmediate(resolve));
+async function boot(t, options = {}) {
+  const h = createHarness(options); await h.ready;
+  const storage = modules.createStorage();
+  const tags = modules.createTags({ library: h.library, preferences: storage });
+  const favorites = modules.createFavorites({ library: h.library });
+  const characters = modules.createCharacters({ library: h.library, characterSource: { characters: (options.base || makeBase()).characterLinks.map(row => ({ id: row.characterId })) } });
+  const dom = new JSDOM(fs.readFileSync(path.join(root, 'src/index.html'), 'utf8'), { url: 'http://localhost', runScripts: 'outside-only', pretendToBeVisual: true });
+  const { window } = dom; let copied = '';
+  window.navigator.clipboard = { writeText: async value => { copied = value; } };
+  // Electron contextBridge copies arguments between realms; preserve that boundary
+  // while every query and command still runs the actual library.
+  const catalog = { ...h.library, execute: (command, settings) => h.library.execute(structuredClone(command), structuredClone(settings)) };
+  const bridgedCharacters = { ...characters, edit: (...args) => characters.edit(...structuredClone(args)), select: (...args) => characters.select(...structuredClone(args)) };
+  window.AppModules = { catalog, tags, favorites, characters: bridgedCharacters, preferences: storage, formatTagOutput };
+  for (const name of ['tag-location', 'tag-editor', 'favorites', 'characters']) window.eval(fs.readFileSync(path.join(root, `src/views/${name}-view.js`), 'utf8'));
+  window.eval(fs.readFileSync(path.join(root, 'src/app-view.js'), 'utf8'));
+  window.eval(fs.readFileSync(path.join(root, 'src/app.js'), 'utf8'));
+  await window.App.ready; await settle();
+  t.after(() => { window.App.dispose(); tags.dispose(); favorites.dispose(); characters.dispose(); dom.window.close(); });
+  const $ = selector => window.document.querySelector(selector);
+  const click = async selector => { assert.ok($(selector), selector); $(selector).click(); await settle(); };
+  const input = (selector, value) => { const node = $(selector); if (typeof value === 'boolean') node.checked = value; else node.value = value; node.dispatchEvent(new window.Event('input', { bubbles: true })); };
+  return { ...h, dom, window, $, click, input, tags, favorites, characters, copied: () => copied };
+}
+test('actual app shares favorite edits, role traits, private browse and selection with one editor', async t => {
+  const h = await boot(t);
+  assert.ok(h.$('[data-en="blue_hair"]'));
+  await h.click('[data-tag-favorite="blue_hair"]');
+  h.$('[data-location-parent]').value = 'home'; h.$('[data-location-parent]').dispatchEvent(new h.window.Event('change'));
+  h.$('[data-location-child]').value = 'daily'; await h.click('[data-location-confirm]');
+  assert.equal(h.window.App.state.route, 'tags'); assert.equal(h.library.getMemberships('blue_hair').length, 1, h.$('#toast').textContent + ' / ' + h.$('[data-location-error]').textContent);
+  await h.window.App.route('favorites');
+  const member = h.library.getMemberships('blue_hair')[0]; await h.click(`[data-favorite-edit="${member.id}"]`);
+  h.input('[data-tag-field="content"]', 'azure hair'); h.input('[data-tag-field="aliases"]', 'sky hue'); h.input('[data-tag-field="note"]', '<img src=x onerror=alert(1)>');
+  await h.click('[data-tag-save]');
+  assert.equal(h.characters.get('alice').generalTags[0].content, 'azure hair'); assert.equal(h.characters.get('bob').generalTags[0].note, '<img src=x onerror=alert(1)>');
+  assert.equal(h.$('[data-favorite-editor]'), null); assert.equal(h.$('[data-favorite-quick-editor]'), null);
+  assert.equal(h.$('[data-favorite-shelf] img'), null);
+  await h.click(`[data-favorite-edit="${member.id}"]`); h.input('[data-tag-field="searchable"]', false); await h.click('[data-tag-save]');
+  assert.equal(h.library.search('azure hair', { scope: 'all' }).total, 0); assert.equal(h.favorites.list({ sectionId: 'daily' }).items.length, 1);
+  await h.click(`[data-favorite-action="delete-entry"][data-entry-id="${member.id}"]`); await h.click('[data-favorite-action="confirm-delete"]');
+  assert.ok(h.library.getTag('blue_hair')); assert.equal(h.library.getMemberships('blue_hair').length, 0);
+});
+test('canonical selection dedupes shared role traits by ID and preserves opaque blocks', async t => {
+  const h = await boot(t);
+  await h.tags.select('blue_hair');
+  await h.characters.select('alice', { generalTagIds: ['blue_hair'], includeSeries: false });
+  await h.characters.select('bob', { generalTagIds: ['blue_hair'], includeSeries: false });
+  assert.equal(h.$('#selCount').textContent, '3'); assert.equal(h.$('#preview').textContent, 'blue hair, alice, bob');
+  const saved = await h.library.execute({ type: 'saveTag', patch: { kind: 'bundle', content: '  A, (b:1.2)\r\nc\n  ' } }, { operationId: 'bundle' });
+  assert.equal(saved.ok, true); await h.tags.select(saved.data.tagId); await h.click('#copyAll');
+  assert.ok(h.copied().endsWith('  A, (b:1.2)\r\nc\n  '));
+});
+test('actual homepage load more crosses the 2000 query cap without duplicate IDs', async t => {
+  const base = makeBase(); base.tags.push(...Array.from({ length: 2050 }, (_, i) => makeRecord({ id: 'bulk:' + i, content: 'bulk ' + i })));
+  const h = await boot(t, { base });
+  for (let i = 0; i < 5; i++) await h.click('.loadmore');
+  const ids = [...h.window.document.querySelectorAll('#chips [data-en]')].map(node => node.dataset.en);
+  assert.equal(ids.length, base.tags.length); assert.equal(new Set(ids).size, ids.length);
+});
+test('real startup failure blocks view initialization and repaired retry starts the same catalog', async t => {
+  const h = await boot(t, { document: {} });
+  assert.ok(h.$('[data-catalog-startup]')); assert.equal(h.$('#chips').childElementCount, 0);
+  assert.equal(h.library.status().writable, false); const before = h.repository.saveCount;
+  await h.click('#addTagBtn'); assert.equal(h.$('[data-tag-editor-overlay]').hidden, true); assert.equal(h.repository.saveCount, before);
+  await h.repository.save(emptyUserDocument()); await h.click('[data-catalog-retry]');
+  assert.equal(h.$('[data-catalog-startup]'), null); assert.ok(h.$('[data-en="blue_hair"]'));
+});
+test('relationship choices use canonical names and IDs; cancel writes nothing and save propagates', async t => {
+  const h = await boot(t); await h.window.App.route('characters');
+  await h.click('[data-character-id="alice"]'); await h.click('.character-detail-edit');
+  assert.equal(h.$('[data-character-edit="nameZh"]'), null);
+  const add = '[data-character-relation="generalTagIds"] [data-relation-add="long_hair"]';
+  assert.equal(h.$(add).textContent, '长发'); await h.click(add);
+  assert.equal(await h.window.App.route('tags'), false);
+  const before = h.repository.saveCount;
+  h.$('[data-character-relation-cancel]').click(); await settle();
+  assert.equal(h.repository.saveCount, before); assert.deepEqual(h.library.getCharacterLinks('alice').generalTagIds, ['blue_hair']);
+  await h.click('.character-detail-edit'); await h.click(add);
+  h.$('[data-character-edit-panel]').dispatchEvent(new h.window.Event('submit', { bubbles: true, cancelable: true })); await settle();
+  assert.deepEqual(h.library.getCharacterLinks('alice').generalTagIds, ['blue_hair', 'long_hair']);
+  assert.equal(await h.window.App.route('tags'), true);
+});
+test('malicious tag content, aliases, category labels and selection are text, not markup', async t => {
+  const h = await boot(t), attack = '<img src=x onerror=alert(1)>';
+  await h.library.execute({ type: 'saveTag', tagId: 'blue_hair', patch: { content: attack, displayName: '', aliases: ['<svg onload=alert(1)>'], note: attack } }, { operationId: 'xss' });
+  assert.equal(h.$('#chips img, #chips svg[onload]'), null); assert.match(h.$('[data-en="blue_hair"]').textContent, /<img/);
+  await h.tags.select('blue_hair'); assert.equal(h.$('#selbox img'), null); assert.match(h.$('#selbox').textContent, /<img/);
+});
+test('same tag selected from either membership marks both locations and editor drafts survive notifications', async t => {
+  const h = await boot(t);
+  const page = (await h.favorites.saveSeries({ name: 'Second' })).data;
+  const group = (await h.favorites.saveSection({ seriesId: page.id, name: 'Other' })).data;
+  const first = (await h.favorites.saveEntry({ sourceTagId: 'blue_hair', seriesId: 'home', sectionId: 'daily' })).data;
+  const second = (await h.favorites.saveEntry({ sourceTagId: 'blue_hair', seriesId: page.id, sectionId: group.id })).data;
+  await h.favorites.setSelected(second.id, true); await h.window.App.route('favorites');
+  assert.equal(h.$(`[data-favorite-select="${first.id}"]`).getAttribute('aria-pressed'), 'true');
+  await h.click(`[data-favorite-edit="${first.id}"]`); h.input('[data-tag-field="note"]', 'draft');
+  const active = h.window.document.activeElement;
+  await h.library.execute({ type: 'saveTag', tagId: 'long_hair', patch: { note: 'outside' } }, { operationId: 'outside-draft' });
+  assert.equal(h.$('[data-tag-field="note"]').value, 'draft'); assert.equal(h.window.document.activeElement, active);
+});

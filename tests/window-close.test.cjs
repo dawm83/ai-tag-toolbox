@@ -7,12 +7,13 @@ const path = require('node:path');
 const vm = require('node:vm');
 const { EventEmitter } = require('node:events');
 
-async function boot(flush) {
+async function boot(flush, primary = true) {
   const app = new EventEmitter();
   const windows = [];
   let exited = false;
   const event = () => ({ defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } });
   app.whenReady = () => Promise.resolve();
+  app.requestSingleInstanceLock = () => primary;
   app.quit = () => {
     const attempt = event(); app.emit('before-quit', attempt);
     if (attempt.defaultPrevented) return;
@@ -30,6 +31,10 @@ async function boot(flush) {
     }
     setMenuBarVisibility() {}
     loadFile() {}
+    isMinimized() { return this.minimized === true; }
+    restore() { this.minimized = false; this.restored = true; }
+    show() { this.shown = true; }
+    focus() { this.focused = true; }
     isDestroyed() { return !windows.includes(this); }
     close() {
       const attempt = event(); this.emit('close', attempt);
@@ -75,4 +80,23 @@ test('a failed save keeps the window open and a later close can retry', async ()
   host.win.close();
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(host.win.isDestroyed(), true);
+});
+
+test('a rejected renderer save keeps the window open until a successful retry', async () => {
+  let repaired = false;
+  const host = await boot(() => repaired ? Promise.resolve(true) : Promise.reject(new Error('save rejected')));
+  host.win.close(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(host.win.isDestroyed(), false);
+  repaired = true; host.win.close(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(host.win.isDestroyed(), true);
+});
+
+test('secondary instance exits without a window and primary activates its existing window', async () => {
+  const secondary = await boot(async () => true, false);
+  assert.equal(secondary.windows.length, 0); assert.equal(secondary.exited(), true);
+  const primary = await boot(async () => true);
+  primary.win.minimized = true; primary.app.emit('second-instance');
+  assert.equal(primary.windows.length, 1);
+  assert.equal(primary.win.restored, true); assert.equal(primary.win.shown, true); assert.equal(primary.win.focused, true);
+  primary.win.close(); await new Promise(resolve => setImmediate(resolve));
 });

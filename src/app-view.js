@@ -11,6 +11,12 @@
   function createAppView(modules, documentRef = global.document) {
     const doc = documentRef;
     const tags = modules.tags;
+    const catalog = modules.catalog || null;
+    const removeListeners = [];
+    function listen(target, type, handler, options) {
+      target?.addEventListener(type, handler, options);
+      removeListeners.push(() => target?.removeEventListener(type, handler, options));
+    }
     const characters = modules.characters || null;
     const favorites = modules.favorites || null;
     const images = modules.images;
@@ -120,16 +126,18 @@
       if (retainCheck) retainCheck.checked = showRetainImages && options.retainImagesDefault === true;
       modal.classList.add("show");
     }
+    const tagLocation = catalog && global.AppViews?.tagLocation?.createTagLocationView?.({ document: doc, catalog, getLocale: () => ui.locale, localize: (key, fallback) => localized(`ui.${key}`, fallback) });
+    const tagEditor = catalog && global.AppViews?.tagEditor?.createTagEditorView?.({ document: doc, catalog, getLocale: () => ui.locale, localize: (key, fallback) => localized(`ui.${key}`, fallback), notify, locationView: tagLocation });
     const viewFactories = global.AppViews || {};
     const views = {
-      favorites: favorites ? viewFactories.favorites?.createFavoritesView?.({ document: doc, favorites, preferences, copy: value => copyExact(value), notify, localize: (key, fallback) => localized(`ui.${key}`, fallback), onSelectionChange: () => renderSelection(), getIncludeAdult: () => tagSnapshot().adult, parsePaste: (...args) => favorites.parseFavoritePaste?.(...args) }) : null,
-      translation: viewFactories.translation?.createTranslationView?.({ document: doc, runtime, translation: modules.translation, notify, copy: value => copy(value), localized, onTagSelected: id => { tags?.select?.(id, true); renderTags(); renderSelection(); } }),
+      favorites: favorites ? viewFactories.favorites?.createFavoritesView?.({ document: doc, favorites, tagEditor, preferences, copy: value => copyExact(value), notify, localize: (key, fallback) => localized(`ui.${key}`, fallback), onSelectionChange: () => renderSelection(), getIncludeAdult: () => tagSnapshot().adult, parsePaste: (...args) => favorites.parseFavoritePaste?.(...args) }) : null,
+      translation: viewFactories.translation?.createTranslationView?.({ document: doc, runtime, translation: modules.translation, notify, copy: value => copy(value), localized, onTagSelected: async id => { const result = await tags?.select?.(id, true); if (result?.ok !== false) { renderTags(); renderSelection(); } } }),
       settings: viewFactories.settings?.createSettingsView?.({ document: doc, api: assistant, runtime, comfy, notify, onChange: value => { views.comfy?.render?.(value); syncGenerationControls(); }, autoBind: false }),
       comfy: viewFactories.comfy?.createComfyView?.({ document: doc, comfy, assistant, notify, openExternal: url => global.open(url), onChange: value => { views.settings?.render?.(value); syncGenerationControls(); }, autoBind: false }),
       prompt: viewFactories.prompt?.createPromptView?.({ document: doc, prompts, notify, download, autoBind: false }),
       agentStatus: viewFactories.agentStatus?.createAgentStatusView?.({ document: doc, runtime, api: assistant, notify, autoBind: false }),
       callMonitor: viewFactories.callMonitor?.createCallMonitorView?.({ document: doc, runtime, assistant, notify, download, confirm, autoBind: false }),
-      characters: viewFactories.characters?.createCharactersView?.({ document: doc, characters, tags, favorites, onChange: () => renderSelection(), copy: value => copy(value), notify, getLocale: () => ui.locale, openFavorites: async (value = {}) => { if (await route('favorites') === false) return false; return views.favorites?.openCreate?.(value); } }),
+      characters: viewFactories.characters?.createCharactersView?.({ document: doc, characters, tags, catalog, tagEditor, favoriteTag, favoriteBundle, onChange: () => renderSelection(), copy: value => copyExact(value), notify, getLocale: () => ui.locale }),
     };
     const show = (selector, yes) => {
       const el = $(selector);
@@ -184,7 +192,7 @@
         categories,
         categoryCounts: snap.categoryCounts || {},
         query: str(snap.query),
-        category: str(snap.category, "quality"),
+        category: str(snap.category, "all"),
         adult: Boolean(snap.includeAdult),
         precision: normaliseSearchPrecision(snap.searchPrecision || ui.searchPrecision),
         revision: Number(snap.revision) || 0,
@@ -270,13 +278,27 @@
     function categoryColor(id) {
       return categoryColors[String(id || "").toLowerCase()] || "#94A3B8";
     }
-    function selected() {
-      return tags?.selected?.() || tagSnapshot().selected || [];
+    function selected() { return tags?.selected?.() || []; }
+    function selectedIds() { return selected().map(item => String(item.id || item.en)).filter(Boolean); }
+    function canonicalSelected() { return catalog?.selected({ includeAdult: tagSnapshot().adult }) || []; }
+    let operationSequence = 0;
+    async function command(value) {
+      try {
+        const result = await catalog.execute(value, { operationId: 'ui:' + Date.now() + ':' + (++operationSequence) });
+        if (!result?.ok) notify(result?.error?.message || '操作失败'); return result;
+      } catch { notify('操作失败'); return { ok: false }; }
     }
-    function selectedIds() {
-      return selected()
-        .map((item) => str(item?.id || item?.en).toLowerCase())
-        .filter(Boolean);
+    async function favoriteTag(id) {
+      if (await tagEditor.requestClose() === false || await views.characters?.requestClose?.() === false) return false;
+      const tag = catalog.getTag(id); if (!tag) return false;
+      if (tag.favoriteLocations.length) { notify(localized('ui.favorites.favorite', '已收藏')); return true; }
+      const placement = await tagLocation.choose({ kind: 'favorite' }); if (!placement) return false;
+      return (await command({ type: 'favoriteTag', tagId: id, placement })).ok;
+    }
+    async function favoriteBundle(content, displayName = '') {
+      if (await tagEditor.requestClose() === false || await views.characters?.requestClose?.() === false) return false;
+      const placement = await tagLocation.choose({ kind: 'favorite' });
+      return placement ? tagEditor.open({ initialValues: { kind: 'bundle', content, displayName }, placement }) : false;
     }
     function selectedCharacters() {
       try { return characters?.selected?.({ includeAdult: tagSnapshot().adult }) || []; }
@@ -285,28 +307,25 @@
     function escapeQualifierParentheses(value) {
       return str(value).replace(/\\([()])/g, "$1").replace(/[()]/g, "\\$&");
     }
-    function combinedSelectionValues() {
-      const values = [];
-      const indexes = new Map();
-      const append = (value, preferEscaped = false) => {
-        const output = str(value);
-        const key = output.replace(/\\([()])/g, "$1").toLowerCase().replace(/[\s_]+/g, " ").trim();
-        if (!key) return;
-        if (!indexes.has(key)) {
-          indexes.set(key, values.length);
-          values.push(output);
-        } else if (preferEscaped && /\\[()]/.test(output)) {
-          values[indexes.get(key)] = output;
-        }
-      };
-      selected().forEach(item => append(item?.category === "character_names" ? escapeQualifierParentheses(item?.en || item?.id) : item?.en || item?.id));
-      selectedCharacters().flatMap(item => item?.tags || []).forEach(value => append(value, true));
-      return values;
-    }
     function selectedFavorites() { return favorites?.selected?.({ includeAdult: tagSnapshot().adult }) || []; }
     function combinedSelectionText() {
-      const blocks = [...combinedSelectionValues(), ...selectedFavorites().map(item => item.rawText)];
-      return modules.joinFavoriteBlocks ? modules.joinFavoriteBlocks(blocks) : blocks.join(", ");
+      if (!catalog) {
+        const words = new Map();
+        for (const value of [...selected().map(row => row.en || row.id), ...selectedCharacters().flatMap(row => row.tags || [])]) {
+          const key = value.replace(/\\([()])/g, '$1').toLowerCase().replace(/[\s_]+/g, ' ').trim();
+          if (!words.has(key) || /\\[()]/.test(value)) words.set(key, value);
+        }
+        return [...words.values(), ...selectedFavorites().map(row => row.rawText)].join(', ');
+      }
+      const seen = new Set(), blocks = [];
+      for (const row of canonicalSelected()) {
+        if (row.kind === 'legacySnapshot') { blocks.push(row.content); continue; }
+        for (const id of row.tagIds) {
+          if (seen.has(id)) continue; seen.add(id);
+          const tag = catalog.getTag(id); if (tag) blocks.push(modules.formatTagOutput(tag));
+        }
+      }
+      return blocks.join(', ');
     }
     function renderCharacters(options = {}) {
       const query = options.query == null ? str($("#q")?.value) : str(options.query);
@@ -315,7 +334,7 @@
       return views.characters?.render?.({ query, precision: ui.searchPrecision, includeAdult: tagSnapshot().adult });
     }
     function restoreTags() {
-      tags?.restore?.();
+      tags?.restoreUserState?.();
     }
     function tagRows() {
       const snap = tagSnapshot();
@@ -332,15 +351,21 @@
       ].join("\u0001");
       const cached = ui.tagPageCache.get(cacheKey);
       if (cached) return cached;
-      const page = tags?.page?.({
+      const options = {
         query: snap.query,
         category: snap.query ? "" : snap.category,
         includeAdult: snap.adult,
         subcategory: snap.query ? "" : ui.subcategory,
         precision: snap.precision,
         offset: 0,
-        limit: ui.visible,
-      }) || { items: [], total: 0, hasMore: false };
+        limit: Math.min(2000, ui.visible),
+      };
+      let page = tags?.page?.(options) || { items: [], total: 0, hasMore: false };
+      while (page.hasMore && page.items.length < ui.visible) {
+        const next = tags.page({ ...options, offset: page.items.length, limit: Math.min(2000, ui.visible - page.items.length) });
+        if (!next.items.length) break;
+        page = { ...next, items: [...page.items, ...next.items], offset: 0 };
+      }
       if (ui.tagPageCache.size >= 24) {
         const oldest = ui.tagPageCache.keys().next().value;
         if (oldest != null) ui.tagPageCache.delete(oldest);
@@ -408,63 +433,13 @@
         button.dataset.cat = category.id;
         button.style.setProperty("--cat-color", categoryColor(category.id));
         const label = category.id === "all" ? localized("ui.tag.all", category.name || category.id) : categoryLabel(category.id, category.name || category.id);
-        button.innerHTML = `<span class="cico">${category.icon || "🏷️"}</span><span>${label}</span><span class="n">${count}</span>`;
+        for (const [className, value] of [['cico', category.icon || '🏷️'], ['', label], ['n', count]]) { const node = doc.createElement('span'); node.className = className; node.textContent = String(value); button.append(node); }
         host.appendChild(button);
         if (category.id === "all") appendCharacterLibrary();
       });
       const adult = $("#aiNsfwChk");
       if (adult) adult.checked = snap.adult;
       syncNavAction("adult", snap.adult);
-    }
-    function renderCustomCategories() {
-      const select = $("#nCat");
-      if (!select) return;
-      select.replaceChildren();
-      const rows = tagSnapshot().categories.filter(
-        (item) => item.id && !String(item.id).startsWith("wd_"),
-      );
-      rows.forEach((item) => {
-        const option = doc.createElement("option");
-        option.value = item.id;
-        option.textContent = categoryLabel(item.id, item.name || item.id);
-        select.appendChild(option);
-      });
-      const create = doc.createElement("option");
-      create.value = "__new__";
-      create.textContent = "＋ 新建分类…";
-      select.appendChild(create);
-      const other = doc.createElement("option");
-      other.value = "other";
-      other.textContent = "其他";
-      select.appendChild(other);
-    }
-    function renderCustomList() {
-      const host = $("#customList");
-      if (!host) return;
-      const custom = tags?.customTags?.() || [];
-      host.replaceChildren();
-      if (!custom.length) {
-        host.innerHTML = '<div class="empty" style="padding:12px 0">还没有自定义标签</div>';
-        return;
-      }
-      custom.slice().reverse().forEach((item) => {
-        const row = doc.createElement("div");
-        row.className = "crow";
-        row.innerHTML = '<span class="cen"></span><span class="czh"></span><button class="cedit btn btn-icon">🖊</button><button class="crestore btn btn-icon">↺</button><button class="cdel btn btn-icon btn-danger">✕</button>';
-        $(".cen", row).textContent = item.en || item.id;
-        $(".czh", row).textContent = item.zh || "";
-        row.classList.toggle('is-edited', item.edited === true);
-        $(".cedit", row).onclick = () => openTagEditor(item);
-        $(".crestore", row).hidden = item.edited !== true;
-        $(".crestore", row).onclick = () => { tags?.restore?.(item.id || item.en); renderCustomList(); renderCategories(); renderTags(); };
-        $(".cdel", row).onclick = () => confirm(`确定删除自定义 Tag「${item.en || item.id}」吗？`, () => {
-          tags?.removeCustom?.(item.id || item.en);
-          renderCustomList();
-          renderCategories();
-          renderTags();
-        });
-        host.appendChild(row);
-      });
     }
     function renderSubcategoryNav(snap = tagSnapshot()) {
       const host = $("#subcatNav");
@@ -527,10 +502,10 @@
         detail.textContent = ["Tag", hit.seriesName, hit.sectionName].filter(Boolean).join(" · ");
         button.append(title, detail);
         button.onclick = async () => {
-          const chosen = favorites.setSelected(hit.entryId, !selectedFavorites().some(item => item.entryId === hit.entryId));
+          const chosen = await favorites.setSelected(hit.entryId, !selectedFavorites().some(item => item.entryId === hit.entryId));
           if (chosen?.ok === false) { notify(chosen.error?.message || localized("ui.favorites.selectFailed", "选择失败")); return; }
           renderSelection();
-          if (await copyExact(hit.rawText)) favorites.markCopied?.([hit.entryId]);
+          if (await copyExact(favorites.copyText([hit.entryId]))) await favorites.markCopied?.([hit.entryId]);
           else notify(localized("ui.favorites.copyFailed", "复制失败"));
         };
         const locate = doc.createElement("button"); locate.type = "button"; locate.className = "btn btn-icon";
@@ -576,16 +551,16 @@
         const section = doc.createElement("section");
         section.className = "group";
         section.style.setProperty("--group-color", categoryColor(items[0]?.category));
-        section.innerHTML = `<div class="group-head"><span class="name">${group}</span><span class="line"></span><span class="n">${items.length} 个</span></div>`;
+        const head = doc.createElement('div'); head.className = 'group-head'; for (const [className, value] of [['name', group], ['line', ''], ['n', items.length + ' 个']]) { const node = doc.createElement('span'); node.className = className; node.textContent = String(value); head.append(node); } section.append(head);
         const row = doc.createElement("div");
         row.className = "chips";
         items.forEach((item) => {
           const button = doc.createElement("button");
-          button.className = `chip btn btn-chip${chosen.has(str(item.id || item.en).toLowerCase()) ? " sel" : ""}${item.nsfw ? " nsfw" : ""}`;
+          button.className = `chip btn btn-chip${chosen.has(String(item.id || item.en)) ? " sel" : ""}${item.nsfw ? " nsfw" : ""}`;
           if (item.edited) button.classList.add('is-edited');
-          button.dataset.en = str(item.id || item.en).toLowerCase();
+          button.dataset.en = String(item.id || item.en);
           button.style.setProperty("--c", categoryColor(item.category));
-          button.innerHTML = `<span class="en">${item.en || ""}</span><span class="zh">${item.zh || (item.aliases || item.al || []).join(" ")}</span><span class="cp">${localized("ui.tag.copyOnly", "仅复制")}</span>`;
+          const en = doc.createElement("span"); en.className = "en"; en.textContent = item.en || ""; const zh = doc.createElement("span"); zh.className = "zh"; zh.textContent = item.zh || (item.aliases || item.al || []).join(" "); const cp = doc.createElement("span"); cp.className = "cp"; cp.textContent = localized("ui.tag.copyOnly", "仅复制"); button.append(en, zh, cp);
           const wrap = doc.createElement("div");
           wrap.className = item.category === "character_names" && characters ? "chip-with-character chip-with-actions" : "chip-with-actions";
           const actions = doc.createElement('span'); actions.className = 'chip-actions';
@@ -620,6 +595,17 @@
       }
     }
     function renderSelection() {
+      if (catalog) {
+        const rows = canonicalSelected(), host = $('#selbox'); put('#selCount', rows.length);
+        if (!host) return; host.replaceChildren();
+        for (const item of rows) {
+          const chip = doc.createElement('span'); chip.className = 'schip'; const text = doc.createElement('span'); text.textContent = item.displayName || item.content;
+          const remove = doc.createElement('button'); remove.type = 'button'; remove.className = 'btn btn-icon btn-danger'; remove.dataset.selectionKey = item.key; remove.textContent = '✕';
+          chip.append(text, remove); host.append(chip);
+        }
+        const preview = $('#preview'); if (preview) preview.textContent = combinedSelectionText();
+        syncSelectedClasses(); views.favorites?.syncSelection?.(); return;
+      }
       const rows = selected();
       const characterRows = selectedCharacters();
       const favoriteRows = selectedFavorites();
@@ -634,7 +620,7 @@
       rows.forEach((item) => {
         const chip = doc.createElement("span");
         chip.className = "schip";
-        chip.innerHTML = `<span>${item.en || item.id}</span><button class="btn btn-icon btn-danger" data-remove="${item.id || item.en}">✕</button>`;
+        const text = doc.createElement('span'); text.textContent = item.en || item.id; const remove = doc.createElement('button'); remove.dataset.remove = item.id || item.en; remove.textContent = '✕'; chip.append(text, remove);
         host.appendChild(chip);
       });
       characterRows.forEach(item => {
@@ -3232,18 +3218,7 @@
         renderManager(); renderTalk(); renderConversationRepository();
       });
     }
-    function openTagEditor(item) {
-      const value = tags?.get?.(item?.id || item?.en) || item || {};
-      ui.editingTagId = str(value.id || value.en);
-      renderCustomCategories();
-      const modal = $("#addModal"); if (!modal) return false;
-      put("#addModal h3", localized("ui.custom.editTitle", "编辑 Tag"));
-      const fields = { nEn: value.en || value.id || '', nZh: value.zh || '', nAl: (value.aliases || []).join(' '), nSub: value.subcategory || '默认' };
-      Object.entries(fields).forEach(([id, content]) => { const input = $('#' + id); if (input) input.value = content; });
-      const category = $('#nCat'); if (category && value.category) category.value = value.category;
-      const restore = $('#nRestore'); if (restore) restore.hidden = value.edited !== true;
-      modal.classList.add('show'); return true;
-    }
+    async function openTagEditor(item) { const id = item?.id || item?.en; return tagEditor?.open(id ? { tagId: id } : { initialValues: { kind: 'tag', content: item?.en || '', displayName: item?.zh || '' } }); }
     function renderManager() {
       const host = $("#mgrGenList");
       if (!host) return;
@@ -3350,6 +3325,12 @@
     let routeRequestId = 0;
     function route(next) {
       const requestId = ++routeRequestId;
+      if (catalog && next !== ui.route) return (async () => {
+        if (await tagEditor?.requestClose?.() === false || await views.characters?.requestClose?.() === false) return false;
+        if (ui.route === 'favorites' && await views.favorites?.leave?.() === false) return false;
+        if (requestId !== routeRequestId) return false;
+        applyRoute(next); return true;
+      })();
       if (ui.route === "favorites" && next !== "favorites") {
         return Promise.resolve(views.favorites?.leave?.()).then(saved => {
           if (saved === false || requestId !== routeRequestId) return false;
@@ -3490,7 +3471,6 @@
       else renderTags();
       views.favorites?.refreshLocale?.();
       renderSelection();
-      renderCustomCategories();
       renderTalkVisionPanel();
       setVisionOpen(ui.visionOpen);
       if (ui.route === "gallery") renderGallery();
@@ -3532,7 +3512,7 @@
         const button = $(config.selector);
         if (!button || typeof config.run !== "function") return;
         button.dataset.navAction = name;
-        button.addEventListener("click", event => {
+        listen(button, "click", event => {
           config.run(event);
           syncNavigationStates();
         });
@@ -3541,7 +3521,7 @@
     }
 
     function bind() {
-      $("#searchPrecision")?.addEventListener("change", (event) => {
+      listen($("#searchPrecision"), "change", (event) => {
         ui.searchPrecision = normaliseSearchPrecision(event.target.value);
         event.target.value = ui.searchPrecision;
         preferences.set("app.searchPrecision", ui.searchPrecision);
@@ -3551,7 +3531,7 @@
         if (ui.route === "characters") renderCharacters();
         else renderTags();
       });
-      $("#q")?.addEventListener("input", (event) => {
+      listen($("#q"), "input", (event) => {
         ui.subcategory = "";
         ui.visible = 400;
         ui.tagPageCache.clear();
@@ -3564,18 +3544,18 @@
           }
         }, 120);
       });
-      $("#q")?.addEventListener("keydown", (event) => {
+      listen($("#q"), "keydown", (event) => {
         if (event.key === "Enter") {
           event.preventDefault();
           clearTimeout(ui.searchTimer);
           executeSearch();
         }
       });
-      $("#searchBtn")?.addEventListener("click", () => {
+      listen($("#searchBtn"), "click", () => {
         clearTimeout(ui.searchTimer);
         executeSearch();
       });
-      $("#clearQ")?.addEventListener("click", () => {
+      listen($("#clearQ"), "click", () => {
         $("#q").value = "";
         if (ui.route === "characters") {
           renderCharacters({ query: "" });
@@ -3586,7 +3566,7 @@
         tags?.setQuery?.("");
         renderTags();
       });
-      $("#catList")?.addEventListener("click", (event) => {
+      listen($("#catList"), "click", (event) => {
         const characterButton = event.target.closest("[data-characters]");
         if (characterButton) {
           clearTimeout(ui.searchTimer);
@@ -3607,7 +3587,7 @@
         renderCategories();
         renderTags();
       });
-      $("#subcatNav")?.addEventListener("click", (event) => {
+      listen($("#subcatNav"), "click", (event) => {
         const button = event.target.closest("[data-subcategory]");
         if (!button) return;
         ui.subcategory = str(button.dataset.subcategory);
@@ -3616,7 +3596,7 @@
         renderSubcategoryNav(tagSnapshot());
         renderTags();
       });
-      $("#chips")?.addEventListener("click", (event) => {
+      listen($("#chips"), "click", async (event) => {
         const edit = event.target.closest("[data-tag-edit]");
         if (edit) {
           event.preventDefault(); event.stopPropagation();
@@ -3624,12 +3604,11 @@
           return;
         }
         const restore = event.target.closest("[data-tag-restore]");
-        if (restore) { event.preventDefault(); event.stopPropagation(); tags?.restore?.(restore.dataset.tagRestore); renderCategories(); renderTags(); return; }
+        if (restore) { event.preventDefault(); event.stopPropagation(); await command({ type: "restoreTag", tagId: restore.dataset.tagRestore }); renderCategories(); renderTags(); return; }
         const favorite = event.target.closest("[data-tag-favorite]");
         if (favorite) {
           event.preventDefault(); event.stopPropagation();
-          const item = tags?.get?.(favorite.dataset.tagFavorite) || { id: favorite.dataset.tagFavorite, en: favorite.dataset.tagFavorite };
-          Promise.resolve(route('favorites')).then(result => { if (result !== false) views.favorites?.openCreate?.({ kind: 'tag', rawText: item.en || item.id, title: item.zh || '' }); });
+          await favoriteTag(favorite.dataset.tagFavorite);
           return;
         }
         const jump = event.target.closest("[data-character-jump]");
@@ -3646,111 +3625,66 @@
         const button = event.target.closest("[data-en]");
         if (!button) return;
         if (event.target.closest(".cp")) {
-          copy(button.dataset.en);
+          await copyExact(tags?.copyText?.([button.dataset.en]) || button.dataset.en);
           showChipToast(button, localized("ui.tag.copied", "已复制"));
           return;
         }
         const id = button.dataset.en;
         const current = selectedIds().includes(id);
-        tags?.select?.(id, !current);
-        copy(id);
+        const result = await tags?.select?.(id, !current); if (result?.ok === false) { notify(result.error?.message || "选择失败"); return; }
+        await copyExact(tags?.copyText?.([id]) || id);
         showChipToast(button, localized("ui.tag.copied", "已复制"));
         syncSelectedClasses();
         renderSelection();
       });
-      $("#selbox")?.addEventListener("click", (event) => {
+      listen($("#selbox"), "click", async (event) => {
+        const canonical = event.target.closest("[data-selection-key]");
+        if (canonical) { const key = canonical.dataset.selectionKey, colon = key.indexOf(":"), kind = key.slice(0, colon), id = key.slice(colon + 1); const value = kind === "tag" ? { kind, tagId: id } : kind === "character" ? { kind, characterId: id, includeSeries: false, generalTagIds: [], specificTagIds: [] } : { kind, id, content: canonicalSelected().find(row => row.key === key)?.content || '', displayName: canonicalSelected().find(row => row.key === key)?.displayName || '', adult: Boolean(canonicalSelected().find(row => row.key === key)?.adult) }; await command({ type: "select", selected: false, value }); return; }
         const favoriteButton = event.target.closest("[data-remove-favorite]");
         if (favoriteButton) {
-          favorites?.setSelected?.(favoriteButton.dataset.removeFavorite, false);
+          await favorites?.setSelected?.(favoriteButton.dataset.removeFavorite, false);
           renderSelection(); return;
         }
         const characterButton = event.target.closest("[data-remove-character]");
         if (characterButton) {
-          characters?.removeSelection?.(characterButton.dataset.removeCharacter);
+          await characters?.removeSelection?.(characterButton.dataset.removeCharacter);
           renderSelection();
           return;
         }
         const button = event.target.closest("[data-remove]");
         if (button) {
-          tags?.select?.(button.dataset.remove, false);
+          await tags?.select?.(button.dataset.remove, false);
           syncSelectedClasses();
           renderSelection();
         }
       });
-      $("#clearSel")?.addEventListener("click", () => {
-        tags?.clearSelection?.();
-        characters?.clearSelection?.();
-        favorites?.clearSelected?.();
+      listen($("#clearSel"), "click", async () => {
+        if (catalog) await command({ type: "clearSelection" });
+        else { await tags?.clearSelection?.(); await characters?.clearSelection?.(); await favorites?.clearSelected?.(); }
         syncSelectedClasses();
         renderSelection();
       });
-      $("#copyAll")?.addEventListener("click", async () => {
+      listen($("#copyAll"), "click", async () => {
         if (await copyExact(combinedSelectionText()))
           notify("Prompt 已复制");
         else notify("复制失败，请检查剪贴板权限");
       });
-      $("#aiNsfwChk")?.addEventListener("change", (event) => {
+      listen($("#aiNsfwChk"), "change", (event) => {
         tags?.setAdult?.(event.target.checked);
         renderCategories();
         if (ui.route === "characters") renderCharacters();
         else renderTags();
         renderSelection();
       });
-      $("#saveFav")?.addEventListener("click", async () => {
+      listen($("#saveFav"), "click", async () => {
         const rawText = combinedSelectionText();
         if (!rawText.trim()) return notify(localized("ui.favorites.selectFirst", "请先选择 Tag 或标签组"));
-        if (await route("favorites") === false) return;
-        views.favorites?.openCreate?.({ kind: "bundle", rawText });
+        await favoriteBundle(rawText);
       });
       $("#scrim")?.addEventListener("click", () => {
         setVisionOpen(false);
       });
-      $("#addTagBtn")?.addEventListener("click", () => {
-        ui.editingTagId = "";
-        const restore = $("#nRestore"); if (restore) restore.hidden = true;
-        renderCustomCategories();
-        renderCustomList();
-        $("#addModal")?.classList.add("show");
-      });
-      $("#addClose")?.addEventListener("click", () => {
-        ui.editingTagId = "";
-        const restore = $("#nRestore"); if (restore) restore.hidden = true;
-        $("#addModal")?.classList.remove("show");
-      },
-      );
-      $("#nCancel")?.addEventListener("click", () => {
-        ui.editingTagId = "";
-        const restore = $("#nRestore"); if (restore) restore.hidden = true;
-        $("#addModal")?.classList.remove("show");
-      },
-      );
-      $("#nCat")?.addEventListener("change", (event) => {
-        if ($("#nNewCatWrap"))
-          $("#nNewCatWrap").style.display =
-            event.target.value === "__new__" ? "" : "none";
-      });
-      $("#nSave")?.addEventListener("click", () => {
-        const category =
-          $("#nCat")?.value === "__new__"
-            ? str($("#nNewCat")?.value, "other")
-            : str($("#nCat")?.value, "other");
-        const item = {
-          en: str($("#nEn")?.value),
-          zh: str($("#nZh")?.value),
-          aliases: str($("#nAl")?.value),
-          subcategory: str($("#nSub")?.value, "自定义"),
-          category,
-        };
-        if (!item.en) return notify("英文 Tag 不能为空");
-        const result = ui.editingTagId ? tags?.edit?.(ui.editingTagId, item) : tags?.addCustom?.(item);
-        if (result?.ok === false) return notify(result.error?.message || "Tag 保存失败");
-        ui.editingTagId = "";
-        $("#addModal")?.classList.remove("show");
-        renderCustomCategories();
-        renderCustomList();
-        renderCategories();
-        renderTags();
-      });
+      listen($("#addTagBtn"), "click", () => tagEditor?.open({}));
       $$(".popitem[data-theme]").forEach((item) =>
         item.addEventListener("click", () => {
           applyTheme(item.dataset.theme);
@@ -3808,14 +3742,14 @@
       );
       $("#apiBack")?.addEventListener("click", () => showAi("talk"));
       $("#promptBack")?.addEventListener("click", () => showAi("talk"));
-      doc.addEventListener("click", (event) => {
+      listen(doc, "click", (event) => {
         if (!event.target.closest(".popwrap")) {
           $("#themePop")?.setAttribute("hidden", "");
           $("#localePop")?.setAttribute("hidden", "");
         }
       });
       syncVisionPaneOffset();
-      global.addEventListener("resize", () => {
+      listen(global, "resize", () => {
         syncVisionPaneOffset();
       });
       views.comfy?.bind?.();
@@ -3878,7 +3812,7 @@
         if (action === "download") downloadImage(item.imageId, item.filename, item.mime);
         if (action === "gallery") addImageToGallery(item.imageId);
       });
-      doc.addEventListener("contextmenu", event => {
+      listen(doc, "contextmenu", event => {
         const card = event.target.closest?.(".conversation-image-card");
         if (!card) { hideImageContextMenu(); return; }
         event.preventDefault();
@@ -3888,8 +3822,8 @@
         const asset = fullImageFor(imageId);
         showImageContextMenu(event, { imageId, filename: asset?.filename || `${imageId}.png`, mime: asset?.mime || "image/png" });
       });
-      doc.addEventListener("click", event => { if (!event.target.closest?.("#imgCtxMenu")) hideImageContextMenu(); });
-      doc.defaultView?.addEventListener?.("keydown", event => { if (event.key === "Escape") { closeImageViewer(); hideImageContextMenu(); } });
+      listen(doc, "click", event => { if (!event.target.closest?.("#imgCtxMenu")) hideImageContextMenu(); });
+      listen(doc.defaultView, "keydown", event => { if (event.key === "Escape") { closeImageViewer(); hideImageContextMenu(); } });
       $("#tpUpload")?.addEventListener("click", () => $("#tpFile")?.click());
       $("#tpFile")?.addEventListener("change", (event) => {
         const input = event.target;
@@ -4146,11 +4080,11 @@
             renderManager();
           });
       });
-      document.addEventListener("dragover", (event) => {
+      listen(document, "dragover", (event) => {
         if (event.dataTransfer?.types?.includes("Files"))
           event.preventDefault();
       });
-      document.addEventListener("drop", (event) => {
+      listen(document, "drop", (event) => {
         const files = [...(event.dataTransfer?.files || [])].filter((file) =>
           file.type?.startsWith("image/"),
         );
@@ -4161,7 +4095,7 @@
         event.stopPropagation();
         Promise.resolve(addFilesForContext(files, context, event.target)).catch(error => notify(error?.message || String(error)));
       });
-      document.addEventListener("paste", (event) => {
+      listen(document, "paste", (event) => {
         const files = [...(event.clipboardData?.files || [])].filter((file) =>
           file.type?.startsWith("image/"),
         );
@@ -4173,7 +4107,7 @@
           Promise.resolve(addFilesForContext(files, context, event.target)).catch(error => notify(error?.message || String(error)));
         }
       });
-      document.addEventListener("keydown", (event) => {
+      listen(document, "keydown", (event) => {
         if (
           (event.ctrlKey || event.metaKey) &&
           event.key.toLowerCase() === "k"
@@ -4193,7 +4127,7 @@
       if (ui.started) return;
       ui.started = true;
       const showStorageError = error => notify(`${localized("ui.common.storageWriteFailed", "保存失败，更改暂存在内存中。请检查磁盘空间或目录权限。")} (${error?.code || "STORAGE_WRITE_FAILED"})`);
-      preferencesStore?.onPersistenceError?.(showStorageError);
+      ui.unsubscribeStorage = preferencesStore?.onPersistenceError?.(showStorageError);
       const persistence = preferencesStore?.persistenceStatus?.();
       if (persistence?.ok === false) showStorageError(persistence.error);
       restoreTags();
@@ -4208,16 +4142,13 @@
       applyTheme(theme);
       views.settings?.bind?.();
       views.favorites?.bind?.();
-      favorites?.subscribe?.(() => {
-        if (ui.route === "tags") renderFavoriteMatches();
-      });
-      $("#nRestore")?.addEventListener("click", () => {
-        if (!ui.editingTagId) return;
-        tags?.restore?.(ui.editingTagId);
-        ui.editingTagId = "";
-        $("#nRestore").hidden = true;
-        $("#addModal")?.classList.remove("show");
-        renderCategories(); renderTags();
+      ui.unsubscribeCatalog = catalog?.subscribe?.(change => {
+        ui.tagPageCache.clear();
+        if (change.changedTagIds.length || change.structureChanged) {
+          if (ui.route === 'tags') { const scroll = $('#chips')?.scrollTop; renderCategories(); renderTags(); if ($('#chips')) $('#chips').scrollTop = scroll; }
+          if (ui.route === 'characters') views.characters?.refresh?.();
+        }
+        renderSelection();
       });
       views.prompt?.bind?.();
       views.agentStatus?.bind?.();
@@ -4228,8 +4159,6 @@
       resizeTalkInput();
       loadSettings({ fetch: false });
       refreshCapabilitiesStatus({ force: true });
-      renderCustomCategories();
-      renderCustomList();
       renderCategories();
       renderTags();
       renderSelection();
@@ -4249,6 +4178,17 @@
       showAi,
       renderTags,
       renderSelection,
+      tagEditor,
+      async flushSettings() { flushSettingsSave(); await views.comfy?.flush?.(); },
+      dispose() {
+        removeListeners.splice(0).forEach(remove => remove());
+        ui.unsubscribeCatalog?.(); ui.unsubscribeStorage?.();
+        clearTimeout(ui.searchTimer); clearTimeout(notify.timer);
+        tagEditor?.dispose(); tagLocation?.dispose();
+        views.favorites?.destroy?.(); views.characters?.dispose?.();
+        for (const view of Object.values(views)) view?.dispose?.();
+      },
+      showStartupError(error) { notify(`${localized("ui.common.storageWriteFailed", "标签库未就绪")} (${error?.code || "NOT_READY"})`); },
       renderPrompt,
       renderTalk,
       getVisionState: () => ({

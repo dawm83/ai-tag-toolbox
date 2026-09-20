@@ -30,7 +30,7 @@ function createWindow() {
     height: 900,
     minWidth: 980,
     minHeight: 680,
-    title: 'AI 绘画 Tag 工具箱 V1.4.316',
+    title: 'AI 绘画 Tag 工具箱 V1.4.320',
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -61,7 +61,7 @@ function createWindow() {
     if (savingBeforeClose) return;
     savingBeforeClose = true;
     win.webContents.executeJavaScript('window.App?.flushBeforeClose ? window.App.flushBeforeClose() : window.AppModules?.prepareClose?.()')
-      .catch(() => { /* A failed renderer cannot service a final save. */ })
+      .catch(() => false)
       .then(saved => {
         if (saved === false) { savingBeforeClose = false; return; }
         closeReady = true; if (!win.isDestroyed()) win.close();
@@ -71,6 +71,15 @@ function createWindow() {
   return win;
 }
 
+const primaryInstance = app.requestSingleInstanceLock();
+if (!primaryInstance) app.quit();
+else {
+app.on('second-instance', () => {
+  const win = BrowserWindow.getAllWindows()[0];
+  if (!win) return;
+  if (win.isMinimized()) win.restore();
+  win.show(); win.focus();
+});
 app.whenReady().then(() => {
   createWindow();
   app.on('activate', () => {
@@ -81,5 +90,6 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
+}
 
 

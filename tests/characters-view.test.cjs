@@ -25,7 +25,7 @@ function fixture(overrides = {}) {
   const calls = { page: [], series: [], get: [], select: [], copy: [] };
   const records = {
     miku: {
-      id: 'miku', name: 'hatsune_miku', nameZh: '<img src=x onerror=alert(1)>', aliases: ['初音'],
+      id: 'miku', identityTagId: 'identity:miku', name: 'hatsune_miku', nameZh: '<img src=x onerror=alert(1)>', aliases: ['初音'],
       seriesId: 'vocaloid', seriesName: 'VOCALOID', identityTags: ['hatsune_miku_(vocaloid)', 'vocaloid'],
       generalTags: [{ id: 'teal_hair', en: 'teal hair', zh: '青绿色头发', category: 'hair', nsfw: false }],
       specificTags: [{ id: 'sekai_uniform', en: 'sekai uniform', zh: '世界计划制服', category: 'outfit', nsfw: false, review: true }],
@@ -40,6 +40,12 @@ function fixture(overrides = {}) {
     series(options) { calls.series.push({ ...options }); return [{ id: 'vocaloid', name: 'VOCALOID', count: 40 }, { id: 'project_sekai', name: 'Project SEKAI', count: 11 }]; },
     get(id, options) { calls.get.push([id, { ...options }]); return records[id]; },
     select(id, options) { calls.select.push([id, { ...options }]); return { id, name: 'hatsune_miku', tags: ['hatsune_miku_(vocaloid)'] }; },
+    copyText(id, options) {
+      const row = records[id], ids = options.includeSeries ? [...row.identityTags] : row.identityTags.slice(0, 1);
+      row.generalTags.forEach(tag => { if ((options.generalTagIds || []).includes(tag.id)) ids.push(tag.en); });
+      row.specificTags.forEach(tag => { if ((options.specificTagIds || []).includes(tag.id)) ids.push(tag.en); });
+      return ids.map(content => require('../src/modules/tag-library').formatTagOutput({ kind: 'tag', content })).join(', ');
+    },
     ...overrides.characters
   };
   const api = require(path.join(root, 'src/views/characters-view.js'));
@@ -50,7 +56,8 @@ function fixture(overrides = {}) {
     document: dom.window.document,
     characters,
     tags,
-    openFavorites,
+    favoriteTag: openFavorites,
+    tagEditor: overrides.tagEditor,
     onChange: () => { calls.changed = (calls.changed || 0) + 1; },
     copy: async value => { calls.copy.push(value); return true; },
     notify: value => { calls.notice = value; },
@@ -59,38 +66,17 @@ function fixture(overrides = {}) {
   return { dom, document: dom.window.document, view, calls, setLocale: value => { currentLocale = value; } };
 }
 
-test('character detail exposes edit and favorite actions and edits persist through the character API', async () => {
-  const edits = [];
-  const favorites = [];
-  const app = fixture({
-    characters: { edit: (id, patch) => { edits.push([id, patch]); return { ok: true }; } },
-    tags: { edit: (id, patch) => { edits.push([id, patch]); return { ok: true }; } },
-    openFavorites: async value => { favorites.push(value); return true; }
-  });
-  app.view.render({ query: '', precision: 'standard', includeAdult: false });
-  app.document.querySelector('[data-character-id="miku"]').click();
-  assert.ok(app.document.querySelector('[data-character-edit]') || app.document.querySelector('.character-detail-edit'));
-  assert.ok(app.document.querySelector('.character-detail-favorite'));
+test('character detail favorite uses canonical identity ID and no copied content', async () => {
+  const favorites = [], app = fixture({ openFavorites: async id => { favorites.push(id); return true; } });
+  app.view.render(); app.document.querySelector('[data-character-id="miku"]').click();
   app.document.querySelector('.character-detail-favorite').click();
-  assert.equal(favorites[0].rawText, 'hatsune_miku_\\(vocaloid\\), vocaloid');
-  app.document.querySelector('.character-detail-edit').click();
-  app.document.querySelector('[data-character-edit="nameZh"]').value = '初音未来';
-  app.document.querySelector('[data-character-edit-panel="character"]').dispatchEvent(new app.dom.window.Event('submit', { bubbles: true, cancelable: true }));
-  assert.equal(edits[0][0], 'miku');
-  assert.equal(edits[0][1].nameZh, '初音未来');
-  app.dom.window.close();
+  assert.deepEqual(favorites, ['identity:miku']); assert.equal(app.document.querySelector('[data-character-edit="nameZh"]'), null); app.dom.window.close();
 });
-
-test('character trait pencil edits the tag translation through the tag override API', () => {
-  const edits = [];
-  const app = fixture({ tags: { edit: (id, patch) => { edits.push([id, patch]); return { ok: true }; } } });
-  app.view.render({ query: '', precision: 'standard', includeAdult: false });
-  app.document.querySelector('[data-character-id="miku"]').click();
-  app.document.querySelector('[data-character-tag-edit="teal_hair"]').click();
-  app.document.querySelector('[data-character-edit="zh"]').value = '青绿色头发（手动）';
-  app.document.querySelector('[data-character-edit-panel="tag"]').dispatchEvent(new app.dom.window.Event('submit', { bubbles: true, cancelable: true }));
-  assert.deepEqual(edits[0], ['teal_hair', { en: 'teal hair', zh: '青绿色头发（手动）' }]);
-  app.dom.window.close();
+test('trait pencil delegates to shared tag editor without inline content form', async () => {
+  const opened = [], app = fixture({ tagEditor: { open: async value => opened.push(value) } });
+  app.view.render(); app.document.querySelector('[data-character-id="miku"]').click();
+  app.document.querySelector('[data-character-tag-edit="teal_hair"]').click(); await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(opened, [{ tagId: 'teal_hair' }]); assert.equal(app.document.querySelector('[data-character-edit-panel="tag"]'), null); app.dom.window.close();
 });
 
 test('character list rows open details without a list favorite shortcut', () => {
@@ -155,6 +141,7 @@ test('detail starts optional traits unchecked and sends explicit selection modes
   app.document.querySelector('[data-include-series]').checked = false;
   app.document.querySelector('[data-character-action="features"]').click();
   assert.deepEqual(app.calls.select[1], ['miku', { generalTagIds: ['teal_hair'], specificTagIds: ['sekai_uniform'], includeSeries: false, includeAdult: false }]);
+  await new Promise(resolve => setImmediate(resolve));
   assert.equal(app.calls.changed, 2);
 
   app.document.querySelector('[data-character-copy="features"]').click();
@@ -308,6 +295,7 @@ test('character route scopes header search and combines independent selections',
   assert.equal(app.copied.at(-1), 'blue_hair, hatsune_miku_\\(vocaloid\\)');
 
   app.document.querySelector('[data-remove-character="miku"]').click();
+  await new Promise(resolve => setImmediate(resolve));
   assert.equal(app.document.querySelectorAll('[data-remove-character]').length, 0);
   app.dom.window.close();
 });

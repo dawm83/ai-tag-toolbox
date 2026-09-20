@@ -6,6 +6,8 @@ const { contextBridge } = require('electron');
 
 // 只在本地 preload 中构造业务模块；页面不接触 Node、文件系统或旧版全局脚本。
 // 这个桥很薄，后续模块成熟后可以直接替换成浏览器端 ESM 实现。
+let catalog = null;
+let formatTagOutput = null;
 let tags = null;
 let favorites = null;
 let characters = null;
@@ -33,12 +35,16 @@ try {
   // preload 属于渲染进程，不能调用主进程的 app.getPath；按 Electron 默认规则
   // 使用 APPDATA/<package name> 作为稳定用户目录，避免重打包清空设置。
   const userDataDir = path.join(process.env.APPDATA || path.dirname(process.execPath), 'ai-tag-toolbox-rewrite');
-  const storagePath = path.join(userDataDir, 'rewrite-storage.json');
+  const boot = require('./src/modules/tag-library/bootstrap').createCatalogBootstrap({ userDataDir });
+  catalog = boot.catalog;
+  if (boot.blocked) throw Object.assign(new Error('旧存储需要修复'), { code: 'BOOT_BLOCKED' });
+  formatTagOutput = boot.formatTagOutput;
+  const storagePath = boot.storagePath;
   fs.mkdirSync(userDataDir, { recursive: true });
   storage = modules.createStorage ? modules.createStorage({ prefix: 'ai-tag-toolbox-rewrite', filePath: storagePath }) : null;
-  tags = modules.createTags({ sources: modules.loadTagFiles({ assetDir }), storage });
-  favorites = modules.createFavorites?.({ storage, tags }) || null;
-  characters = modules.createCharacters({ tags, storage, dataDir: path.join(assetDir, '数据资产', '角色') });
+  tags = modules.createTags({ library: boot.library, metadataById: boot.base.metadataById, preferences: storage });
+  favorites = modules.createFavorites({ library: boot.library });
+  characters = modules.createCharacters({ library: boot.library, characterSource: boot.characterSource });
   const modelCandidates = [
     path.join(path.dirname(process.execPath), 'models'),
     path.join(__dirname, '..', '..', 'models'),
@@ -102,8 +108,13 @@ try {
   runtime = assistant.runtime || null;
   primaryTools = assistant.primaryTools || null;
 } catch (error) {
+  if (!catalog) {
+    const failure = () => ({ ok: false, error: { code: 'BOOT_FAILED', message: '标签库启动失败，请检查应用资源后重试' } });
+    const reload = async () => ({ ok: true, data: { reloadRequired: true } });
+    catalog = Object.freeze({ ready: async () => failure(), status: () => ({ ready: false, writable: false, error: failure().error }), execute: async () => failure(), subscribe: () => () => {}, flush: async () => false, retryInitialization: reload, recoverBackup: reload });
+  }
   // 标签模块加载失败时仍让页面打开，便于人工看到错误并继续迭代。
-  console.warn('[V1.4.316] 业务模块加载失败：', error && error.message ? error.message : error);
+  console.warn('[V1.4.320] 业务模块加载失败：', error?.code || 'BOOT_FAILED');
 }
 
 function safeImageId(value) {
@@ -202,8 +213,10 @@ function resolveTempForRenderer(value) {
 }
 
 contextBridge.exposeInMainWorld('AppModules', {
+  catalog,
+  formatTagOutput,
   tags: tags ? Object.fromEntries([
-    'load', 'loadFiles', 'list', 'characterNameIndex', 'all', 'allTags', 'getAll', 'search', 'setQuery', 'setCategory', 'setAdult', 'setSearchPrecision', 'searchPrecisions', 'page', 'categoryCounts', 'subcategories', 'getSubcategories', 'stateSnapshot', 'customTags', 'getCategories', 'select', 'toggleSelected', 'selected', 'selectedText', 'clearSelection', 'addCustom', 'removeCustom', 'edit', 'restore', 'restoreUserState', 'editHistory', 'has', 'size', 'isLoaded', 'snapshot'
+    'get', 'copyText', 'list', 'characterNameIndex', 'all', 'allTags', 'getAll', 'search', 'setQuery', 'setCategory', 'setAdult', 'setSearchPrecision', 'searchPrecisions', 'page', 'categoryCounts', 'subcategories', 'getSubcategories', 'stateSnapshot', 'customTags', 'getCategories', 'select', 'toggleSelected', 'selected', 'selectedText', 'clearSelection', 'addCustom', 'removeCustom', 'edit', 'restore', 'restoreUserState', 'editHistory', 'has', 'size', 'isLoaded', 'snapshot'
   ].filter(name => typeof tags[name] === 'function').map(name => [name, tags[name]])) : null,
   favorites: favorites ? Object.fromEntries([
     'snapshot', 'series', 'sections', 'getEntry', 'list', 'saveSeries', 'saveSection', 'ensureTagColumns', 'saveEntry',
@@ -215,13 +228,15 @@ contextBridge.exposeInMainWorld('AppModules', {
   joinFavoriteBlocks: modulesRef?.joinFavoriteBlocks,
   async prepareClose() {
     assistant?.cancel?.();
-    const favoritesSaved = await favorites?.flush?.();
+    const ready = await catalog?.ready?.();
+    const catalogSaved = ready?.ok === false ? true : await catalog?.flush?.();
+    if (catalogSaved === false) return false;
     const sessionsSaved = await assistant?.flushPersistence?.();
     const settingsSaved = await storage?.flush?.();
-    return favoritesSaved !== false && sessionsSaved !== false && settingsSaved !== false;
+    return catalogSaved !== false && sessionsSaved !== false && settingsSaved !== false;
   },
   characters: characters ? Object.fromEntries([
-    'get', 'page', 'series', 'select', 'selected', 'size', 'count', 'manifest', 'selectionText', 'removeSelection', 'clearSelection', 'edit', 'restore', 'editHistory'
+    'get', 'copyText', 'page', 'series', 'select', 'selected', 'size', 'count', 'manifest', 'selectionText', 'removeSelection', 'clearSelection', 'edit', 'restore', 'editHistory'
   ].filter(name => typeof characters[name] === 'function').map(name => [name, characters[name]])) : null,
   images: safeImageStore,
   imageStore: safeImageStore,
