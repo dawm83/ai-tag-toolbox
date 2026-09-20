@@ -291,7 +291,6 @@
     async function favoriteTag(id) {
       if (await tagEditor.requestClose() === false || await views.characters?.requestClose?.() === false) return false;
       const tag = catalog.getTag(id); if (!tag) return false;
-      if (tag.favoriteLocations.length) { notify(localized('ui.favorites.favorite', '已收藏')); return true; }
       const placement = await tagLocation.choose({ kind: 'favorite' }); if (!placement) return false;
       return (await command({ type: 'favoriteTag', tagId: id, placement })).ok;
     }
@@ -561,14 +560,33 @@
           button.dataset.en = String(item.id || item.en);
           button.style.setProperty("--c", categoryColor(item.category));
           const en = doc.createElement("span"); en.className = "en"; en.textContent = item.en || ""; const zh = doc.createElement("span"); zh.className = "zh"; zh.textContent = item.zh || (item.aliases || item.al || []).join(" "); const cp = doc.createElement("span"); cp.className = "cp"; cp.textContent = localized("ui.tag.copyOnly", "仅复制"); button.append(en, zh, cp);
+          if (item.searchable === false) { const state = doc.createElement('small'); state.className = 'tag-search-disabled'; state.textContent = localized('ui.tag.searchDisabled', '不参与搜索'); button.append(state); }
           const wrap = doc.createElement("div");
           wrap.className = item.category === "character_names" && characters ? "chip-with-character chip-with-actions" : "chip-with-actions";
           const actions = doc.createElement('span'); actions.className = 'chip-actions';
           const edit = doc.createElement('button'); edit.type = 'button'; edit.className = 'chip-action chip-edit'; edit.dataset.tagEdit = str(item.id || item.en); edit.textContent = '🖊'; edit.title = localized('ui.custom.editTitle', '编辑 Tag');
           const star = doc.createElement('button'); star.type = 'button'; star.className = 'chip-action chip-favorite'; star.dataset.tagFavorite = str(item.id || item.en); star.textContent = '★'; star.title = localized('ui.favorites.favorite', '收藏');
+          star.setAttribute('aria-pressed', String(Boolean(item.favorite)));
+          star.classList.toggle('is-favorite', Boolean(item.favorite));
           actions.append(edit, star);
           if (item.edited) { const restore = doc.createElement('button'); restore.type = 'button'; restore.className = 'chip-action chip-restore'; restore.dataset.tagRestore = str(item.id || item.en); restore.textContent = '↺'; restore.title = localized('ui.custom.restore', '恢复默认'); actions.append(restore); }
           wrap.append(button, actions);
+          if (item.note) {
+            const note = doc.createElement('span'); note.className = 'tag-note-popover'; note.dataset.tagNote = item.id; note.id = 'tag-note-' + encodeURIComponent(item.id); note.setAttribute('role', 'tooltip'); note.textContent = item.note;
+            button.setAttribute('aria-describedby', note.id); wrap.append(note);
+          }
+          if (item.favoriteLocations?.length) {
+            const locations = doc.createElement('details'); locations.className = 'tag-locations'; locations.dataset.tagLocations = item.id;
+            const summary = doc.createElement('summary'); summary.textContent = '↗'; summary.title = localized('ui.tag.favoriteLocations', '收藏位置'); summary.setAttribute('aria-label', summary.title);
+            const menu = doc.createElement('div'); menu.className = 'tag-location-menu';
+            for (const location of item.favoriteLocations) {
+              const jump = doc.createElement('button'); jump.type = 'button'; jump.dataset.locateMembership = location.membershipId; jump.textContent = `${location.pageName} / ${location.groupName}`;
+              jump.onclick = async () => { locations.open = false; if (await route('favorites') !== false) await views.favorites?.focusEntry?.(location.membershipId); };
+              menu.append(jump);
+            }
+            locations.addEventListener('keydown', event => { if (event.key === 'Escape') { locations.open = false; summary.focus(); } });
+            locations.append(summary, menu); wrap.append(locations);
+          }
           if (item.category === "character_names" && characters) {
             const jump = doc.createElement("button");
             jump.type = "button";
@@ -600,6 +618,7 @@
         if (!host) return; host.replaceChildren();
         for (const item of rows) {
           const chip = doc.createElement('span'); chip.className = 'schip'; const text = doc.createElement('span'); text.textContent = item.displayName || item.content;
+          if (item.kind === 'legacySnapshot') { const badge = doc.createElement('small'); badge.className = 'selection-snapshot-label'; badge.textContent = localized('ui.tag.legacySnapshot', '旧快照'); chip.append(badge); }
           const remove = doc.createElement('button'); remove.type = 'button'; remove.className = 'btn btn-icon btn-danger'; remove.dataset.selectionKey = item.key; remove.textContent = '✕';
           chip.append(text, remove); host.append(chip);
         }
@@ -1639,19 +1658,6 @@
       const fromResult = ui.visionResult?.builtinTags || [];
       return [...fromImage, ...fromResult].filter(item => tagText(item));
     }
-    function renderVisionChips(selector, rows) {
-      const host = $(selector); if (!host) return;
-      host.replaceChildren();
-      const seen = new Set();
-      rows.forEach(item => {
-        const value = tagText(item); const key = value.toLowerCase();
-        if (!value || seen.has(key)) return;
-        seen.add(key);
-        const chip = doc.createElement("button"); chip.type = "button"; chip.className = "tchip ok tagchip btn btn-chip"; chip.dataset.tag = value; chip.textContent = value; chip.title = `${value} · 点击复制`;
-        chip.onclick = async () => { if (await copy(value)) notify(`已复制：${value}`); };
-        host.appendChild(chip);
-      });
-    }
     function renderEmbeddedVision() { renderTalkVisionPanel(); }
     function renderTalkVisionPanel() {
       const host = $("#tpModes"); if (!host) return;
@@ -1725,9 +1731,44 @@
     }
     function renderVisionChipsInto(host, rows) {
       host.replaceChildren();
-      uniqueTagTexts(rows).forEach(value => {
-        const chip = doc.createElement("button"); chip.type = "button"; chip.className = "tchip ok tagchip btn btn-chip"; chip.dataset.tag = value; chip.textContent = value; chip.title = `${value} · 点击复制`; chip.onclick = async () => { if (await copy(value)) notify(`已复制：${value}`); }; host.appendChild(chip);
-      });
+      const descriptions = tags?.describe?.(rows) || rows.map(item => ({ rawText: tagText(item), displayName: '', categoryId: '', probability: null }));
+      const categoryRows = tags?.getCategories?.() || [];
+      const categoryNames = new Map(categoryRows.map(row => [row.id, row.name]));
+      const order = new Map(categoryRows.map((row, index) => [row.id, index]));
+      const groups = new Map(), seen = new Set();
+      for (const item of descriptions) {
+        const key = str(item.rawText).toLowerCase();
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        const category = item.categoryId || 'unclassified';
+        if (!groups.has(category)) groups.set(category, []);
+        groups.get(category).push(item);
+      }
+      for (const [category, items] of [...groups].sort((a, b) => (order.get(a[0]) ?? Infinity) - (order.get(b[0]) ?? Infinity))) {
+        const section = doc.createElement('section'); section.className = 'vision-tag-group'; section.dataset.category = category;
+        const heading = doc.createElement('h4');
+        heading.textContent = `${category === 'unclassified' ? localized('ui.ai.unclassifiedTags', '待分类') : categoryLabel(category, categoryNames.get(category) || category)} (${items.length})`;
+        const chips = doc.createElement('div'); chips.className = 'chips';
+        for (const item of items) {
+          const chip = doc.createElement('button'); chip.type = 'button'; chip.className = 'chip btn btn-chip vision-tag-chip'; chip.dataset.tag = item.rawText;
+          chip.style.setProperty('--c', categoryColor(category)); chip.title = item.rawText;
+          const en = doc.createElement('span'); en.className = 'en'; en.textContent = item.rawText; chip.append(en);
+          if (item.displayName) { const zh = doc.createElement('span'); zh.className = 'zh'; zh.textContent = item.displayName; chip.append(zh); }
+          if (typeof item.probability === 'number' && item.probability >= 0 && item.probability <= 1) {
+            const confidence = doc.createElement('span'); confidence.className = 'vision-confidence'; confidence.textContent = `${Math.round(item.probability * 100)}%`;
+            confidence.title = localized('ui.ai.recognitionProbability', '模型识别概率'); chip.append(confidence);
+          }
+          const feedback = doc.createElement('span'); feedback.className = 'cp'; feedback.textContent = localized('ui.tag.copyOnly', '仅复制'); chip.append(feedback);
+          chip.onclick = async () => {
+            if (await copy(item.rawText)) {
+              feedback.textContent = localized('ui.tag.copied', '已复制');
+              notify(localized('ui.tag.copied', '已复制'));
+            }
+          };
+          chips.append(chip);
+        }
+        section.append(heading, chips); host.append(section);
+      }
     }
     function uniqueTagTexts(rows) {
       const seen = new Set();
@@ -4147,6 +4188,7 @@
         if (change.changedTagIds.length || change.structureChanged) {
           if (ui.route === 'tags') { const scroll = $('#chips')?.scrollTop; renderCategories(); renderTags(); if ($('#chips')) $('#chips').scrollTop = scroll; }
           if (ui.route === 'characters') views.characters?.refresh?.();
+          if (ui.route === 'ai') renderTalkVisionPanel();
         }
         renderSelection();
       });

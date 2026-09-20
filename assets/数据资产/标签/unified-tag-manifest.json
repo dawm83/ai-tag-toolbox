@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "fingerprint": "eca6c2cdcfa634925c6dcb4de31c6b815133a87c2ca36151b616ec1d1f06174e",
-  "sourceSha256": "23d60b7be3f45e919b56dabed3c12b0a80e5a7ba3ecd5e3c98075a4764f8045e",
+  "fingerprint": "3ed34cd85970f72c6df9dda7abb6c523101bfbe47229316cc98c232c6edea52d",
+  "sourceSha256": "697f13b1f3897721a3021f87d825b20b8970bf70aecb35b95adf908246345edf",
   "sources": [
     {
       "file": "数据资产/标签/data-tags.js",
@@ -38,6 +38,10 @@
     {
       "file": "数据资产/角色/manifest.json",
       "sha256": "e962d9c91ef57c1608f9f8fdbef9e2ace281e3f9b7ec560000f621993cd83b89"
+    },
+    {
+      "file": "数据资产/标签/tag-enrichment.json",
+      "sha256": "f67f16f895d5aea0591758b718254d538c077b0303d4673fb186cc168abd82a6"
     }
   ],
   "counts": {

@@ -216,7 +216,7 @@ contextBridge.exposeInMainWorld('AppModules', {
   catalog,
   formatTagOutput,
   tags: tags ? Object.fromEntries([
-    'get', 'copyText', 'list', 'characterNameIndex', 'all', 'allTags', 'getAll', 'search', 'setQuery', 'setCategory', 'setAdult', 'setSearchPrecision', 'searchPrecisions', 'page', 'categoryCounts', 'subcategories', 'getSubcategories', 'stateSnapshot', 'customTags', 'getCategories', 'select', 'toggleSelected', 'selected', 'selectedText', 'clearSelection', 'addCustom', 'removeCustom', 'edit', 'restore', 'restoreUserState', 'editHistory', 'has', 'size', 'isLoaded', 'snapshot'
+    'get', 'describe', 'copyText', 'list', 'characterNameIndex', 'all', 'allTags', 'getAll', 'search', 'setQuery', 'setCategory', 'setAdult', 'setSearchPrecision', 'searchPrecisions', 'page', 'categoryCounts', 'subcategories', 'getSubcategories', 'stateSnapshot', 'customTags', 'getCategories', 'select', 'toggleSelected', 'selected', 'selectedText', 'clearSelection', 'addCustom', 'removeCustom', 'edit', 'restore', 'restoreUserState', 'editHistory', 'has', 'size', 'isLoaded', 'snapshot'
   ].filter(name => typeof tags[name] === 'function').map(name => [name, tags[name]])) : null,
   favorites: favorites ? Object.fromEntries([
     'snapshot', 'series', 'sections', 'getEntry', 'list', 'saveSeries', 'saveSection', 'ensureTagColumns', 'saveEntry',

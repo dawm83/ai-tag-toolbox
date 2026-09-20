@@ -259,6 +259,9 @@
       "tagCount": "{count} tags",
       "copied": "Copied",
       "copyOnly": "Copy only",
+      "searchDisabled": "Search disabled",
+      "favoriteLocations": "Favorite locations",
+      "legacySnapshot": "Legacy snapshot",
       "remove": "Remove",
       "brandSub": "V1.4.1 · {count} tags · Click to select · Copy in one click",
       "brandSubWithModel": "V1.4.1 · {count} tags ({modelCount} synced from vision model) · Click to select · Copy in one click"
@@ -408,6 +411,8 @@
       "visionModel": "Vision model",
       "builtinTags": "Embedded image Tags",
       "modelTags": "Model recognition Tags",
+      "unclassifiedTags": "Unclassified",
+      "recognitionProbability": "Model recognition probability",
       "openVision": "Vision",
       "clearImage": "Clear image",
       "stop": "■ Stop",

@@ -259,6 +259,9 @@
       "tagCount": "{count} 个标签",
       "copied": "已复制",
       "copyOnly": "仅复制",
+      "searchDisabled": "不参与搜索",
+      "favoriteLocations": "收藏位置",
+      "legacySnapshot": "旧快照",
       "remove": "移除",
       "brandSub": "V1.4.1 · 共 {count} 个标签 · 单击选择 · 一键复制",
       "brandSubWithModel": "V1.4.1 · 共 {count} 个标签（含识图模型同步 {modelCount} 个）· 单击选择 · 一键复制"
@@ -375,6 +378,8 @@
       "visionModel": "识图模型",
       "builtinTags": "原图内置 Tag",
       "modelTags": "模型识别 Tag",
+      "unclassifiedTags": "待分类",
+      "recognitionProbability": "模型识别概率",
       "openVision": "识图",
       "clearImage": "清除图片",
       "generate": "✨ 生成",

@@ -5,8 +5,10 @@ const { clone, createProjection } = require('./projection');
 const { applyLibraryCommand } = require('./commands');
 const { applyHistory, changeFor } = require('./history');
 const { createTagSearchIndex } = require('./search');
+const { createTagMetadataResolver } = require('./tag-metadata');
 const { resolveSelection } = require('./selection');
 const { prepareLegacyMigration, fingerprintLegacy, filteredInput } = require('./migration');
+const { prepareBaseUpdate } = require('./base-update');
 const { projectLibraryBundle, prepareImportCandidate, preparePasteBundle, projectMigrationReport, encodeBundle, encodeDataFile, decodeBundle } = require('./transfer');
 
 const fail = (code, message) => ({ ok: false, error: { code, message } });
@@ -26,8 +28,9 @@ function emptyDocument(base, ids) {
 }
 
 /** One authoritative, queued, durable user overlay over a private immutable base. */
-function createTagLibrary({ base, repository, legacyInput, ids = prefix => `${prefix}:${randomUUID()}`, now = Date.now }) {
+function createTagLibrary({ base, repository, legacyInput, baseUpdates = [], ids = prefix => `${prefix}:${randomUUID()}`, now = Date.now }) {
   const immutableBase = freeze(clone(base));
+  const knownBaseUpdates = clone(baseUpdates);
   let current = null, projection = null, queue = Promise.resolve(), initialized = false, closing = false, disposed = false, statusError = null;
   let lastWriteSucceeded = true;
   let validateDocument;
@@ -42,6 +45,8 @@ function createTagLibrary({ base, repository, legacyInput, ids = prefix => `${pr
     try {
       const loaded = await repository.read();
       let candidate = loaded === null ? emptyDocument(immutableBase, ids) : clone(loaded), source = null;
+      const updated = loaded === null ? null : prepareBaseUpdate(candidate, immutableBase.fingerprint, knownBaseUpdates);
+      if (updated) candidate = updated;
       if (loaded === null && legacyInput !== undefined) {
         source = await readLegacy();
         await repository.backupLegacy(clone(source));
@@ -51,6 +56,7 @@ function createTagLibrary({ base, repository, legacyInput, ids = prefix => `${pr
       }
       const checked = validateDocument(candidate);
       if (!checked.ok) { statusError = checked.error; return checked; }
+      if (updated) await repository.save(clone(candidate));
       if (loaded === null) {
         const beforeCommit = source ? async () => {
           if (fingerprintLegacy(await readLegacy()) !== candidate.migration.sourceFingerprint) {
@@ -60,7 +66,7 @@ function createTagLibrary({ base, repository, legacyInput, ids = prefix => `${pr
         if (beforeCommit) await beforeCommit();
         await repository.save(clone(candidate), { expectMissing: true, beforeCommit });
       }
-      current = candidate; projection = createProjection(current, immutableBase); searchIndex.invalidate(); initialized = true;
+      current = candidate; projection = createProjection(current, immutableBase); searchIndex.invalidate(); metadataResolver.invalidate(); initialized = true;
       statusError = null; lastWriteSucceeded = true;
       return { ok: true, data: { migration: clone(current.migration) }, revision: current.revision };
     } catch (error) {
@@ -71,6 +77,7 @@ function createTagLibrary({ base, repository, legacyInput, ids = prefix => `${pr
   }
   const searchIndex = createTagSearchIndex({ getTags: () => projection?.tags() || [], getMemberships: () => current?.memberships || [], getCharacterLinks: () => projection?.characters.values() || [], getStructure: () => ({ pages: current?.favoritePages || [], groups: current?.favoriteGroups || [] }),
     getMetadata: () => immutableBase.metadataById || {}, getTaxonomy: () => ({ categories: projection?.categories.values() || [], subcategories: projection?.subcategories.values() || [] }) });
+  const metadataResolver = createTagMetadataResolver({ getTags: () => projection?.tags() || [], getOverrides: () => current?.tagOverrides || [], isReady: () => initialized });
   let initialization = initialize();
   async function recover(mode) {
     if (recoveryPending) return fail('RECOVERY_IN_PROGRESS', '正在恢复标签库');
@@ -81,7 +88,7 @@ function createTagLibrary({ base, repository, legacyInput, ids = prefix => `${pr
       if (initialized) return mode === 'retry' ? clone(await initialization) : fail('RECOVERY_NOT_ALLOWED', '有效标签库不能用备份覆盖');
       if (mode === 'backup') {
         if (!validateDocument || typeof repository.recoverBackup !== 'function') return fail('RECOVERY_NOT_AVAILABLE', '此存储不支持备份恢复');
-        try { await repository.recoverBackup({ validate: validateDocument }); }
+        try { await repository.recoverBackup({ validate: candidate => validateDocument(prepareBaseUpdate(candidate, immutableBase.fingerprint, knownBaseUpdates) || candidate) }); }
         catch (e) {
           const code = ['INVALID_DOCUMENT', 'UNSUPPORTED_VERSION', 'RECOVERY_NOT_ALLOWED', 'RECOVERY_SOURCE_CHANGED', 'STORAGE_WRITE_FAILED'].includes(e?.code) ? e.code : 'STORAGE_WRITE_FAILED';
           statusError = fail(code, '备份恢复未完成，原文件已保留').error; return { ok: false, error: clone(statusError) };
@@ -144,6 +151,7 @@ function createTagLibrary({ base, repository, legacyInput, ids = prefix => `${pr
     operations.set(options.operationId, { fingerprint, result: clone(result) });
     if (command.type === 'applyImport') importPreview = null;
     searchIndex.invalidate(candidate.change);
+    metadataResolver.invalidate(candidate.change);
     publish(candidate.change);
     return result;
   }
@@ -175,6 +183,7 @@ function createTagLibrary({ base, repository, legacyInput, ids = prefix => `${pr
     ready: async () => clone(await initialization), status: state, revision,
     retryInitialization: () => recover('retry'), recoverBackup: () => recover('backup'),
     getTag: id => projection ? clone(projection.view(id)) : null,
+    describeTags: (values, options) => metadataResolver.describe(values, options),
     listTags: options => queryPage(options), search: (query, options) => queryPage(options, String(query ?? '')),
     getTagIds: options => searchIndex.ids(options),
     tagCounts: options => clone(searchIndex.counts(Boolean(options?.includeAdult))),

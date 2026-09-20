@@ -22,7 +22,8 @@ async function boot(t, options = {}) {
   // while every query and command still runs the actual library.
   const catalog = { ...h.library, execute: (command, settings) => h.library.execute(structuredClone(command), structuredClone(settings)) };
   const bridgedCharacters = { ...characters, edit: (...args) => characters.edit(...structuredClone(args)), select: (...args) => characters.select(...structuredClone(args)) };
-  window.AppModules = { catalog, tags, favorites, characters: bridgedCharacters, preferences: storage, formatTagOutput };
+  const visionTempStore = options.visionImage ? { current: () => ({ tempId: 'vision-fixture' }), get: () => structuredClone(options.visionImage) } : undefined;
+  window.AppModules = { catalog, tags, favorites, characters: bridgedCharacters, preferences: storage, formatTagOutput, visionTempStore };
   for (const name of ['tag-location', 'tag-editor', 'favorites', 'characters']) window.eval(fs.readFileSync(path.join(root, `src/views/${name}-view.js`), 'utf8'));
   window.eval(fs.readFileSync(path.join(root, 'src/app-view.js'), 'utf8'));
   window.eval(fs.readFileSync(path.join(root, 'src/app.js'), 'utf8'));
@@ -33,6 +34,29 @@ async function boot(t, options = {}) {
   const input = (selector, value) => { const node = $(selector); if (typeof value === 'boolean') node.checked = value; else node.value = value; node.dispatchEvent(new window.Event('input', { bubbles: true })); };
   return { ...h, dom, window, $, click, input, tags, favorites, characters, copied: () => copied };
 }
+
+test('vision displays shared Chinese and taxonomy while copy keeps raw Tags and model order', async t => {
+  const base = makeBase();
+  base.tags.find(row => row.id === 'long_hair').displayName = '<script>长发</script>';
+  const original = ['long_hair', '(blue_hair:1.2)', 'blue_hair', 'unknown_tag'];
+  const h = await boot(t, { base, visionImage: { metadata: { builtinTags: ['blue_hair'] }, analysis: { tags: original.map((tag, index) => ({ tag, prob: 0.9 - index / 10, category: 0 })) } } });
+  await h.window.App.route('ai');
+  const doc = h.window.document;
+  const groups = doc.querySelectorAll('.vision-tag-group[data-category="hair"]');
+  assert.equal(groups.length, 2);
+  assert.match(groups[1].textContent, /蓝发/);
+  assert.match(groups[1].textContent, /<script>长发<\/script>/);
+  assert.equal(groups[1].querySelector('script'), null);
+  assert.match(doc.querySelector('.vision-tag-group[data-category="unclassified"]').textContent, /unknown_tag/);
+  const model = doc.querySelectorAll('#tpModes .tp-mod')[1];
+  assert.equal(model.querySelector('[data-tag="long_hair"] .vision-confidence').textContent, '90%');
+  model.querySelector('[data-tag="blue_hair"]').click(); await settle();
+  assert.equal(h.copied(), 'blue_hair');
+  model.querySelector('.tpm-copy').click(); await settle();
+  assert.equal(h.copied(), original.join(', '));
+  await h.tags.edit('blue_hair', { zh: '新中文' }); await settle();
+  assert.equal(doc.querySelector('[data-tag="blue_hair"] .zh').textContent, '新中文');
+});
 test('actual app shares favorite edits, role traits, private browse and selection with one editor', async t => {
   const h = await boot(t);
   assert.ok(h.$('[data-en="blue_hair"]'));
@@ -61,6 +85,34 @@ test('canonical selection dedupes shared role traits by ID and preserves opaque 
   const saved = await h.library.execute({ type: 'saveTag', patch: { kind: 'bundle', content: '  A, (b:1.2)\r\nc\n  ' } }, { operationId: 'bundle' });
   assert.equal(saved.ok, true); await h.tags.select(saved.data.tagId); await h.click('#copyAll');
   assert.ok(h.copied().endsWith('  A, (b:1.2)\r\nc\n  '));
+});
+
+test('home shows notes, search-disabled state and exact favorite locations without losing multi-group additions', async t => {
+  const h = await boot(t);
+  await h.tags.edit('blue_hair', { note: '<img src=x> 用户备注', searchable: false });
+  const second = (await h.favorites.saveSection({ seriesId: 'home', name: '第二组' })).data;
+  await h.favorites.saveEntry({ sourceTagId: 'blue_hair', seriesId: 'home', sectionId: 'daily' });
+  assert.equal(h.$('[data-en="blue_hair"] .tag-search-disabled').textContent, '不参与搜索');
+  assert.equal(h.$('[data-tag-note="blue_hair"]').textContent, '<img src=x> 用户备注');
+  assert.equal(h.$('[data-tag-note="blue_hair"] img'), null);
+  assert.equal(h.$('[data-tag-favorite="blue_hair"]').getAttribute('aria-pressed'), 'true');
+  await h.click('[data-tag-favorite="blue_hair"]');
+  h.$('[data-location-parent]').value = 'home'; h.$('[data-location-parent]').dispatchEvent(new h.window.Event('change'));
+  h.$('[data-location-child]').value = second.id; await h.click('[data-location-confirm]');
+  const locations = h.window.document.querySelectorAll('[data-tag-locations="blue_hair"] [data-locate-membership]');
+  assert.equal(locations.length, 2);
+  const target = h.library.getMemberships('blue_hair').find(row => row.groupId === second.id);
+  await h.click(`[data-locate-membership="${target.id}"]`);
+  assert(h.$(`[data-favorite-entry="${target.id}"]`).classList.contains('is-located'));
+});
+
+test('migrated Prompt snapshots remain visibly historical while preserving exact copied content', async t => {
+  const document = emptyUserDocument();
+  document.selection = [{ kind: 'legacySnapshot', id: 'old', content: '(blue hair:1.3)\nlong hair', displayName: '旧组合', adult: false }];
+  const h = await boot(t, { document });
+  assert.equal(h.$('.selection-snapshot-label').textContent, '旧快照');
+  await h.click('#copyAll');
+  assert.equal(h.copied(), '(blue hair:1.3)\nlong hair');
 });
 test('actual homepage load more crosses the 2000 query cap without duplicate IDs', async t => {
   const base = makeBase(); base.tags.push(...Array.from({ length: 2050 }, (_, i) => makeRecord({ id: 'bulk:' + i, content: 'bulk ' + i })));

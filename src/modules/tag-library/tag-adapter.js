@@ -103,7 +103,7 @@ function createTagAdapter({ library, metadataById = {}, categoryMetadata = DEFAU
   return Object.freeze({
     dispose: unsubscribe, revision: () => library.revision(), searchSettings: () => ({ includeAdult, precision: searchPrecision }),
     ready: () => library.ready(), status: () => library.status(), isLoaded: () => library.status().ready,
-    get, has: value => Boolean(library.getTag(idOf(value))), list, all: list, allTags: list, getAll: list, search, page,
+    get, describe: values => library.describeTags(values, { includeAdult }), has: value => Boolean(library.getTag(idOf(value))), list, all: list, allTags: list, getAll: list, search, page,
     size: () => library.listTags({ includeAdult: true, limit: 0 }).total,
     categories, getCategories: categories, categoryCounts, subcategories, getSubcategories: subcategories,
     characterNameIndex: () => list({ category: 'character_names', includeAdult: true }),

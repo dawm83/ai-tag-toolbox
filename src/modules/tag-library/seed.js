@@ -4,6 +4,7 @@
 const { createHash } = require('node:crypto');
 const { normaliseTag, normaliseKeywords, searchKey, DEFAULT_CATEGORIES } = require('../tags');
 const { validateBase } = require('./schema');
+const { enrichBundledTags } = require('./enrichment');
 const hash = value => createHash('sha256').update(value).digest('hex');
 const list = value => Array.isArray(value) ? value : [];
 const terms = value => Array.isArray(value) ? value : typeof value === 'string' ? value.split(/[\s,，、;；]+/).filter(Boolean) : [];
@@ -73,7 +74,7 @@ function ordinaryRows(sources) {
 }
 
 /** @returns {{ok:true,data:object}|{ok:false,error:{code:string,message:string,fields:string[]}}} */
-function buildUnifiedSeed(input = {}) {
+function buildUnifiedSeed(input = {}, options = {}) {
   try {
     if (!input || typeof input !== 'object' || Array.isArray(input)) invalid('input');
     const { tags: sources, characters = [], specificTags = [], manifest = {} } = input;
@@ -157,7 +158,8 @@ function buildUnifiedSeed(input = {}) {
     }
     for (const row of characters) addCharacter(row, false);
     for (const row of ordinary.rows.values()) if (row.category === 'character_names' && !characterIds.has(row.id)) addCharacter({ id: row.id, count: row.count, trigger: label(row.en) }, true);
-    const base = { tags: [...tags.values()], categories: [...categories.values()], subcategories: [...subs.values()], characterLinks, legacyIds, metadataById, characterInfo };
+    let base = { tags: [...tags.values()], categories: [...categories.values()], subcategories: [...subs.values()], characterLinks, legacyIds, metadataById, characterInfo };
+    if (options.enrich !== false) base = enrichBundledTags(base).base;
     base.fingerprint = hash(JSON.stringify({ base, manifest }));
     return validateBase(base);
   } catch (error) {
