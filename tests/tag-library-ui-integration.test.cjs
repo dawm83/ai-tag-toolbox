@@ -111,3 +111,65 @@ test('same tag selected from either membership marks both locations and editor d
   await h.library.execute({ type: 'saveTag', tagId: 'long_hair', patch: { note: 'outside' } }, { operationId: 'outside-draft' });
   assert.equal(h.$('[data-tag-field="note"]').value, 'draft'); assert.equal(h.window.document.activeElement, active);
 });
+test('favorite subscriptions insert two sequential blank-cell saves and move exact membership through the picker', async t => {
+  const h = await boot(t);
+  const other = (await h.favorites.saveSection({ seriesId: 'home', name: 'Other' })).data;
+  await h.window.App.route('favorites');
+  const column = id => h.$(`[data-favorite-section="${id}"]`);
+  const count = id => column(id).querySelector('.favorite-section-count').textContent;
+  const scroll = h.$('[data-favorite-scroll]'); scroll.scrollLeft = 170; scroll.scrollTop = 23;
+  for (const content of ['newone', 'newtwo']) {
+    await h.click('[data-favorite-quick-new][data-section-id="daily"]');
+    h.input('[data-tag-field="content"]', content); await h.click('[data-tag-save]');
+  }
+  assert.equal(h.favorites.list({ sectionId: 'daily' }).total, 2);
+  assert.equal(column('daily').querySelectorAll('[data-favorite-entry]').length, 2);
+  assert.equal(count('daily'), '2'); assert.equal(count(other.id), '0');
+  const member = h.favorites.list({ sectionId: 'daily' }).items.find(row => row.rawText === 'newtwo');
+  await h.click(`[data-favorite-edit="${member.id}"]`); await h.click('[data-tag-location]');
+  h.$('[data-location-child]').value = other.id; await h.click('[data-location-confirm]'); await h.click('[data-tag-save]');
+  assert.equal(h.favorites.getEntry(member.id).sectionId, other.id);
+  assert.equal(column('daily').querySelectorAll('[data-favorite-entry]').length, 1);
+  assert.equal(column(other.id).querySelectorAll('[data-favorite-entry]').length, 1);
+  assert.equal(count('daily'), '1'); assert.equal(count(other.id), '1');
+  assert.equal(scroll.scrollLeft, 170); assert.equal(scroll.scrollTop, 23);
+});
+test('favorite subscriptions remove newly adult rows and restore newly safe rows with accurate counts', async t => {
+  const h = await boot(t);
+  const member = (await h.favorites.saveEntry({ sourceTagId: 'blue_hair', seriesId: 'home', sectionId: 'daily' })).data;
+  await h.window.App.route('favorites'); assert.equal(h.tags.stateSnapshot().includeAdult, false);
+  await h.click(`[data-favorite-edit="${member.id}"]`); h.input('[data-tag-field="adult"]', true); await h.click('[data-tag-save]');
+  assert.equal(h.favorites.list({ sectionId: 'daily', includeAdult: false }).total, 0);
+  assert.equal(h.$(`[data-favorite-entry="${member.id}"]`), null);
+  assert.equal(h.$('.favorite-section-count').textContent, '0'); assert.match(h.$('.favorite-adult-hidden').textContent, /1/);
+  await h.library.execute({ type: 'saveTag', tagId: 'blue_hair', patch: { adult: false } }, { operationId: 'make-safe' });
+  assert.ok(h.$(`[data-favorite-entry="${member.id}"]`)); assert.equal(h.$('.favorite-section-count').textContent, '1');
+  assert.equal(h.$('.favorite-adult-hidden'), null);
+});
+test('stale favorite DOM cannot copy or select a now-hidden adult tag', async t => {
+  const h = await boot(t);
+  const member = (await h.favorites.saveEntry({ sourceTagId: 'blue_hair', seriesId: 'home', sectionId: 'daily' })).data;
+  await h.window.App.route('favorites');
+  const stale = h.$(`[data-favorite-entry="${member.id}"]`).cloneNode(true);
+  await h.library.execute({ type: 'saveTag', tagId: 'blue_hair', patch: { adult: true } }, { operationId: 'adult-stale' });
+  h.$('.favorite-entry-list').replaceChildren(stale);
+  const revision = h.library.revision();
+  await h.click(`[data-favorite-copy="${member.id}"]`); await h.click(`[data-favorite-select="${member.id}"]`);
+  assert.equal(h.copied(), ''); assert.equal(h.library.revision(), revision); assert.equal(h.library.selected({ includeAdult: true }).length, 0);
+});
+test('favorite reconciliation keeps the loaded prefix, untouched focus and active editor while refreshing counts', async t => {
+  const base = makeBase(); base.tags.push(...Array.from({ length: 65 }, (_, index) => makeRecord({ id: 'entry:' + index, content: 'entry ' + index })));
+  const document = emptyUserDocument(base); document.memberships = Array.from({ length: 65 }, (_, index) => ({ id: 'member:' + index, tagId: 'entry:' + index, groupId: 'daily', order: index, pinned: false }));
+  const h = await boot(t, { base, document }); await h.window.App.route('favorites');
+  assert.equal(h.window.document.querySelectorAll('[data-favorite-entry]').length, 60);
+  const active = h.$('[data-favorite-copy="member:5"]'); active.focus();
+  await h.library.execute({ type: 'saveTag', tagId: 'entry:64', patch: { note: 'outside prefix' } }, { operationId: 'outside-prefix' });
+  assert.equal(h.window.document.activeElement, active); assert.equal(h.window.document.querySelectorAll('[data-favorite-entry]').length, 60);
+  assert.equal(h.$('.favorite-section-count').textContent, '65');
+  await h.click('[data-favorite-edit="member:5"]'); h.input('[data-tag-field="note"]', 'retained draft'); h.$('[data-tag-field="note"]').focus();
+  const draftFocus = h.window.document.activeElement;
+  await h.library.execute({ type: 'saveTag', tagId: 'entry:0', patch: { adult: true } }, { operationId: 'hide-first' });
+  assert.equal(h.$('[data-favorite-entry="member:0"]'), null); assert.ok(h.$('[data-favorite-entry="member:60"]'));
+  assert.equal(h.window.document.querySelectorAll('[data-favorite-entry]').length, 60); assert.equal(h.$('.favorite-section-count').textContent, '64');
+  assert.equal(h.window.document.activeElement, draftFocus); assert.equal(h.$('[data-tag-field="note"]').value, 'retained draft');
+});

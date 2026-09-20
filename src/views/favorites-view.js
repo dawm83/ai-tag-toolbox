@@ -517,24 +517,63 @@
     async function flushEdits() { return finishEditorBeforeMutation(); }
 
     function refreshChangedEntries(ids) {
-      const selected = allSelectedIds();
-      unique(ids).forEach(id => {
-
+      if (!ids.length) return;
+      const affected = new Set(); let unknownPreviousColumn = false;
+      for (const id of unique(ids)) {
+        const previous = host.querySelector(`[data-favorite-entry="${cssEscape(id)}"]`)?.closest('[data-favorite-section]');
         const entry = safeCall('getEntry', id);
-        host.querySelectorAll(`[data-favorite-entry="${cssEscape(id)}"]`).forEach(node => {
-          if (!entry) node.remove(); else node.replaceWith(renderEntry(entry, selected.has(entry.tagId || id)));
+        if (previous) affected.add(previous.dataset.favoriteSection);
+        if (entry?.seriesId === state.seriesId) affected.add(entry.sectionId);
+        // A deleted or moved row may have been beyond the loaded prefix. Its
+        // former column still needs a fresh total, without expanding the list.
+        if (!previous) unknownPreviousColumn = true;
+      }
+      const series = seriesRows().find(row => row.id === state.seriesId); if (!series) return;
+      const sections = new Map(sectionRows(series.id).map(row => [row.id, row]));
+      const selected = allSelectedIds(), active = doc.activeElement;
+      const scroll = host.querySelector('[data-favorite-scroll]');
+      const scrollPosition = scroll && { left: scroll.scrollLeft, top: scroll.scrollTop };
+      for (const column of host.querySelectorAll('[data-favorite-section]')) {
+        if (!unknownPreviousColumn && !affected.has(column.dataset.favoriteSection)) continue;
+        const section = sections.get(column.dataset.favoriteSection); if (!section) continue;
+        const fresh = renderColumn(series, section, selected, column.hasAttribute('data-favorite-lazy-section'));
+        const list = column.querySelector('.favorite-entry-list'), nextList = fresh.querySelector('.favorite-entry-list');
+        const existing = new Map([...list.children].map(node => [node.dataset.favoriteEntry || 'blank', node]));
+        const desired = [...nextList.children].map(node => {
+          const previous = existing.get(node.dataset.favoriteEntry || 'blank');
+          return previous && previous.outerHTML === node.outerHTML ? previous : node;
         });
-      });
+        const focusAttributes = active && list.contains(active)
+          ? ['data-favorite-select', 'data-favorite-copy', 'data-favorite-edit', 'data-favorite-action', 'data-entry-id', 'data-section-id'].filter(name => active.hasAttribute(name)).map(name => [name, active.getAttribute(name)]) : [];
+        const top = column.scrollTop, left = column.scrollLeft, listTop = list.scrollTop;
+        // Keep unchanged rows and the blank-cell opener connected so notifications
+        // do not steal their focus or the shared editor's return-focus target.
+        for (const node of [...list.children]) if (!desired.includes(node)) node.remove();
+        desired.forEach((node, index) => { if (list.children[index] !== node) list.insertBefore(node, list.children[index] || null); });
+        column.querySelector('.favorite-section-count').textContent = fresh.querySelector('.favorite-section-count').textContent;
+        while (list.nextSibling) list.nextSibling.remove();
+        while (nextList.nextSibling) column.append(nextList.nextSibling);
+        column.scrollTop = top; column.scrollLeft = left; list.scrollTop = listTop;
+        if (focusAttributes.length && !active.isConnected) {
+          const selector = focusAttributes.map(([name, value]) => `[${name}="${cssEscape(value)}"]`).join('');
+          (list.querySelector(selector) || list.querySelector('[data-favorite-quick-new]'))?.focus({ preventScroll: true });
+        }
+      }
+      if (scrollPosition) { scroll.scrollLeft = scrollPosition.left; scroll.scrollTop = scrollPosition.top; }
     }
 
     async function copyEntry(id, select = false) {
       const entry = safeCall('getEntry', id); if (!entry || !string(entry.rawText).trim()) { notify(label('favorites.invalidFavorite', '收藏原文无效，请先编辑修复')); return false; }
+      if (entry.nsfw && !includeAdult()) return false;
       if (select) {
         const selected = allSelectedIds(); const result = await mutate('setSelected', id, !selected.has(entry.tagId || id));
         if (!result?.ok) { notify(result?.error?.message || label('favorites.selectFailed', '选择失败')); return false; }
         onSelectionChange(result.data || favorites.selected?.({ includeAdult: includeAdult() }) || []);
         syncSelection();
       }
+      // Selection persistence is async: recheck current visibility before copy.
+      const current = safeCall('getEntry', id);
+      if (!current || (current.nsfw && !includeAdult())) return false;
       const value = safeCall('copyText', [id]);
       if (!value) return false;
       let copied = false; try { copied = Boolean(await copy(value)); } catch { copied = false; }
