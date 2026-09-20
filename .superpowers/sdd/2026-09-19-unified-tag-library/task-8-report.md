@@ -53,7 +53,7 @@ Result.error 新增可选 `existingTagIds?: string[]`；commands.js 的 DUPLICAT
 
 Discard：`[data-tag-discard-overlay]` 与 `[data-tag-confirm-save|data-tag-discard|data-tag-stay]`（分别三个独立属性）。位置：`[data-tag-location-overlay]`、`[data-location-parent|data-location-child|data-location-parent-name|data-location-child-name|data-location-confirm|data-location-cancel|data-location-error]`（各独立属性）。
 
-CSS 仅 `.tag-editor-*` / `.tag-location-*`，使用现有 --card/--text/--input-bg/--input-border/--border2/--pri。所有 overlay[hidden] 明确 display:none；子元素 hidden 规则 scoped 在 dialog 内，真实 checkbox、focus-visible、disabled 与小屏滚动均有样式。文本键位于两包 `ui.tagEditor.*`（40 键）与 `ui.tagLocation.*`（14 键），由测试逐键比对组件 fallback；locale 改变后再次 open/choose 使用当前 getLocale，支持 optional localize(key,fallback)。
+CSS 仅 `.tag-editor-*` / `.tag-location-*`，使用现有 --card/--text/--input-bg/--input-border/--border2/--pri。所有 overlay[hidden] 明确 display:none；子元素 hidden 规则 scoped 在 dialog 内，真实 checkbox、focus-visible、disabled 与小屏滚动均有样式。文本键位于两包 `ui.tagEditor.*`（37 键）与 `ui.tagLocation.*`（13 键），由测试逐键比对组件 fallback；locale 改变后再次 open/choose 使用当前 getLocale，支持 optional localize(key,fallback)。
 
 picker 生命周期：注入时 editor 不 dispose 外部实例，Task 9 总控制器负责；未注入时 editor 创建一个并 dispose 自有实例。不要同时再创建第二个。session/attempt guards 丢弃旧 choose/confirm/save continuation；dispose 也使所有 continuation 失效。dispose 不能撤销已发送 command（正常导航先 requestClose）。
 
@@ -66,3 +66,4 @@ picker 生命周期：注入时 editor 不 dispose 外部实例，Task 9 总控�
 - 最后 CSS 补充只调整 scoped input/focus/hidden 样式，没有 JS 行为变更。
 
 JSDOM + real memory library/repository 为本任务证据，未声称真实 Electron 桌面视觉/输入法/屏幕阅读器验收。Task 9 接线后仍需生产入口/统一 picker/关闭流程集成验证，Task 11 才统一升 V1.4.321 并候选桌面验收。
+
