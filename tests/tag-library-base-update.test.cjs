@@ -7,7 +7,7 @@ const path = require('node:path');
 const { createTagLibrary } = require('../src/modules/tag-library/library');
 const { createLibraryRepository } = require('../src/modules/tag-library/repository');
 const { makeBase, emptyUserDocument, createMemoryRepository } = require('./fixtures/tag-library.cjs');
-const { metadataUpdateRecord } = require('../src/modules/tag-library/base-update');
+const { metadataUpdateRecord, taxonomyUpdateRecord } = require('../src/modules/tag-library/base-update');
 
 function fixture() {
   const oldBase = makeBase(), nextBase = structuredClone(oldBase);
@@ -76,6 +76,16 @@ test('metadata compatibility is rejected when Tag identity, original content or 
   for (const change of [base => { base.tags[0].content = 'different'; }, base => { base.tags[0].id = 'different'; }, base => { base.characterLinks[0].generalTagIds = []; }, base => { base.tags[0].searchable = false; }]) {
     const changed = structuredClone(nextBase); change(changed);
     assert.throws(() => metadataUpdateRecord(oldBase, changed));
+  }
+});
+
+test('taxonomy update proof only permits adult promotion from the model bucket into the adult category', () => {
+  const {oldBase,nextBase}=fixture();
+  oldBase.tags[0].categoryId='wd_general';nextBase.tags[0].categoryId='nsfw';nextBase.tags[0].adult=true;
+  assert.equal(taxonomyUpdateRecord(oldBase,nextBase).kind,'taxonomy-only');
+  assert.throws(()=>metadataUpdateRecord(oldBase,nextBase));
+  for(const change of [b=>{b.tags[0].content='rewritten';},b=>{b.tags[0].searchable=false;},b=>{b.tags[0].categoryId='hair';},b=>{b.tags[1].adult=true;}]){
+    const changed=structuredClone(nextBase);change(changed);assert.throws(()=>taxonomyUpdateRecord(oldBase,changed));
   }
 });
 

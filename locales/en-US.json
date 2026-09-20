@@ -636,6 +636,7 @@
     }
   },
   "categories": {
+    "wd_general": "General model tags",
     "quality": "Quality",
     "negative": "Negative prompt",
     "character": "Character",

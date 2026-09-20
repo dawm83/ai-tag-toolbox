@@ -1,5 +1,7 @@
 # 内置标签中文与分类补全
 
+V1.4.332 增加后续 WD 通用桶分类阶段，见 [WD 通用桶整理](wd-general-classification.md)。下面的统计仅对应原有中文补全部分；新阶段另行输出逐条分类与成人标记报告。
+
 构建模块：`src/modules/tag-library/enrichment.js`。
 显式覆盖表：`assets/数据资产/标签/tag-enrichment.json`。
 入口：`enrichBundledTags(base, coverage?) -> { base, changes, counts }`。

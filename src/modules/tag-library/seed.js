@@ -5,6 +5,7 @@ const { createHash } = require('node:crypto');
 const { normaliseTag, normaliseKeywords, searchKey, DEFAULT_CATEGORIES } = require('../tags');
 const { validateBase } = require('./schema');
 const { enrichBundledTags } = require('./enrichment');
+const { classifyWdGeneral } = require('./wd-general-taxonomy');
 const hash = value => createHash('sha256').update(value).digest('hex');
 const list = value => Array.isArray(value) ? value : [];
 const terms = value => Array.isArray(value) ? value : typeof value === 'string' ? value.split(/[\s,，、;；]+/).filter(Boolean) : [];
@@ -159,7 +160,10 @@ function buildUnifiedSeed(input = {}, options = {}) {
     for (const row of characters) addCharacter(row, false);
     for (const row of ordinary.rows.values()) if (row.category === 'character_names' && !characterIds.has(row.id)) addCharacter({ id: row.id, count: row.count, trigger: label(row.en) }, true);
     let base = { tags: [...tags.values()], categories: [...categories.values()], subcategories: [...subs.values()], characterLinks, legacyIds, metadataById, characterInfo };
-    if (options.enrich !== false) base = enrichBundledTags(base).base;
+    if (options.enrich !== false) {
+      base = enrichBundledTags(base).base;
+      if (options.classifyModel !== false) base = classifyWdGeneral(base).base;
+    }
     base.fingerprint = hash(JSON.stringify({ base, manifest }));
     return validateBase(base);
   } catch (error) {

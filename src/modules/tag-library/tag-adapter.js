@@ -33,7 +33,7 @@ function createTagAdapter({ library, metadataById = {}, categoryMetadata = DEFAU
       editedAt: tag.revision > 0 ? tag.updatedAt : null, selected: selected.has(tag.id) };
   }
   function categories() {
-    return library.getCategories().map(row => {
+    return library.getCategories().filter(row => row.id !== 'wd_general' || counts(true).categories.wd_general > 0).map(row => {
       const meta = categoryInfo.get(row.id) || {};
       return { ...row, ...Object.fromEntries(['icon', 'neg', 'nsfw'].filter(key => own(meta, key)).map(key => [key, clone(meta[key])])) };
     });

@@ -1,28 +1,39 @@
 {
-  "version": "1.4.331",
+  "version": "1.4.332",
   "buildEvidenceFile": "build-info.json",
   "evidenceLocation": "Desktop package root, outside resources/app.asar",
-  "desktopDirectory": "C:/Users/admin/Desktop/AI绘画Tag工具箱V1.4.331",
+  "desktopDirectory": "C:/Users/admin/Desktop/AI绘画Tag工具箱V1.4.332",
   "sourceBranch": "codex/unified-tag-library",
-  "baseCommit": "2f3aeb4232e3aabb13170199b2193013d666c89b",
-  "scope": "Remove the favorite-location arrow and its menu from Tag cards, retaining the lit star and unfavorite confirmation",
+  "baseCommit": "f2cdd3ec6e8fc8cbb07316fbae6e8e9588e909a2",
+  "scope": "Classify all 2144 WD general records into existing taxonomy with stable IDs, references, user overrides and verified base upgrade records",
   "checks": {
     "command": "npm run check",
-    "testsPassed": 610,
+    "testsPassed": 617,
     "testsFailed": 0,
     "realElectronWindow": "Pending manual acceptance per project instructions",
-    "domRegression": "Shared library tests retain multi-placement favorites, star removal confirmation, cancellation and undo after removing the location menu",
+    "domRegression": "617 tests, including complete model taxonomy coverage, exact prompt/reference preservation, old corpus upgrade, custom taxonomy override preservation and adult filtering",
     "realAiOrComfyGeneration": false,
     "iconCoverage": "27 built-in categories and All mapped to existing local SVG symbols; sprite parsed successfully",
-    "desktopIntegrity": "Full file inventory, sizes and SHA-256 must match the complete staging package before delivery"
+    "desktopIntegrity": "Full file inventory, sizes and SHA-256 must match the complete staging package before delivery",
+    "generatedAssets": "node scripts/build-unified-tags.mjs --check",
+    "taxonomy": {
+      "classified": 2144,
+      "remaining": 0,
+      "categories": 21,
+      "subcategories": 101,
+      "adultPromotions": 112,
+      "tagCount": 53707
+    },
+    "userDataSimulation": "Current user document was read and upgraded in memory only; original file bytes unchanged"
   },
   "knownLimits": [
-    "Actual Windows rendering, scaling and real user data require manual acceptance; visual preview used isolated memory fixtures.",
+    "Actual Windows rendering and desktop interaction require manual acceptance; no real-user files were migrated in this task.",
     "Launcher compatibility without CORS flags still requires a real ComfyUI manual test.",
     "The original default fetch also reached the isolated Electron fixture; CORS is not proven as the sole cause of the original failure.",
     "Unknown prompt submission outcomes require checking the ComfyUI queue before starting another job.",
     "646 character-specific terms and some character/skin names still need verified Chinese translations.",
-    "Old versions cannot read or synchronize edits from tag-library-v2.json."
+    "Old versions cannot read or synchronize edits from tag-library-v2.json.",
+    "Some existing Chinese translations remain ambiguous; this change assigns taxonomy by the original tag meaning without renaming those translations."
   ],
   "published": false,
   "pushed": false

@@ -563,6 +563,7 @@
     }
   },
   "categories": {
+    "wd_general": "识图通用词",
     "quality": "质量词",
     "negative": "负面提示词",
     "character": "人物与角色",

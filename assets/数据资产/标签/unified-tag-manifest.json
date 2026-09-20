@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "fingerprint": "3ed34cd85970f72c6df9dda7abb6c523101bfbe47229316cc98c232c6edea52d",
-  "sourceSha256": "697f13b1f3897721a3021f87d825b20b8970bf70aecb35b95adf908246345edf",
+  "fingerprint": "32161238d3ed240a0d8c9d0caf352af11c113ef8f4455cba4d63c25e3c9906ca",
+  "sourceSha256": "8b9a9d4fd1b1920b52f099d8e1ed5d2f7ddda62d9641cda0c665860a9b01af20",
   "sources": [
     {
       "file": "数据资产/标签/data-tags.js",
@@ -42,6 +42,10 @@
     {
       "file": "数据资产/标签/tag-enrichment.json",
       "sha256": "f67f16f895d5aea0591758b718254d538c077b0303d4673fb186cc168abd82a6"
+    },
+    {
+      "file": "数据资产/标签/wd-general-taxonomy.json",
+      "sha256": "1fb39f9b296aa0dcfadfbe894cb250051aca46f45c0fb57fa69d11988282c997"
     }
   ],
   "counts": {
