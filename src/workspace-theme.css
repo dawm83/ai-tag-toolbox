@@ -133,7 +133,6 @@ header .ai-module-tab.btn-segment.on:not(:disabled):hover { color:var(--pri-h); 
 #chips .chip.nsfw.sel { border-color:var(--pink); background:var(--pink-bg); box-shadow:inset 0 0 0 1px var(--pink); }
 #chips .chip-with-actions>.chip.is-edited { border-left:3px solid var(--warn); }
 #chips .chip-actions { top:auto; bottom:5px; right:6px; gap:3px; }
-#chips .chip-with-actions:has(.tag-locations) .chip-actions { right:34px; }
 #chips .chip-action { width:22px; height:22px; border:1px solid var(--control-border); background:var(--card); box-shadow:none; }
 #chips .chip-action .workspace-icon { width:14px; height:14px; }
 #chips .chip .cp { bottom:6px; left:9px; right:auto; border:1px solid color-mix(in srgb,var(--cp) 55%,var(--control-border)); background:var(--cp-bg); padding:1px 5px; font-size:10px; font-weight:500; }

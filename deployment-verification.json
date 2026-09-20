@@ -1,20 +1,20 @@
 {
-  "version": "1.4.330",
+  "version": "1.4.331",
   "buildEvidenceFile": "build-info.json",
   "evidenceLocation": "Desktop package root, outside resources/app.asar",
-  "desktopDirectory": "C:/Users/admin/Desktop/AI绘画Tag工具箱V1.4.330",
+  "desktopDirectory": "C:/Users/admin/Desktop/AI绘画Tag工具箱V1.4.331",
   "sourceBranch": "codex/unified-tag-library",
-  "baseCommit": "dda9662495e33cd1ab0144c21a71766fba606e09",
-  "scope": "Persistent filled favorite stars, confirmation before removing memberships, and a 560px maximum search field",
+  "baseCommit": "2f3aeb4232e3aabb13170199b2193013d666c89b",
+  "scope": "Remove the favorite-location arrow and its menu from Tag cards, retaining the lit star and unfavorite confirmation",
   "checks": {
     "command": "npm run check",
     "testsPassed": 610,
     "testsFailed": 0,
     "realElectronWindow": "Pending manual acceptance per project instructions",
-    "domRegression": "610 tests; actual shared library covers star confirmation, cancellation, failed persistence, multi-location removal and undo, shelf-local removal, identity stars and reload",
+    "domRegression": "Shared library tests retain multi-placement favorites, star removal confirmation, cancellation and undo after removing the location menu",
     "realAiOrComfyGeneration": false,
-    "visualPreview": "Isolated renderer verifies filled persistent stars, favorite shelf icons, removal confirmation and 560px search width in normal and maximized layouts",
-    "iconCoverage": "27 built-in categories and All mapped to existing local SVG symbols; sprite parsed successfully"
+    "iconCoverage": "27 built-in categories and All mapped to existing local SVG symbols; sprite parsed successfully",
+    "desktopIntegrity": "Full file inventory, sizes and SHA-256 must match the complete staging package before delivery"
   },
   "knownLimits": [
     "Actual Windows rendering, scaling and real user data require manual acceptance; visual preview used isolated memory fixtures.",

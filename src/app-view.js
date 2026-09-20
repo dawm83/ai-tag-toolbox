@@ -335,11 +335,11 @@
         if (!result?.ok) notify(result?.error?.message || '操作失败'); return result;
       } catch { notify('操作失败'); return { ok: false }; }
     }
-    async function favoriteTag(id, { additional = false } = {}) {
+    async function favoriteTag(id) {
       if (await tagEditor.requestClose() === false || await views.characters?.requestClose?.() === false) return false;
       const tag = catalog.getTag(id); if (!tag) return false;
       const locations = tag.favoriteLocations || [];
-      if (locations.length && !additional) {
+      if (locations.length) {
         const membershipIds = locations.map(row => row.membershipId);
         const question = formatText(localized('ui.favorites.unfavoriteConfirm', '确定取消收藏“{name}”吗？'), { name: tag.displayName || tag.content });
         const impact = formatText(localized('ui.favorites.unfavoriteLocations', '将从以下 {count} 个收藏位置移除，标签内容保留：'), { count: locations.length });
@@ -633,19 +633,6 @@
           if (item.note) {
             const note = doc.createElement('span'); note.className = 'tag-note-popover'; note.dataset.tagNote = item.id; note.id = 'tag-note-' + encodeURIComponent(item.id); note.setAttribute('role', 'tooltip'); note.textContent = item.note;
             button.setAttribute('aria-describedby', note.id); wrap.append(note);
-          }
-          if (item.favoriteLocations?.length) {
-            const locations = doc.createElement('details'); locations.className = 'tag-locations'; locations.dataset.tagLocations = item.id;
-            const summary = doc.createElement('summary'); summary.textContent = '↗'; summary.title = localized('ui.tag.favoriteLocations', '收藏位置'); summary.setAttribute('aria-label', summary.title);
-            const menu = doc.createElement('div'); menu.className = 'tag-location-menu';
-            for (const location of item.favoriteLocations) {
-              const jump = doc.createElement('button'); jump.type = 'button'; jump.dataset.locateMembership = location.membershipId; jump.textContent = `${location.pageName} / ${location.groupName}`;
-              jump.onclick = async () => { locations.open = false; if (await route('favorites') !== false) await views.favorites?.focusEntry?.(location.membershipId); };
-              menu.append(jump);
-            }
-            const add = doc.createElement('button'); add.type = 'button'; add.dataset.tagFavoriteAdd = item.id; add.textContent = localized('ui.favorites.addLocation', '收藏到其他位置'); menu.append(add);
-            locations.addEventListener('keydown', event => { if (event.key === 'Escape') { locations.open = false; summary.focus(); } });
-            locations.append(summary, menu); wrap.append(locations);
           }
           if (item.category === "character_names" && characters) {
             const jump = doc.createElement("button");
@@ -3721,12 +3708,6 @@
         }
         const restore = event.target.closest("[data-tag-restore]");
         if (restore) { event.preventDefault(); event.stopPropagation(); await command({ type: "restoreTag", tagId: restore.dataset.tagRestore }); renderCategories(); renderTags(); return; }
-        const additionalFavorite = event.target.closest("[data-tag-favorite-add]");
-        if (additionalFavorite) {
-          event.preventDefault(); event.stopPropagation(); additionalFavorite.closest('details').open = false;
-          await favoriteTag(additionalFavorite.dataset.tagFavoriteAdd, { additional: true });
-          return;
-        }
         const favorite = event.target.closest("[data-tag-favorite]");
         if (favorite) {
           event.preventDefault(); event.stopPropagation();

@@ -87,7 +87,7 @@ test('canonical selection dedupes shared role traits by ID and preserves opaque 
   assert.ok(h.copied().endsWith('  A, (b:1.2)\r\nc\n  '));
 });
 
-test('home shows notes, search-disabled state and exact favorite locations without losing multi-group additions', async t => {
+test('home shows notes and the favorite star for multiple saved placements without a location arrow', async t => {
   const h = await boot(t);
   await h.tags.edit('blue_hair', { note: '<img src=x> 用户备注', searchable: false });
   const second = (await h.favorites.saveSection({ seriesId: 'home', name: '第二组' })).data;
@@ -96,15 +96,14 @@ test('home shows notes, search-disabled state and exact favorite locations witho
   assert.equal(h.$('[data-tag-note="blue_hair"]').textContent, '<img src=x> 用户备注');
   assert.equal(h.$('[data-tag-note="blue_hair"] img'), null);
   assert.equal(h.$('[data-tag-favorite="blue_hair"]').getAttribute('aria-pressed'), 'true');
-  await h.click('[data-tag-locations="blue_hair"] summary');
-  await h.click('[data-tag-favorite-add="blue_hair"]');
-  h.$('[data-location-parent]').value = 'home'; h.$('[data-location-parent]').dispatchEvent(new h.window.Event('change'));
-  h.$('[data-location-child]').value = second.id; await h.click('[data-location-confirm]');
-  const locations = h.window.document.querySelectorAll('[data-tag-locations="blue_hair"] [data-locate-membership]');
-  assert.equal(locations.length, 2);
-  const target = h.library.getMemberships('blue_hair').find(row => row.groupId === second.id);
-  await h.click(`[data-locate-membership="${target.id}"]`);
-  assert(h.$(`[data-favorite-entry="${target.id}"]`).classList.contains('is-located'));
+  await h.favorites.saveEntry({ sourceTagId: 'blue_hair', seriesId: 'home', sectionId: second.id });
+  assert.equal(h.library.getMemberships('blue_hair').length, 2);
+  assert.equal(h.$('[data-tag-locations="blue_hair"]'), null);
+  assert.equal(h.$('[data-tag-favorite="blue_hair"]').getAttribute('aria-pressed'), 'true');
+  await h.click('[data-tag-favorite="blue_hair"]');
+  assert.equal(h.$('#cfmModal').classList.contains('show'), true);
+  await h.click('#cfmNo');
+  assert.equal(h.library.getMemberships('blue_hair').length, 2);
 });
 
 test('lit home star asks before unfavoriting and preserves shared content and selection', async t => {
@@ -234,15 +233,14 @@ test('home keeps the remaining favorite location and follows undo after removing
   await h.favorites.deleteEntries([first.id]);
   await h.window.App.route('tags');
   assert.equal(h.$('[data-tag-favorite="blue_hair"]').getAttribute('aria-pressed'), 'true');
-  assert.equal(h.window.document.querySelectorAll('[data-tag-locations="blue_hair"] [data-locate-membership]').length, 1);
-  assert.ok(h.$(`[data-locate-membership="${last.id}"]`));
+  assert.deepEqual(h.library.getMemberships('blue_hair').map(row => row.id), [last.id]);
   await h.window.App.route('favorites'); await h.favorites.deleteEntries([last.id]);
   await h.window.App.route('tags');
   assert.equal(h.$('[data-tag-favorite="blue_hair"]').getAttribute('aria-pressed'), 'false');
   await h.window.App.route('favorites'); await h.library.execute({ type: 'undo' }, { operationId: 'undo-unfavorite' });
   await h.window.App.route('tags');
   assert.equal(h.$('[data-tag-favorite="blue_hair"]').getAttribute('aria-pressed'), 'true');
-  assert.ok(h.$(`[data-locate-membership="${last.id}"]`));
+  assert.deepEqual(h.library.getMemberships('blue_hair').map(row => row.id), [last.id]);
 });
 
 test('home editing and favorite blank creation reuse one editor with placement driven by shared favorite state', async t => {
