@@ -34,7 +34,7 @@ const artifacts = {
 for (const [name, content] of Object.entries(artifacts)) {
   const filename = path.join(output, name);
   if (process.argv.includes('--check')) {
-    if (!fs.existsSync(filename) || fs.readFileSync(filename, 'utf8') !== content) throw new Error(`Generated asset differs: ${name}`);
+    if (!fs.existsSync(filename) || fs.readFileSync(filename, 'utf8').replace(/\r\n/g, '\n') !== content) throw new Error(`Generated asset differs: ${name}`);
   } else fs.writeFileSync(filename, content);
 }
 console.log(JSON.stringify({ fingerprint: base.fingerprint, ...manifest.counts, enrichment: enriched.counts }));

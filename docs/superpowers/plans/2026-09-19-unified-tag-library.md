@@ -10,7 +10,7 @@
 
 **Spec:** [统一标签设计规范](../specs/2026-09-19-unified-tag-library-design.md)。发生冲突先按此规范裁定，再记录证据和改动原因。
 
-**Status:** Task 0–9 已完成并通过审查；Task 10 迁移报告、导入导出与批量整理进行中。按用户 2026-09-20 的新指令，已合入 V1.4.320 的 ComfyUI 分支（28ac24d → merge be73b2b），整合检查 511 项通过。后续基于 V1.4.320 实施，最终候选版改为 V1.4.321；统一库尚未切换生产界面，真实用户数据未迁移。详见 docs/qa/unified-tag-library/execution-ledger.md。
+**Status:** Task 0–10 实现与自动验收完成；Task 11 旧权威路径已清理，生产入口已统一，最终候选版为 V1.4.322。已整合原 ComfyUI V1.4.320、搜索空格匹配及中文分类补全，最终自动检查 592 项通过。桌面组装校验进行中；真实 Electron 窗口由用户人工验收，真实用户数据未由开发测试读取或迁移。详见 docs/qa/unified-tag-library/execution-ledger.md。
 
 ## Global Constraints
 
@@ -611,16 +611,16 @@ type ImportPreview = {
 };
 ```
 
-- [ ] 先写 round-trip 与ID冲突测试：导出共享Tag在两个组的引用，导入新库后仍是一条Tag/两个归属，原文保持；相同外部ID但不同内容不能覆盖本地。
-- [ ] 全库导出只导用户可用字段和所需基础定义；收藏导出只导被引用Tag及必要分类/结构；角色关系必须连同引用闭包导出或明确不包含无关角色。
-- [ ] 导出闭包规则固定：全库包含全部有效Tag、分类、收藏关系及CharacterLinks；仅收藏包含memberships指向的Tag和必需分类/页/组，`characters=[]`，其source字段仅作来源说明。导入全库中本机不存在的角色关系时作为外来关系记录进入unresolved，不伪造随包人物资料；标签和收藏仍按预览可导入。
-- [ ] 32MiB先检查再parse；只接受JSON/现有粘贴文本，拒绝未知版本/字段类型/悬空ID/不合法parent/重复IDs；错误不改变当前revision。
-- [ ] v1收藏与paste接入prepareLegacyMigration共用转换规则，不再saveEntry逐条半提交；UTF-8/换行/权重原文保留。
-- [ ] 导入预览和commit绑定revision，预览后其他保存发生则重新预览；取消preview丢弃候选，无写入。
-- [ ] 迁移报告展示关联/独立保留/待修复数量，支持导出待处理原记录，敏感源数据不进普通日志。存在 unresolved 项不阻止其他有效数据浏览。
-- [ ] 批量移动/复制引用/另存独立/取消收藏/搜索开关/置顶/颜色/撤销调用同一批量服务；搜索结果冻结全部ID而非当前页。
-- [ ] 测试v1兼容/标签组合/成人搜索标记/取消导入/过大文件/共享关系/ID冲突/文件损坏/批量失败回滚/跨页多选和30步撤销上限。
-- [ ] targeted transfer+favorites regressions，`npm run check`；提交。
+- [x] 先写 round-trip 与ID冲突测试：导出共享Tag在两个组的引用，导入新库后仍是一条Tag/两个归属，原文保持；相同外部ID但不同内容不能覆盖本地。
+- [x] 全库导出只导用户可用字段和所需基础定义；收藏导出只导被引用Tag及必要分类/结构；角色关系必须连同引用闭包导出或明确不包含无关角色。
+- [x] 导出闭包规则固定：全库包含全部有效Tag、分类、收藏关系及CharacterLinks；仅收藏包含memberships指向的Tag和必需分类/页/组，`characters=[]`，其source字段仅作来源说明。导入全库中本机不存在的角色关系时作为外来关系记录进入unresolved，不伪造随包人物资料；标签和收藏仍按预览可导入。
+- [x] 32MiB先检查再parse；只接受JSON/现有粘贴文本，拒绝未知版本/字段类型/悬空ID/不合法parent/重复IDs；错误不改变当前revision。
+- [x] v1收藏与paste接入prepareLegacyMigration共用转换规则，不再saveEntry逐条半提交；UTF-8/换行/权重原文保留。
+- [x] 导入预览和commit绑定revision，预览后其他保存发生则重新预览；取消preview丢弃候选，无写入。
+- [x] 迁移报告展示关联/独立保留/待修复数量，支持导出待处理原记录，敏感源数据不进普通日志。存在 unresolved 项不阻止其他有效数据浏览。
+- [x] 批量移动/复制引用/另存独立/取消收藏/搜索开关/置顶/颜色/撤销调用同一批量服务；搜索结果冻结全部ID而非当前页。
+- [x] 测试v1兼容/标签组合/成人搜索标记/取消导入/过大文件/共享关系/ID冲突/文件损坏/批量失败回滚/跨页多选和30步撤销上限。
+- [x] targeted transfer+favorites regressions，`npm run check`；提交。
 
 **验收:** U17/U18/U21可用，格式变化不会把旧备份变成无法导入。提交：`V1.4.321：完成统一标签备份迁移与批量整理`。
 
@@ -628,11 +628,11 @@ type ImportPreview = {
 
 **Files:** 修改旧modules/测试护栏去除临时兼容写实现；新增 `scripts/package-unified-tags.cjs`；更新 package.json/package-lock.json/VERSION.txt/main.js/preload.js/src/index.html/README.md/CHANGELOG.md/deployment-verification.json/启动说明.txt/交付说明；完成QA矩阵。
 
-- [ ] 检查最终生产图：只有一个TagLibrary、一个编辑器、一个位置选择器。tags不再写rewrite_custom_tags，favorites不再写favorites_shelf_v1，characters不再写第二份身份名称/专属词。旧键仅迁移和兼容导入读。
-- [ ] 删除临时工厂分支；旧测试夹具迁移到真实library实例，保护仍有效行为，不能为了通过删掉成人/复制/历史保护测试。
-- [ ] 扩充ui-architecture/check护栏：view不import repository/Node/storage，AI工具无写catalog命令，payload不传任意FS路径。检查所有异步mutation调用处已await。
-- [ ] 验证关键场景矩阵（见第4节），每条标明对应测试文件和真实命令输出。任何未验证项不能自动标PASS。
-- [ ] 运行完整必需检查：
+- [x] 检查最终生产图：只有一个TagLibrary、一个编辑器、一个位置选择器。tags不再写rewrite_custom_tags，favorites不再写favorites_shelf_v1，characters不再写第二份身份名称/专属词。旧键仅迁移和兼容导入读。
+- [x] 删除临时工厂分支；旧测试夹具迁移到真实library实例，保护仍有效行为，不能为了通过删掉成人/复制/历史保护测试。
+- [x] 扩充ui-architecture/check护栏：view不import repository/Node/storage，AI工具无写catalog命令，payload不传任意FS路径。检查所有异步mutation调用处已await。
+- [x] 验证关键场景矩阵（见第4节），每条标明对应测试文件和真实命令输出。任何未验证项不能自动标PASS。
+- [x] 运行完整必需检查：
 
 ```powershell
 npm run check
@@ -642,13 +642,13 @@ git diff --check
 
 `--check`比较生成结果和随包文件，不在验证时静默改数据。真实API和Electron慢测按AGENTS默认跳过，记录为“未执行”。
 
-- [ ] 记录性能：同机baseline与新版本、固定种子全库、10k收藏夹具，加载/首次搜索/重复搜索/编辑一次耗时；发现显著退化先定位读盘、索引重建或全库序列化，不通过减少数据量掩盖。
-- [ ] 更新候选版本为V1.4.321（若现版本已前进则取下一内部版本）；`scripts/check.mjs`版本断言和所有用户可见版本一并更新；运行最终npm check。
-- [ ] 本地提交后按现有 `work/package-character-list-v14316.cjs` 的已验证做法抽取可重用打包脚本：明确文件白名单、源码commit、asar、app/resources/app副本、解包native依赖和models保留；不复制AppData用户文件。
+- [x] 记录性能：同机baseline与新版本、固定种子全库、10k收藏夹具，加载/首次搜索/重复搜索/编辑一次耗时；发现显著退化先定位读盘、索引重建或全库序列化，不通过减少数据量掩盖。
+- [x] 更新候选版本为V1.4.322（若现版本已前进则取下一内部版本）；`scripts/check.mjs`版本断言和所有用户可见版本一并更新；运行最终npm check。
+- [x] 本地提交后按现有 `work/package-character-list-v14316.cjs` 的已验证做法抽取可重用打包脚本：明确文件白名单、源码commit、asar、app/resources/app副本、解包native依赖和models保留；不复制AppData用户文件。
 - [ ] 先在work/staging完整打包和hash验证，再备份桌面当前目录，再复制最终包。所有递归复制/移动目标先验证绝对路径。旧版正在运行时保留旧目录并说明，不强行关闭或删除。
 - [ ] 从实际桌面副本核对package/标题/preload/VERSION/exe版本、源码和asar哈希，检查unified种子存在且源映射正确。
-- [ ] 交付说明写明：首次打开迁移、共享修改影响范围、搜索开关含义、取消收藏与删除区别、角色关联、组合原文、未发送选择变化、备份/回退、旧版同时运行限制。
-- [ ] 用户人工验收清单随包提供；最终回复区分“自动检查已通过”和“实际Electron窗口尚待用户验收”。
+- [x] 交付说明写明：首次打开迁移、共享修改影响范围、搜索开关含义、取消收藏与删除区别、角色关联、组合原文、未发送选择变化、备份/回退、旧版同时运行限制。
+- [x] 用户人工验收清单随包提供；最终回复区分“自动检查已通过”和“实际Electron窗口尚待用户验收”。
 - [ ] 更新执行账本与计划复选框，保留未完成/未验证项，停下等待此次用户反馈，不自动加新需求或发布。
 
 **验收:** 已有代码、模块测试、迁移夹具、DOM行为、桌面产物能相互对应；有一项实质必需行为失败就不能宣称“全面统一完成”。提交：`V1.4.321：交付统一标签与收藏角色编辑`。

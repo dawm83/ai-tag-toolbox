@@ -1,24 +1,24 @@
 {
-  "version": "1.4.320",
+  "version": "1.4.322",
   "buildEvidenceFile": "build-info.json",
   "evidenceLocation": "Desktop package root, outside resources/app.asar",
-  "desktopDirectory": "C:/Users/admin/Desktop/AI绘画Tag工具箱V1.4.320",
-  "sourceBranch": "codex/comfy-tags-mode",
-  "baseCommit": "b8ef70cba1cc12b30f329f95f549e4339150baef",
-  "scope": "ComfyUI transport, independent Tags generation, drawing controls and connection recovery",
-  "separateFavoritesBranchModified": false,
+  "desktopDirectory": "C:/Users/admin/Desktop/AI绘画Tag工具箱V1.4.322",
+  "sourceBranch": "codex/unified-tag-library",
+  "baseCommit": "fcffc2926848424287010681f658284db1f93ae1",
+  "scope": "Unified tag library, favorites and character editing, import/export, search spacing, Chinese metadata and vision categories",
   "checks": {
     "command": "npm run check",
-    "testsPassed": 322,
+    "testsPassed": 592,
     "testsFailed": 0,
-    "electronNetworkFixture": "Passed on Electron 31.7.7 with temporary userData and a local HTTP fixture",
+    "realElectronWindow": "Pending manual acceptance per project instructions",
     "realAiOrComfyGeneration": false
   },
   "knownLimits": [
     "Launcher compatibility without CORS flags still requires a real ComfyUI manual test.",
     "The original default fetch also reached the isolated Electron fixture; CORS is not proven as the sole cause of the original failure.",
     "Unknown prompt submission outcomes require checking the ComfyUI queue before starting another job.",
-    "Favorites work in the separate unified-tag-library branch has not been merged into this independent test build."
+    "646 character-specific terms and some character/skin names still need verified Chinese translations.",
+    "Old versions cannot read or synchronize edits from tag-library-v2.json."
   ],
   "published": false,
   "pushed": false

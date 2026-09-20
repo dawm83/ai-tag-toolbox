@@ -110,3 +110,21 @@ Task9 reviewaf16830:20files+881/-1381, reportfull535/134sources; reviewer/root/u
 Task9 fixround1—review2findings samefavoritesrefresh: P1newmembershipnotinserted/moveoldcolumn; P2adultchangeleftcopyablerow. OriginalUIagentfixingaffectedcolumns+eligibilityandactualDOMcontinuouscreate/move withoutfixturemanualrender. Task10rulings:separatemigrationreportv1 retainsallarchives; importedknownrolelinks applyiflocalbase-default, conflictarchiveiflocaloverride; optionalpreviewdetails,1preview/15minTTL/cancel, invalidnewpreviewmustnotdiscardvalidpending.
 Task9 complete—af16830/9ce8374, independentfixreviewPASS,27focused/full539/134sourcefiles. Productioncatalog/editors/subscriptions/guardsassembled; parent9realboot/close testsincluded. P3manualnotrun; Task10transferstillunavailableatthisintermediatepoint. Task10running/root/unified_tags_transfer WRITEgateopen BASE9ce8374 runtime320/candidate321.
 P3 checkpoint work/unified-tags/P3/source.zip at9ce8374 SHAmanifest+fullcheck539, no restore rerun. Task11read-onlypreflight/root/unified_release_cleanup current remaininglegacyfactory/testconversion; parentflaggedfinaldisplaygaps home notehover/searchdisabledmarker/favorite-locationmark/legacySnapshotbadge for finalacceptance (notclosedbyTask9scopedreview). Task10implementationownsproductwrites.
+
+## 2026-09-20 接手续作
+
+用户明确要求本任务接手停止的统一词库任务，并在收尾后完成中文名/分类补全。基线已前进至 fcffc29，Task10 实现已提交，工作区仅有无关 `%SystemDrive%/`。接手基线 `npm run check` 560/560 通过，日志 `F:/codex/AI绘画Tag工具箱/work/unified-takeover-baseline.log`。
+
+当前：Task10 独立复核确认两个 P2（新增收藏页未刷新导入面板搜索范围；撤销导入后 recentTagIds 悬空），由 takeover_transfer_review 修复并补定向回归。Task11 旧工厂清理由 takeover_legacy_cleanup 负责。主线补齐主页备注、搜索关闭标识、收藏位置定位、多组收藏与旧快照标识。
+
+Ruling: 保留新 Prompt 选择阻止删除其目标的既有撤销合同；最近复制记录不是权威引用，撤销删除目标时应清理悬空 recentTagIds，不应永久阻塞撤销。
+
+Ruling: 原计划的生产入口已在 Task9 接入，状态文字“尚未切换”过时；实际用户迁移尚未执行。不会读取真实 APPDATA，也不向出错的旧任务继续发消息。
+
+Task 10: complete — fcffc29 实现，e471bac 修复独立复核的两项 P2。导入/导出/粘贴/批量/迁移报告真实库及DOM回归通过。
+
+Task 11: implementation complete — d7386e 删除三工厂旧独立写入路径并迁移夹具；旧键仅出现在允许的迁移/备份/兼容导入模块。主页备注/关闭搜索/多位置收藏定位/旧快照标识由主线补齐。生成seed可重现检查通过；同机完整词库+1万收藏基准已记录。桌面产物验证待打包步骤完成，原生窗口人工验收保持未执行。
+
+Chinese/search integration: d9f5b30 + 5ca2182 — 2,002 条显示名、1,518 条分类补全；438 个同作品衣装组合名、158 个专属词。搜索支持 fuhua/fu hua/fu_hua。元数据升级限定允许字段，实际旧seed与新seed逐项证明通过；独立review发现并修复用户仅改子分类的父分类配对问题。最终代码审查无剩余 P1/P2，目标用例20/20通过。
+
+V1.4.322 final check: npm run check，592/592，regressions-v194通过；日志 F:/codex/AI绘画Tag工具箱/work/unified-v14322-final-check.log。完整旧seed升级、真实临时文件备份、失败重试及二次启动幂等均已验证。真实用户目录未访问；646条专属词及部分人名/皮肤仍待核译，不把英文回退冒充已翻译。
