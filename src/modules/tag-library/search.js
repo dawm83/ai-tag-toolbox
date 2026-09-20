@@ -20,17 +20,27 @@ function normalized(value) {
 }
 const normalize = value => String(value ?? '').normalize('NFKC').toLowerCase().replace(/_/g, ' ').replace(/\s+/gu, ' ').trim();
 const compact = value => value.replace(/[ .-]/g, '');
+const spaceFold = value => value.replace(/ /g, '');
+function searchField(field, original) {
+  const value = normalize(original);
+  return { field, original, value, spaceValue: spaceFold(value) };
+}
 const fieldsFor = tag => [['content', tag.content], ['displayName', tag.displayName], ...tag.aliases.map((value, index) => [`aliases.${index}`, value])]
-  .filter(([, value]) => value).map(([field, original]) => ({ field, original, value: normalize(original) }));
+  .filter(([, value]) => value).map(([field, original]) => searchField(field, original));
 function matchFields(fields, needle, precision) {
   if (!needle) return { score: 1, hits: [] };
   const exact = fields.find(field => field.value === needle);
   if (exact) return { score: exact.related ? 80 : exact.field.startsWith('aliases.') ? 110 : 120, hits: [{ field: exact, term: needle }] };
   if (precision === 'exact') return null;
+  const folded = spaceFold(needle);
+  const sameSpelling = fields.find(field => field.spaceValue === folded);
+  if (sameSpelling) return { score: sameSpelling.related ? 70 : 95, hits: [{ field: sameSpelling, term: folded, compact: 'spaces' }] };
   const whole = fields.find(field => field.value.includes(needle));
   if (whole) return { score: whole.value.startsWith(needle) ? 75 : 60, hits: [{ field: whole, term: needle }] };
   const hits = needle.split(' ').map(term => ({ term, field: fields.find(field => field.value.includes(term)) }));
   if (hits.every(hit => hit.field)) return { score: 40, hits };
+  const spellingHits = needle.split(' ').map(term => ({ term, compact: 'spaces', field: fields.find(field => field.spaceValue.includes(term)) }));
+  if (spellingHits.every(hit => hit.field)) return { score: 35, hits: spellingHits };
   if (precision === 'broad') {
     const compactHits = needle.split(' ').map(compact).filter(Boolean).map(term => ({ term, compact: true, field: fields.find(field => compact(field.value).includes(term)) }));
     if (compactHits.length && compactHits.every(hit => hit.field)) return { score: 30, hits: compactHits };
@@ -43,7 +53,8 @@ function highlights(hits) {
     let mapped = normalized(field.original);
     if (compactMatch) {
       const result = { value: '', map: [] };
-      for (let index = 0; index < mapped.value.length; index++) if (!/[ .-]/.test(mapped.value[index])) { result.value += mapped.value[index]; result.map.push(mapped.map[index]); }
+      const separator = compactMatch === 'spaces' ? / / : /[ .-]/;
+      for (let index = 0; index < mapped.value.length; index++) if (!separator.test(mapped.value[index])) { result.value += mapped.value[index]; result.map.push(mapped.map[index]); }
       mapped = result;
     }
     for (let at = mapped.value.indexOf(term); at >= 0; at = mapped.value.indexOf(term, at + term.length)) {
@@ -69,7 +80,7 @@ function createTagSearchIndex({ getTags, getMemberships, getCharacterLinks, getS
     if (!broadFields.has(indexed.tag.id)) {
       const tag = indexed.tag, keywords = broadContext.metadata[tag.id]?.keywords || [];
       const fields = [...keywords.map((value, index) => [`keywords.${index}`, value]), ['categoryId', tag.categoryId], ['categoryName', broadContext.categories.get(tag.categoryId)], ['subcategoryName', broadContext.subcategories.get(tag.subcategoryId)]];
-      broadFields.set(tag.id, [...indexed.fields, ...fields.filter(([, value]) => typeof value === 'string' && value).map(([field, original]) => ({ field, original, value: normalize(original) }))]);
+      broadFields.set(tag.id, [...indexed.fields, ...fields.filter(([, value]) => typeof value === 'string' && value).map(([field, original]) => searchField(field, original))]);
     }
     return broadFields.get(indexed.tag.id);
   }
@@ -120,7 +131,7 @@ function createTagSearchIndex({ getTags, getMemberships, getCharacterLinks, getS
         const roleLinks = links.filter(link => (!characterId || link.characterId === characterId) && (!seriesId || link.seriesTagIds.some(id => id === seriesId && (includeAdult || !rows.get(id)?.tag.adult))));
         if (scope === 'characters' && !roleLinks.length) continue;
         let fields = precision === 'broad' ? fieldsForBroad(indexed) : indexed.fields;
-        if (scope === 'favorites' && matchPrivate) fields = [...fields, ...[['note', tag.note], ...places.filter(place => (!pageId || place.pageId === pageId) && (!groupId || place.groupId === groupId)).flatMap(place => [['pageName', place.pageName], ['groupName', place.groupName]])].filter(([, value]) => value).map(([field, original]) => ({ field, original, value: normalize(original) }))];
+        if (scope === 'favorites' && matchPrivate) fields = [...fields, ...[['note', tag.note], ...places.filter(place => (!pageId || place.pageId === pageId) && (!groupId || place.groupId === groupId)).flatMap(place => [['pageName', place.pageName], ['groupName', place.groupName]])].filter(([, value]) => value).map(([field, original]) => searchField(field, original))];
         let match, characterMatches;
         if (scope === 'characters') {
           // A shared identity is still one Tag, but each character's series

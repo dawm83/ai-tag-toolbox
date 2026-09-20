@@ -92,7 +92,7 @@ test('precision, ranking, filters and Unicode alias offsets use current metadata
   const h = createHarness({ base }); await h.ready;
   assert.deepEqual(h.library.search('blue hair', { precision: 'standard' }).items.map(row => row.id), ['blue_hair', 'prefix', 'contains']);
   assert.deepEqual(h.library.search('blue hair', { precision: 'exact' }).items.map(row => row.id), ['blue_hair']);
-  assert.equal(h.library.search('bluehair', { precision: 'standard' }).total, 0);
+  assert.equal(h.library.search('bluehair', { precision: 'standard' }).total, 3);
   assert.equal(h.library.search('bluehair', { precision: 'broad' }).total, 3);
   await command(h, { type: 'saveTag', tagId: 'blue_hair', patch: { aliases: ['😀ＦＯＯ_  BAR foo bar'], displayName: 'unique name' } });
   const tag = h.library.search('foo bar').items[0];

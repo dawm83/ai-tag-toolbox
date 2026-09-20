@@ -67,7 +67,7 @@ test('broad alone indexes immutable keywords and current taxonomy, plus compact 
   const mixed = tags.search('longhair azure', { precision: 'broad' }); assert.equal(mixed.length, 1); assert.equal(mixed[0].id, 'long_hair');
   assert.ok(mixed[0].matches.some(match => match.field === 'content' && mixed[0].content.slice(match.start, match.end) === 'long hair'));
   assert.ok(mixed[0].matches.some(match => match.field === 'aliases.0'));
-  assert.equal(tags.search('longhair azure', { precision: 'standard' }).length, 0);
+  assert.equal(tags.search('longhair azure', { precision: 'standard' }).length, 1);
   await h.library.execute({ type: 'saveCategory', id: 'hair', name: '新分类' }, { operationId: 'broad-category' });
   await h.library.execute({ type: 'saveSubcategory', id: 'color', categoryId: 'hair', name: '新子类' }, { operationId: 'broad-subcategory' });
   assert.equal(tags.search('头发', { precision: 'broad' }).length, 0); assert.equal(tags.search('颜色', { precision: 'broad' }).length, 0);
