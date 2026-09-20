@@ -37,3 +37,26 @@ test('undo validates newer references and never removes a newly selected tag', a
   await run(h.library, { type: 'clearSelection' }); assert.equal((await run(h.library, { type: 'undo' })).ok, true);
   assert.equal(h.library.getTag(created.data.tagId), null);
 });
+test('undoing an imported copied tag removes only its recent reference and preserves other recent order', async () => {
+  const h = createHarness(); await h.ready;
+  await run(h.library, { type: 'markCopied', tagIds: ['long_hair', 'blue_hair'] });
+  const preview = h.library.previewPaste('imported history content', { format: 'lines', kind: 'tag', seriesId: 'home', sectionId: 'daily' });
+  assert.equal(preview.ok, true);
+  assert.equal((await run(h.library, { type: 'applyImport', previewId: preview.data.id })).ok, true);
+  const tagId = h.library.getMemberships()[0].tagId;
+  await run(h.library, { type: 'markCopied', tagIds: [tagId, 'blue_hair'] });
+  assert.deepEqual(h.library.getRecentTagIds(), [tagId, 'blue_hair', 'long_hair']);
+  assert.equal((await run(h.library, { type: 'undo' })).ok, true);
+  assert.equal(h.library.getTag(tagId), null); assert.deepEqual(h.library.getRecentTagIds(), ['blue_hair', 'long_hair']);
+  assert.equal((await run(h.library, { type: 'redo' })).ok, true);
+  assert.ok(h.library.getTag(tagId)); assert.deepEqual(h.library.getRecentTagIds(), ['blue_hair', 'long_hair']);
+});
+test('redoing a deletion clears a recent reference added after undo restored the tag', async () => {
+  const h = createHarness(); await h.ready;
+  const created = await run(h.library, { type: 'saveTag', patch: { content: 'restored history content' } });
+  await run(h.library, { type: 'deleteTag', tagId: created.data.tagId });
+  assert.equal((await run(h.library, { type: 'undo' })).ok, true);
+  await run(h.library, { type: 'markCopied', tagIds: ['long_hair', created.data.tagId, 'blue_hair'] });
+  assert.equal((await run(h.library, { type: 'redo' })).ok, true);
+  assert.equal(h.library.getTag(created.data.tagId), null); assert.deepEqual(h.library.getRecentTagIds(), ['long_hair', 'blue_hair']);
+});

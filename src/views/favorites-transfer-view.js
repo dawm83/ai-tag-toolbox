@@ -42,6 +42,11 @@
       for (const row of favorites.series()) for (const group of favorites.sections(row.id)) target.append(option(JSON.stringify([row.id, group.id]), `${row.name} / ${group.name}`));
       if ([...target.options].some(row => row.value === previous)) target.value = previous;
     }
+    function refreshScopes() {
+      const target = $('[data-transfer-scope]'); if (!target) return; const pages = favorites.series();
+      if (scope && !pages.some(row => row.id === scope)) { scope = ''; page = 0; }
+      target.replaceChildren(option('', '全部收藏页'), ...pages.map(row => option(row.id, row.name))); target.value = scope;
+    }
     function settings(offset = 0) { return { ...(scope ? { seriesId: scope } : {}), includeAdult: getIncludeAdult() !== false, offset, limit: 100 }; }
     function resultPage(offset = 0, limit = 100) { return query.trim() ? favorites.search(query, { ...settings(offset), limit }) : favorites.list({ ...settings(offset), limit }); }
     function rowsToIds(row) {
@@ -139,7 +144,7 @@
       if (dialog.hidden) return; event.stopPropagation(); if (event.key === 'Escape') { event.preventDefault(); cancel(); }
       if (event.key === 'Tab') { const controls = [...dialog.querySelectorAll('button,input,textarea,select')].filter(item => !item.hidden && !item.disabled); const first = controls[0], last = controls.at(-1); if (event.shiftKey && doc.activeElement === first) { last?.focus(); event.preventDefault(); } else if (!event.shiftKey && doc.activeElement === last) { first?.focus(); event.preventDefault(); } }
     }
-    function refresh() { if (destroyed) return; if (!root?.isConnected && root) { host.querySelector('[data-favorite-health]')?.before(root); if (!root.isConnected) host.prepend(root); } refreshDestinations(); updateCount(); if (!panel.hidden) renderResults(); }
+    function refresh() { if (destroyed) return; if (!root?.isConnected && root) { host.querySelector('[data-favorite-health]')?.before(root); if (!root.isConnected) host.prepend(root); } refreshDestinations(); refreshScopes(); updateCount(); if (!panel.hidden) renderResults(); }
     function destroy() { destroyed = true; if (preview) favorites.cancelImportPreview(preview.id); root?.remove(); }
     build();
     return { refresh, destroy, requestClose: () => busy ? false : cancel(), importFile };

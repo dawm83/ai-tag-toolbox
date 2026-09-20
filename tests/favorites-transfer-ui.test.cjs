@@ -70,3 +70,32 @@ test('file chooser previews bounded JSON and report export uses a safe byte down
   let downloaded = null; h.dom.window.URL.createObjectURL = blob => { downloaded = blob; return 'blob:test'; }; h.dom.window.URL.revokeObjectURL = () => {}; h.dom.window.HTMLAnchorElement.prototype.click = function click() { assert.equal(this.download, 'ai-tag-migration-report.json'); };
   await h.click('[data-transfer-action="export-report"]'); assert.equal(downloaded.type, 'application/json'); assert.ok(downloaded.size > 10);
 });
+test('page scope includes newly created pages and preserves the chosen page through renames', async t => {
+  const h = await fixture(t, 1), scope = h.$('[data-transfer-scope]');
+  scope.value = 'home'; scope.dispatchEvent(new h.dom.window.Event('change', { bubbles: true }));
+  const page = await h.favorites.saveSeries({ name: 'Created page' }), group = await h.favorites.saveSection({ seriesId: page.data.id, name: 'Created group' });
+  await h.favorites.saveEntry({ kind: 'tag', rawText: 'created page content', seriesId: page.data.id, sectionId: group.data.id });
+  assert.ok([...scope.options].some(row => row.value === page.data.id)); assert.equal(scope.value, 'home');
+  scope.value = page.data.id; scope.dispatchEvent(new h.dom.window.Event('change', { bubbles: true }));
+  assert.match(h.$('[data-transfer-results]').textContent, /created page content/); assert.equal(h.$('[data-transfer-results]').children.length, 1);
+  await h.favorites.saveSeries({ id: page.data.id, name: 'Renamed page' });
+  assert.equal(scope.value, page.data.id); assert.equal(scope.selectedOptions[0].textContent, 'Renamed page');
+});
+test('page scope includes imported pages without replacing the current filter', async t => {
+  const h = await fixture(t, 1), scope = h.$('[data-transfer-scope]'), bundle = h.library.exportBundle({ scope: 'favorites' });
+  scope.value = 'home'; scope.dispatchEvent(new h.dom.window.Event('change', { bubbles: true }));
+  bundle.pages[0].id = 'imported-page'; bundle.pages[0].name = 'Imported page';
+  bundle.groups[0].id = 'imported-group'; bundle.groups[0].pageId = 'imported-page'; bundle.memberships[0].groupId = 'imported-group';
+  const preview = h.favorites.previewImport(bundle); assert.equal(preview.ok, true);
+  assert.equal((await h.favorites.importBundle(preview.data.id)).ok, true);
+  assert.ok([...scope.options].some(row => row.value === 'imported-page')); assert.equal(scope.value, 'home');
+  scope.value = 'imported-page'; scope.dispatchEvent(new h.dom.window.Event('change', { bubbles: true }));
+  assert.equal(h.$('[data-transfer-results]').children.length, 1); assert.match(h.$('[data-transfer-results]').textContent, /Imported page/);
+});
+test('deleting the filtered page resets scope and displays the relocated entries', async t => {
+  const h = await fixture(t, 1), scope = h.$('[data-transfer-scope]');
+  scope.value = 'home'; scope.dispatchEvent(new h.dom.window.Event('change', { bubbles: true }));
+  assert.equal((await h.favorites.deleteSeries('home')).ok, true);
+  assert.equal(scope.value, ''); assert.equal([...scope.options].some(row => row.value === 'home'), false);
+  assert.equal(h.$('[data-transfer-results]').children.length, 1); assert.deepEqual(JSON.parse(h.$('[data-transfer-members]').dataset.transferMembers), ['member:0']);
+});

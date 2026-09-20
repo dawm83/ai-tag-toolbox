@@ -28,6 +28,8 @@ function applyHistory(document, delta, direction) {
     const value = entry[direction];
     if (value) candidate[entry.field].splice(Math.min(value.index, candidate[entry.field].length), 0, clone(value.row));
   }
+  const removedTagIds = new Set(delta.filter(entry => entry.field === 'customTags' && !entry[direction]).map(entry => entry.id));
+  if (removedTagIds.size) candidate.recentTagIds = candidate.recentTagIds.filter(id => !removedTagIds.has(id));
   candidate.revision = document.revision + 1;
   return candidate;
 }
