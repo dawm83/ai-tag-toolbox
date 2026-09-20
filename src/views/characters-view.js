@@ -216,10 +216,16 @@
       if (record.nameZh) titleWrap.appendChild(element('div', 'character-name-zh', record.nameZh));
       heading.appendChild(titleWrap);
       const editButton = element('button', 'character-detail-edit', '🖊'); editButton.type = 'button'; editButton.dataset.characterEdit = record.id; editButton.title = label('edit'); editButton.onclick = () => showCharacterEditor(record);
-      const favoriteButton = element('button', 'character-detail-favorite', '★'); favoriteButton.type = 'button'; favoriteButton.title = label('favorite'); favoriteButton.onclick = async () => {
+      const isFavorite = Boolean(catalog?.getTag?.(record.identityTagId)?.favorite);
+      const favoriteButton = element('button', 'character-detail-favorite favorite-toggle'); favoriteButton.type = 'button';
+      const star = doc.createElementNS('http://www.w3.org/2000/svg', 'svg'); star.classList.add('workspace-icon'); star.setAttribute('aria-hidden', 'true'); star.setAttribute('viewBox', '0 0 24 24');
+      const use = doc.createElementNS('http://www.w3.org/2000/svg', 'use'); use.setAttribute('href', '../assets/icons/workspace.svg#star'); star.append(use); favoriteButton.append(star);
+      favoriteButton.classList.toggle('is-favorite', isFavorite); favoriteButton.setAttribute('aria-pressed', String(isFavorite));
+      favoriteButton.title = isFavorite ? (locale() === 'en-US' ? 'Remove favorite' : '取消收藏') : label('favorite'); favoriteButton.setAttribute('aria-label', favoriteButton.title);
+      favoriteButton.onclick = async () => {
         if (!requestClose()) return;
         const withTraits = selectedTraitIds('general').length || selectedTraitIds('specific').length;
-        const result = withTraits ? await favoriteBundle?.(copyText(true), record.nameZh || record.name) : await favoriteTag?.(record.identityTagId);
+        const result = withTraits && !catalog?.getTag?.(record.identityTagId)?.favorite ? await favoriteBundle?.(copyText(true), record.nameZh || record.name) : await favoriteTag?.(record.identityTagId);
         if (result !== false) notify?.(label('favorite'));
       };
       heading.append(editButton, favoriteButton);

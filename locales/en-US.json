@@ -70,6 +70,12 @@
       "backAssistant": "🤖 AI Assistant"
     },
     "favorites": {
+      "unfavorite": "Remove favorite",
+      "unfavoriteConfirm": "Remove “{name}” from favorites?",
+      "unfavoriteLocations": "Remove from these {count} favorite locations. Tag content is retained:",
+      "unfavorited": "Favorite removed",
+      "keepFavorite": "Keep favorite",
+      "addLocation": "Add to another location",
       "title": "Favorites",
       "namePrompt": "Enter a name",
       "nameRequired": "Name is required",
@@ -192,7 +198,7 @@
       "confirmDeleteSeries": "Delete this series and its contents?",
       "confirmDeleteEntries": "Delete {count} favorites?",
       "deleteEntry": "Delete favorite",
-      "confirmDeleteEntry": "Delete this favorite?",
+      "confirmDeleteEntry": "Remove from this favorite group? Tag content is retained.",
       "deleteMode": "After deletion",
       "confirmDeleteStructure": "Delete this page or group?",
       "deleteRelocate": "Move favorites to Uncategorized",

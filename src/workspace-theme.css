@@ -138,7 +138,20 @@ header .ai-module-tab.btn-segment.on:not(:disabled):hover { color:var(--pri-h); 
 #chips .chip-action .workspace-icon { width:14px; height:14px; }
 #chips .chip .cp { bottom:6px; left:9px; right:auto; border:1px solid color-mix(in srgb,var(--cp) 55%,var(--control-border)); background:var(--cp-bg); padding:1px 5px; font-size:10px; font-weight:500; }
 #chips .chip:hover .cp,#chips .chip:focus-visible .cp,#chips .chip-with-actions:focus-within .cp { opacity:1; pointer-events:auto; }
-#chips .chip-favorite.is-favorite { color:var(--warn); }
+/* A saved star stays visible after the pointer leaves the card. Other actions
+ * still appear on hover/focus, and never intercept clicks while hidden. */
+#chips .chip-actions:has(.is-favorite) { opacity:1; pointer-events:auto; }
+#chips .chip-with-actions:not(:hover):not(:focus-within) .chip-actions:has(.is-favorite)>:not(.is-favorite) { opacity:0; pointer-events:none; }
+body { --favorite-star:#a36508; --favorite-star-bg:#fff5d8; }
+body.dark { --favorite-star:#f6cb70; --favorite-star-bg:#453721; }
+.favorite-toggle { display:inline-flex; align-items:center; justify-content:center; }
+#chips .chip-favorite.is-favorite,button.favorite-toggle.is-favorite {
+  color:var(--favorite-star); background:var(--favorite-star-bg); border-color:var(--favorite-star);
+}
+.favorite-toggle.is-favorite svg { fill:currentColor; stroke:currentColor; }
+.favorite-toggle.is-favorite:hover { color:var(--favorite-star); background:var(--favorite-star-bg); border-color:var(--favorite-star); }
+#cfmModal { background:rgb(16 24 40 / .4); }
+#cfmModal .cfmsg { white-space:pre-line; overflow-wrap:anywhere; max-height:50vh; overflow:auto; text-align:left; }
 .bar { padding:10px 22px; gap:16px; background:var(--card); border-color:var(--border); backdrop-filter:none; box-shadow:var(--shadow-up); }
 .bar .label { font-size:12px; }
 .bar .label b { display:inline-block; padding:0 5px; color:var(--pri-h); }

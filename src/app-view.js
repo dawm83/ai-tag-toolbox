@@ -120,6 +120,8 @@
       if (!modal) { if (global.confirm?.(message)) onConfirm?.(options.retainImagesDefault === true); return; }
       ui.confirmAction = onConfirm;
       put("#cfmText", message);
+      put("#cfmYes", options.confirmLabel || localized("ui.common.confirm", "确定"));
+      put("#cfmNo", options.cancelLabel || localized("ui.common.cancel", "取消"));
       const retain = $("#cfmRetainImagesWrap");
       const retainCheck = $("#cfmRetainImages");
       if (retain) retain.hidden = !showRetainImages;
@@ -333,9 +335,20 @@
         if (!result?.ok) notify(result?.error?.message || '操作失败'); return result;
       } catch { notify('操作失败'); return { ok: false }; }
     }
-    async function favoriteTag(id) {
+    async function favoriteTag(id, { additional = false } = {}) {
       if (await tagEditor.requestClose() === false || await views.characters?.requestClose?.() === false) return false;
       const tag = catalog.getTag(id); if (!tag) return false;
+      const locations = tag.favoriteLocations || [];
+      if (locations.length && !additional) {
+        const membershipIds = locations.map(row => row.membershipId);
+        const question = formatText(localized('ui.favorites.unfavoriteConfirm', '确定取消收藏“{name}”吗？'), { name: tag.displayName || tag.content });
+        const impact = formatText(localized('ui.favorites.unfavoriteLocations', '将从以下 {count} 个收藏位置移除，标签内容保留：'), { count: locations.length });
+        confirm(`${question}\n${impact}\n${locations.map(row => `${row.pageName} / ${row.groupName}`).join('\n')}`, async () => {
+          const result = await command({ type: 'unfavorite', membershipIds });
+          if (result.ok) notify(localized('ui.favorites.unfavorited', '已取消收藏'));
+        }, { confirmLabel: localized('ui.favorites.unfavorite', '取消收藏'), cancelLabel: localized('ui.favorites.keepFavorite', '保留收藏') });
+        return false;
+      }
       const placement = await tagLocation.choose({ kind: 'favorite' }); if (!placement) return false;
       return (await command({ type: 'favoriteTag', tagId: id, placement })).ok;
     }
@@ -611,7 +624,7 @@
           wrap.className = item.category === "character_names" && characters ? "chip-with-character chip-with-actions" : "chip-with-actions";
           const actions = doc.createElement('span'); actions.className = 'chip-actions';
           const edit = doc.createElement('button'); edit.type = 'button'; edit.className = 'chip-action chip-edit'; edit.dataset.tagEdit = str(item.id || item.en); edit.append(workspaceIcon('pencil', 'favorites')); edit.title = localized('ui.custom.editTitle', '编辑 Tag'); edit.setAttribute('aria-label', edit.title);
-          const star = doc.createElement('button'); star.type = 'button'; star.className = 'chip-action chip-favorite'; star.dataset.tagFavorite = str(item.id || item.en); star.append(workspaceIcon('star')); star.title = localized('ui.favorites.favorite', '收藏'); star.setAttribute('aria-label', star.title);
+          const star = doc.createElement('button'); star.type = 'button'; star.className = 'chip-action chip-favorite favorite-toggle'; star.dataset.tagFavorite = str(item.id || item.en); star.append(workspaceIcon('star')); star.title = item.favorite ? localized('ui.favorites.unfavorite', '取消收藏') : localized('ui.favorites.favorite', '收藏'); star.setAttribute('aria-label', star.title);
           star.setAttribute('aria-pressed', String(Boolean(item.favorite)));
           star.classList.toggle('is-favorite', Boolean(item.favorite));
           actions.append(edit, star);
@@ -630,6 +643,7 @@
               jump.onclick = async () => { locations.open = false; if (await route('favorites') !== false) await views.favorites?.focusEntry?.(location.membershipId); };
               menu.append(jump);
             }
+            const add = doc.createElement('button'); add.type = 'button'; add.dataset.tagFavoriteAdd = item.id; add.textContent = localized('ui.favorites.addLocation', '收藏到其他位置'); menu.append(add);
             locations.addEventListener('keydown', event => { if (event.key === 'Escape') { locations.open = false; summary.focus(); } });
             locations.append(summary, menu); wrap.append(locations);
           }
@@ -3707,6 +3721,12 @@
         }
         const restore = event.target.closest("[data-tag-restore]");
         if (restore) { event.preventDefault(); event.stopPropagation(); await command({ type: "restoreTag", tagId: restore.dataset.tagRestore }); renderCategories(); renderTags(); return; }
+        const additionalFavorite = event.target.closest("[data-tag-favorite-add]");
+        if (additionalFavorite) {
+          event.preventDefault(); event.stopPropagation(); additionalFavorite.closest('details').open = false;
+          await favoriteTag(additionalFavorite.dataset.tagFavoriteAdd, { additional: true });
+          return;
+        }
         const favorite = event.target.closest("[data-tag-favorite]");
         if (favorite) {
           event.preventDefault(); event.stopPropagation();

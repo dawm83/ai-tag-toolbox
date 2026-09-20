@@ -90,14 +90,7 @@
       node.title = title;
       node.setAttribute('aria-label', title);
       if (action) node.dataset.favoriteAction = action;
-      if (iconId) {
-        const svg = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        svg.setAttribute('aria-hidden', 'true');
-        svg.classList.add('favorite-icon');
-        const use = doc.createElementNS('http://www.w3.org/2000/svg', 'use');
-        use.setAttribute('href', `../assets/icons/favorites.svg#${iconId}`);
-        svg.append(use); node.append(svg);
-      }
+      if (iconId) node.append(icon(iconId));
       return node;
     }
     function control(tag, name, textValue) {
@@ -227,6 +220,8 @@
       const dialog = host.querySelector('[data-favorite-delete-dialog]');
       const name = kind === 'entry' ? row.title || row.rawText || label('favorites.untitled', '未命名收藏') : row.name;
       dialog.querySelector('[data-favorite-delete-message]').textContent = name + ' — ' + label(kind === 'entry' ? 'favorites.confirmDeleteEntry' : 'favorites.confirmDeleteStructure', '确定删除此页或组？');
+      dialog.querySelector('#favorite-delete-heading').textContent = label(kind === 'entry' ? 'favorites.unfavorite' : 'favorites.delete', kind === 'entry' ? '取消收藏' : '删除');
+      dialog.querySelector('[data-favorite-action="confirm-delete"]').textContent = label(kind === 'entry' ? 'favorites.unfavorite' : 'favorites.delete', kind === 'entry' ? '取消收藏' : '删除');
       const mode = dialog.querySelector('[data-favorite-delete-mode]'); mode.hidden = kind === 'entry'; mode.value = 'relocate';
       if (kind !== 'entry') { const total = safeCall('list', { ...(kind === 'series' ? { seriesId: id } : { sectionId: id }), includeAdult: true, limit: 1 })?.total || 0; dialog.querySelector('[data-favorite-delete-message]').append(doc.createTextNode(' · ' + label('favorites.deleteImpact', '影响 {count} 个收藏；标签内容保留').replace('{count}', total))); }
       dialog.querySelector('[data-favorite-delete-status]').textContent = ''; dialog.hidden = false;
@@ -479,14 +474,14 @@
       const up = button('arrow-up', label('favorites.moveUp', '上移'), 'move-up'); up.dataset.entryId = entry.id;
       const down = button('arrow-down', label('favorites.moveDown', '下移'), 'move-down'); down.dataset.entryId = entry.id;
       const grip = button('grip-vertical', label('favorites.drag', '拖动排序'), '', 'favorite-drag-handle'); grip.tabIndex = -1;
-      const remove = button('trash-2', label('favorites.delete', '取消收藏'), 'delete-entry'); remove.dataset.entryId = entry.id;
+      const remove = button('star', label('favorites.unfavorite', '取消收藏'), 'delete-entry', 'favorite-icon-button favorite-toggle is-favorite'); remove.dataset.entryId = entry.id; remove.setAttribute('aria-pressed', 'true');
       actions.append(copyButton, edit, remove, up, down, grip); item.append(main, actions);
       if (entry.note) item.append(el('span', 'favorite-note-popover', entry.note));
       return item;
     }
     function icon(id) {
       const svg = doc.createElementNS('http://www.w3.org/2000/svg', 'svg'); svg.classList.add('favorite-icon'); svg.setAttribute('aria-hidden', 'true');
-      const use = doc.createElementNS('http://www.w3.org/2000/svg', 'use'); use.setAttribute('href', `../assets/icons/favorites.svg#${id}`); svg.append(use); return svg;
+      const use = doc.createElementNS('http://www.w3.org/2000/svg', 'use'); use.setAttribute('href', `../assets/icons/${id === 'star' ? 'workspace' : 'favorites'}.svg#${id}`); svg.append(use); return svg;
     }
 
     function syncSelection() {

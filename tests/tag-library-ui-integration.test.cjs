@@ -96,7 +96,8 @@ test('home shows notes, search-disabled state and exact favorite locations witho
   assert.equal(h.$('[data-tag-note="blue_hair"]').textContent, '<img src=x> 用户备注');
   assert.equal(h.$('[data-tag-note="blue_hair"] img'), null);
   assert.equal(h.$('[data-tag-favorite="blue_hair"]').getAttribute('aria-pressed'), 'true');
-  await h.click('[data-tag-favorite="blue_hair"]');
+  await h.click('[data-tag-locations="blue_hair"] summary');
+  await h.click('[data-tag-favorite-add="blue_hair"]');
   h.$('[data-location-parent]').value = 'home'; h.$('[data-location-parent]').dispatchEvent(new h.window.Event('change'));
   h.$('[data-location-child]').value = second.id; await h.click('[data-location-confirm]');
   const locations = h.window.document.querySelectorAll('[data-tag-locations="blue_hair"] [data-locate-membership]');
@@ -104,6 +105,77 @@ test('home shows notes, search-disabled state and exact favorite locations witho
   const target = h.library.getMemberships('blue_hair').find(row => row.groupId === second.id);
   await h.click(`[data-locate-membership="${target.id}"]`);
   assert(h.$(`[data-favorite-entry="${target.id}"]`).classList.contains('is-located'));
+});
+
+test('lit home star asks before unfavoriting and preserves shared content and selection', async t => {
+  const h = await boot(t);
+  await h.click('[data-tag-favorite="blue_hair"]');
+  h.$('[data-location-parent]').value = 'home'; h.$('[data-location-parent]').dispatchEvent(new h.window.Event('change'));
+  h.$('[data-location-child]').value = 'daily'; await h.click('[data-location-confirm]');
+  await h.tags.select('blue_hair');
+  assert.equal(h.$('[data-tag-favorite="blue_hair"]').getAttribute('aria-pressed'), 'true');
+  const before = h.repository.saveCount;
+  await h.click('[data-tag-favorite="blue_hair"]');
+  assert.equal(h.$('#cfmModal').classList.contains('show'), true, 'second star click must ask to remove the favorite');
+  assert.equal(h.$('[data-tag-location-overlay]').hidden, true, 'a lit star must not reopen the placement picker');
+  assert.equal(h.repository.saveCount, before, 'opening confirmation cannot write');
+  await h.click('#cfmNo');
+  assert.equal(h.library.getTag('blue_hair').favorite, true);
+  await h.click('[data-tag-favorite="blue_hair"]'); await h.click('#cfmYes');
+  assert.equal(h.library.getMemberships('blue_hair').length, 0);
+  assert.equal(h.$('[data-tag-favorite="blue_hair"]').getAttribute('aria-pressed'), 'false');
+  assert.equal(h.library.getTag('blue_hair').content, 'blue hair');
+  assert.equal(h.characters.get('alice').generalTags[0].id, 'blue_hair');
+  assert.equal(h.$('#selCount').textContent, '1');
+  assert.equal((await h.reload()).getTag('blue_hair').favorite, false);
+});
+
+test('unfavorite confirmation names multiple locations and keeps the star lit after a failed save', async t => {
+  const h = await boot(t);
+  const second = (await h.favorites.saveSection({ seriesId: 'home', name: '第二组' })).data;
+  await h.favorites.saveEntry({ sourceTagId: 'blue_hair', seriesId: 'home', sectionId: 'daily' });
+  await h.favorites.saveEntry({ sourceTagId: 'blue_hair', seriesId: 'home', sectionId: second.id });
+  await h.click('[data-tag-favorite="blue_hair"]');
+  assert.equal(h.$('#cfmModal').classList.contains('show'), true);
+  assert.match(h.$('#cfmText').textContent, /日常/); assert.match(h.$('#cfmText').textContent, /第二组/);
+  h.controls.failNextSave(); await h.click('#cfmYes');
+  assert.equal(h.library.getMemberships('blue_hair').length, 2);
+  assert.equal(h.$('[data-tag-favorite="blue_hair"]').getAttribute('aria-pressed'), 'true');
+  assert.equal((await h.reload()).getTag('blue_hair').favorite, true);
+  await h.click('[data-tag-favorite="blue_hair"]'); await h.click('#cfmYes');
+  assert.equal(h.library.getMemberships('blue_hair').length, 0);
+  await h.library.execute({ type: 'undo' }, { operationId: 'undo-star-removal' });
+  assert.equal(h.library.getMemberships('blue_hair').length, 2, 'all locations are removed as one reversible action');
+});
+
+test('favorite shelf star asks to remove only its own placement', async t => {
+  const h = await boot(t);
+  const second = (await h.favorites.saveSection({ seriesId: 'home', name: '第二组' })).data;
+  const first = (await h.favorites.saveEntry({ sourceTagId: 'blue_hair', seriesId: 'home', sectionId: 'daily' })).data;
+  const other = (await h.favorites.saveEntry({ sourceTagId: 'blue_hair', seriesId: 'home', sectionId: second.id })).data;
+  await h.window.App.route('favorites');
+  const star = h.$(`[data-favorite-action="delete-entry"][data-entry-id="${first.id}"]`);
+  assert.equal(star.getAttribute('aria-pressed'), 'true', 'favorite shelf exposes the lit toggle state');
+  await h.click(`[data-favorite-action="delete-entry"][data-entry-id="${first.id}"]`);
+  assert.equal(h.$('[data-favorite-delete-dialog]').hidden, false);
+  await h.click('[data-favorite-action="cancel-delete"]');
+  assert.equal(h.library.getMemberships('blue_hair').length, 2);
+  await h.click(`[data-favorite-action="delete-entry"][data-entry-id="${first.id}"]`);
+  await h.click('[data-favorite-action="confirm-delete"]');
+  assert.deepEqual(h.library.getMemberships('blue_hair').map(row => row.id), [other.id]);
+});
+
+test('character favorite star reflects the shared identity and requires confirmation to remove it', async t => {
+  const h = await boot(t);
+  await h.favorites.saveEntry({ sourceTagId: 'alice', seriesId: 'home', sectionId: 'daily' });
+  await h.window.App.route('characters'); await h.click('[data-character-id="alice"]');
+  assert.equal(h.$('.character-detail-favorite').getAttribute('aria-pressed'), 'true');
+  await h.click('.character-detail-favorite');
+  assert.equal(h.$('#cfmModal').classList.contains('show'), true);
+  await h.click('#cfmYes');
+  assert.equal(h.library.getTag('alice').favorite, false);
+  assert.equal(h.$('.character-detail-favorite').getAttribute('aria-pressed'), 'false');
+  assert.equal(h.characters.get('alice').identityTagId, 'alice');
 });
 
 test('unfavoriting in the favorites page clears the home star and location without deleting the shared Tag', async t => {
