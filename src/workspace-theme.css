@@ -61,14 +61,14 @@ body>header {
   align-items:center; justify-items:center; gap:10px; padding:12px 22px;
   background:var(--card); border-bottom:1px solid var(--border); box-shadow:none;
 }
-header .header-side-left { grid-column:1; grid-row:1; width:100%; display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); align-items:center; gap:16px; }
+header .header-side-left { grid-column:1; grid-row:1; width:100%; display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); align-items:center; gap:16px; z-index:4; }
 header .header-left { grid-column:1; justify-self:start; position:static; transform:none; margin:0; gap:10px; }
 header .header-leading { grid-column:2; margin:0; gap:8px; flex-wrap:nowrap; }
 header .brand { font-size:15px; font-weight:700; gap:9px; }
 header .brand .logo { width:30px; height:30px; border-radius:9px; background:var(--pri-btn); box-shadow:none; }
 header .brand .logo .workspace-icon { width:19px; height:19px; }
 header .brand small { font-size:10px; font-weight:500; padding:2px 6px; border:1px solid var(--border); border-radius:5px; }
-header .header-workspace { grid-column:1; grid-row:2; position:static; width:100%; min-width:0; max-width:640px; height:42px; justify-self:center; justify-content:center; transform:none; }
+header #headerWorkspace { grid-column:1; grid-row:2; position:static; width:100%; min-width:0; max-width:640px; height:42px; justify-self:center; justify-content:center; transform:none; }
 .workspace-context { color:var(--text); font-size:18px; font-weight:650; letter-spacing:-.3px; }
 .workspace-context[hidden] { display:none; }
 header .header-workspace .search { width:100%; min-width:0; max-width:none; height:42px; margin:0; }
@@ -205,6 +205,7 @@ body.dark #tabTalk .message-action:hover { color:var(--text); background:var(--w
 
 /* Other workspaces share the palette, field sizing and restrained borders. */
 .translate-view { padding:24px 28px; background:var(--bg); }
+.translate-grid { flex:1 0 auto; }
 .translate-pane { border-color:var(--border); border-radius:12px; box-shadow:var(--shadow); }
 .translate-pane-head { padding:14px 16px; background:var(--card); border-color:var(--border); font-size:12px; }
 .translate-input,.translate-output { padding:18px; font-size:14px; line-height:1.8; }
