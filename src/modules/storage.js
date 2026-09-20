@@ -10,6 +10,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { randomUUID } = require('node:crypto');
 
 function object(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -63,10 +64,18 @@ function createFileAdapter(filePath, options = {}) {
     const value = pending;
     pending = null;
     writePromise = Promise.resolve()
-      .then(() => {
+      .then(async () => {
         fs.mkdirSync(path.dirname(filename), { recursive: true });
         const text = JSON.stringify(value);
-        return fs.promises.writeFile(filename, text, 'utf8');
+        const temporary = `${filename}.${randomUUID()}.tmp`;
+        try {
+          // Migration may read this file while startup saves unrelated settings.
+          // Replace only after the new JSON is complete so readers never see truncation.
+          await fs.promises.writeFile(temporary, text, { encoding: 'utf8', flag: 'wx' });
+          await fs.promises.rename(temporary, filename);
+        } finally {
+          await fs.promises.unlink(temporary).catch(() => {});
+        }
       })
       .then(() => { lastError = null; return true; })
       .catch(error => {

@@ -1,16 +1,17 @@
 {
-  "version": "1.4.322",
+  "version": "1.4.323",
   "buildEvidenceFile": "build-info.json",
   "evidenceLocation": "Desktop package root, outside resources/app.asar",
-  "desktopDirectory": "C:/Users/admin/Desktop/AI绘画Tag工具箱V1.4.322",
+  "desktopDirectory": "C:/Users/admin/Desktop/AI绘画Tag工具箱V1.4.323",
   "sourceBranch": "codex/unified-tag-library",
-  "baseCommit": "fcffc2926848424287010681f658284db1f93ae1",
-  "scope": "Unified tag library, favorites and character editing, import/export, search spacing, Chinese metadata and vision categories",
+  "baseCommit": "f2bef465aee9ffbb16a710774026dc8fa2138d04",
+  "scope": "Fix legacy migration reading a truncated settings file during initialization; retain V1.4.322 features",
   "checks": {
     "command": "npm run check",
-    "testsPassed": 592,
+    "testsPassed": 594,
     "testsFailed": 0,
     "realElectronWindow": "Pending manual acceptance per project instructions",
+    "electronStartupFixture": "Full preload in Electron 31.7.7 with isolated synthetic data; 188 favorites migrated",
     "realAiOrComfyGeneration": false
   },
   "knownLimits": [
