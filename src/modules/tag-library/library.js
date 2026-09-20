@@ -12,10 +12,6 @@ const { prepareBaseUpdate } = require('./base-update');
 const { projectLibraryBundle, prepareImportCandidate, preparePasteBundle, projectMigrationReport, encodeBundle, encodeDataFile, decodeBundle } = require('./transfer');
 
 const fail = (code, message) => ({ ok: false, error: { code, message } });
-function freeze(value) {
-  if (value && typeof value === 'object' && !Object.isFrozen(value)) { Object.freeze(value); for (const child of Object.values(value)) freeze(child); }
-  return value;
-}
 function canonical(value) {
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
   if (value && typeof value === 'object') return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`;
@@ -29,7 +25,8 @@ function emptyDocument(base, ids) {
 
 /** One authoritative, queued, durable user overlay over a private immutable base. */
 function createTagLibrary({ base, repository, legacyInput, baseUpdates = [], ids = prefix => `${prefix}:${randomUUID()}`, now = Date.now }) {
-  const immutableBase = freeze(clone(base));
+  const preparedBase = createLibraryDocumentValidator(base);
+  const immutableBase = preparedBase.base;
   const knownBaseUpdates = clone(baseUpdates);
   let current = null, projection = null, queue = Promise.resolve(), initialized = false, closing = false, disposed = false, statusError = null;
   let lastWriteSucceeded = true;
@@ -39,7 +36,7 @@ function createTagLibrary({ base, repository, legacyInput, baseUpdates = [], ids
   let importPreview = null;
   const readLegacy = async () => filteredInput(typeof legacyInput === 'function' ? await legacyInput() : legacyInput);
   async function initialize() {
-    const validBase = createLibraryDocumentValidator(immutableBase);
+    const validBase = preparedBase;
     if (!validBase.ok) { statusError = validBase.error; return validBase; }
     validateDocument = validBase.data;
     try {

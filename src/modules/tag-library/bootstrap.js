@@ -34,7 +34,7 @@ function createCatalogBootstrap({ userDataDir }) {
     };
     return { storagePath, blocked: true, catalog: Object.freeze({ ready: async () => failed(), status: () => ({ ready: false, writable: false, error: { ...error } }), execute: async () => failed(), flush: async () => false, subscribe: () => () => {}, retryInitialization: retry, recoverBackup: retry }) };
   }
-  const loaded = api.loadBundledBase();
+  const loaded = api.loadBundledBase({ shared: true });
   if (!loaded.ok) throw Object.assign(new Error('内置标签库加载失败'), loaded.error);
   const base = loaded.data;
   const library = api.createTagLibrary({ base, baseUpdates: loaded.baseUpdates, repository: api.createLibraryRepository({ filePath: path.join(userDataDir, 'tag-library-v2.json'), backupDir: path.join(userDataDir, 'tag-library-backups') }), legacyInput: () => api.readLegacyInput(storagePath) });

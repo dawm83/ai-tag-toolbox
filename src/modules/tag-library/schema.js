@@ -234,15 +234,34 @@ function document(doc, base, preparedBase) {
   // Migration receipts are historical metadata. Their map shape is checked above;
   // migration/import validate targets when creating the receipt, never on later deletion.
 }
+const preparedSnapshots = new WeakMap();
+function freezeSnapshot(value) {
+  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+    for (const child of Object.values(value)) freezeSnapshot(child);
+    Object.freeze(value);
+  }
+  return value;
+}
 function createLibraryDocumentValidator(base) {
-  let validate;
+  if (preparedSnapshots.has(base)) return preparedSnapshots.get(base);
+  let snapshot, validate;
   const checked = result(null, () => {
     baseIndexes(base);
-    const snapshot = structuredClone(base);
-    const indexes = baseIndexes(snapshot);
+    snapshot = freezeSnapshot(structuredClone(base));
+    // The original has just passed full validation. Index the owned copy once;
+    // subsequent library/migration consumers share only this frozen snapshot.
+    const indexes = {
+      tags: new Map(snapshot.tags.map(row => [row.id, row])),
+      categories: new Map(snapshot.categories.map(row => [row.id, row])),
+      subs: new Map(snapshot.subcategories.map(row => [row.id, row])),
+      characters: new Map(snapshot.characterLinks.map(row => [row.characterId, row]))
+    };
     validate = value => result(value, () => document(value, snapshot, indexes));
   });
-  return checked.ok ? { ok: true, data: validate } : checked;
+  if (!checked.ok) return checked;
+  const prepared = Object.freeze({ ok: true, data: validate, base: snapshot });
+  preparedSnapshots.set(snapshot, prepared);
+  return prepared;
 }
 function choice(c, path) {
   if (!object(c)) fail(path);

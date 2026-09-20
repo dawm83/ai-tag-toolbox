@@ -2,6 +2,8 @@
 
 当前接口以 TagLibrary 为唯一查询来源，适配器只负责显示形状和兼容调用。真实 Electron 接入仍需按整体计划验收。
 
+V1.4.324：TagAdapter.setQuery/setCategory/setAdult 仅更新状态并返回新查询字符串/分类ID/布尔值，不再查询或返回全量标签。页面通过 page({offset,limit}) 获取显示结果；搜索语义、范围与分页上限不变。
+
 | 入口 | 规则 |
 | --- | --- |
 | library.listTags / getTagIds / tagCounts | 浏览；可包含不参与搜索的条目，仍执行传入的成人与范围过滤 |

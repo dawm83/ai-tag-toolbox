@@ -1,17 +1,17 @@
 {
-  "version": "1.4.323",
+  "version": "1.4.324",
   "buildEvidenceFile": "build-info.json",
   "evidenceLocation": "Desktop package root, outside resources/app.asar",
-  "desktopDirectory": "C:/Users/admin/Desktop/AI绘画Tag工具箱V1.4.323",
+  "desktopDirectory": "C:/Users/admin/Desktop/AI绘画Tag工具箱V1.4.324",
   "sourceBranch": "codex/unified-tag-library",
-  "baseCommit": "f2bef465aee9ffbb16a710774026dc8fa2138d04",
-  "scope": "Fix legacy migration reading a truncated settings file during initialization; retain V1.4.322 features",
+  "baseCommit": "5915d93e6afd4e33e442449c8ec08e9074e804b5",
+  "scope": "Reuse validated immutable catalog snapshots and remove unbounded result copies from UI state setters",
   "checks": {
     "command": "npm run check",
-    "testsPassed": 594,
+    "testsPassed": 597,
     "testsFailed": 0,
     "realElectronWindow": "Pending manual acceptance per project instructions",
-    "electronStartupFixture": "Full preload in Electron 31.7.7 with isolated synthetic data; 188 favorites migrated",
+    "electronStartupFixture": "Full preload and page in Electron 31.7.7 with isolated synthetic data; startup and category/search clicks measured",
     "realAiOrComfyGeneration": false
   },
   "knownLimits": [
