@@ -128,3 +128,5 @@ Task 11: implementation complete — d7386e 删除三工厂旧独立写入路径
 Chinese/search integration: d9f5b30 + 5ca2182 — 2,002 条显示名、1,518 条分类补全；438 个同作品衣装组合名、158 个专属词。搜索支持 fuhua/fu hua/fu_hua。元数据升级限定允许字段，实际旧seed与新seed逐项证明通过；独立review发现并修复用户仅改子分类的父分类配对问题。最终代码审查无剩余 P1/P2，目标用例20/20通过。
 
 V1.4.322 final check: npm run check，592/592，regressions-v194通过；日志 F:/codex/AI绘画Tag工具箱/work/unified-v14322-final-check.log。完整旧seed升级、真实临时文件备份、失败重试及二次启动幂等均已验证。真实用户目录未访问；646条专属词及部分人名/皮肤仍待核译，不把英文回退冒充已翻译。
+
+Task 11: complete — V1.4.322 在 work/staging-v14322 完整打包，267源码/3444依赖/3原生模块/22模型核验；实际桌面副本源码、asar、版本与exe一致。旧315/320安装目录移至本地临时备份，桌面仅保留322。归档SHA与最终源提交写在包外build-info，文档核验回写后重组最终包。Electron真实窗口及用户真实数据迁移仍待人工，不作自动PASS。未push、未Release。

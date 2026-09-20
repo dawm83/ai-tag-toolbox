@@ -32,4 +32,8 @@ Windows x64，Node v24.19.0，Ryzen 7 9800X3D；同机固定完整 53,707 词库
 
 ## 待人工验收
 
+桌面组装已通过：267 个白名单源码文件在 app、resources/app 和 app.asar 中逐项匹配，3444 个依赖文件、3 个解包原生模块和22个模型保留；实际桌面副本版本及 exe 校验通过。最终源码提交和归档 SHA-256 以桌面根目录 `build-info.json` 为准。
+
+桌面旧 V1.4.315/V1.4.320 已移至 `C:/Users/admin/AppData/Local/Temp/ai-tag-desktop-before-v14322`，不再占据桌面；未删除 AppData 用户业务数据。
+
 Electron 真实窗口、系统剪贴板、IME、拖动、下载文件和窗口关闭。真实 AI、绘世 ComfyUI 和本地模型未调用。646 条未译专属词及冷门人名需继续核实来源，不能将本轮补全视为全库中文覆盖。
