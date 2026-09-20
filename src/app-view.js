@@ -312,6 +312,14 @@
       atmosphere: "#AD5D83", effects: "#B34A46", food: "#A27A16", animal: "#B76832",
       other: "#64748B", rating: "#9B7B1F", series: "#287EA4", nsfw: "#E85D9F",
     };
+    const categoryIcons = {
+      all: "layers", quality: "sparkles", negative: "x", character: "user-round", character_names: "book-open",
+      series: "clapperboard", body: "ruler", expression: "smile", eyes: "eye", hair: "scissors", features: "fingerprint",
+      outfit: "shirt", footwear: "footprints", accessory: "package", pose: "person-standing", scene: "landmark",
+      camera: "camera", style: "palette", time_weather: "cloud-sun", atmosphere: "sun", effects: "wand-sparkles",
+      food: "utensils", animal: "paw-print", other: "circle-help", rating: "shield-alert", nsfw: "eye-off",
+      wd_general: "brain", character_specific: "user-round-cog",
+    };
     function categoryColor(id) {
       return categoryColors[String(id || "").toLowerCase()] || "#94A3B8";
     }
@@ -449,7 +457,7 @@
         button.style.setProperty("--cat-color", "#0E9B8E");
         const icon = doc.createElement("span");
         icon.className = "cico";
-        icon.append(workspaceIcon("user-round"));
+        icon.append(workspaceIcon(categoryIcons.character_names));
         const label = doc.createElement("span");
         label.textContent = ui.locale === "en-US" ? "Character library" : "角色库";
         const count = doc.createElement("span");
@@ -469,7 +477,6 @@
         button.dataset.cat = category.id;
         button.style.setProperty("--cat-color", categoryColor(category.id));
         const label = category.id === "all" ? localized("ui.tag.all", category.name || category.id) : categoryLabel(category.id, category.name || category.id);
-        const categoryIcons = { all: "layers", quality: "sparkles", negative: "eye-off", character: "user-round", character_names: "user-round", series: "layers", style: "palette" };
         const icon = doc.createElement('span'); icon.className = 'cico'; icon.append(workspaceIcon(categoryIcons[category.id] || 'tag')); button.append(icon);
         for (const [className, value] of [['', label], ['n', count]]) { const node = doc.createElement('span'); node.className = className; node.textContent = String(value); button.append(node); }
         host.appendChild(button);
