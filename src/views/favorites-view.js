@@ -1,11 +1,11 @@
 'use strict';
 
 (function installFavoritesView(root, factory) {
-  const api = factory();
+  const api = factory(typeof module === 'object' && module.exports ? require('./favorites-transfer-view') : root.AppViews?.favoritesTransfer);
   if (typeof module === 'object' && module.exports) module.exports = api;
   root.AppViews = root.AppViews || {};
   root.AppViews.favorites = api;
-})(typeof globalThis !== 'undefined' ? globalThis : window, function createFactory() {
+})(typeof globalThis !== 'undefined' ? globalThis : window, function createFactory(transferApi) {
   const COLUMN_BATCH = 120;
   const INITIAL_COLUMN_BATCH = 60;
   const INITIAL_COLUMNS = 4;
@@ -30,6 +30,7 @@
     const onSelectionChange = typeof options.onSelectionChange === 'function' ? options.onSelectionChange : () => {};
     const getIncludeAdult = typeof options.getIncludeAdult === 'function' ? options.getIncludeAdult : () => true;
     const host = doc?.querySelector?.('#favoritesView');
+    let transferView = null;
     const state = {
       bound: false, active: false, destroyed: false,
       seriesId: '', sectionId: '',
@@ -124,6 +125,8 @@
       const shelf = el('div', 'favorites-shelf'); shelf.dataset.favoriteShelf = '';
       scroll.append(shelf); body.append(scroll);
       host.append(anchors, subanchors, health, body, createContextMenu(), createDialog(), createPageManager(), createDeleteDialog());
+      if (!transferView && typeof favorites?.previewImportFile === 'function') transferView = transferApi?.createFavoritesTransferView({ document: doc, favorites, host, getIncludeAdult, beforeMutation: finishEditorBeforeMutation, onChanged: render, notify });
+      else transferView?.refresh();
       applyPreferences();
     }
 
@@ -323,6 +326,7 @@
       if (!sections.some(row => row.id === state.sectionId)) state.sectionId = sections[0]?.id || '';
       renderAnchors(); renderSubanchors(); renderHealth(); renderShelf(); renderPageManager();
       updateHistory(); applyPreferences();
+      transferView?.refresh();
     }
     function ensureWorkspace() {
       const rows = openPages();
@@ -371,11 +375,7 @@
       const snapshot = safeCall('snapshot') || {}; const messages = [];
       if (snapshot.loadError) messages.push(`${label('favorites.loadError', '收藏数据加载失败，已阻止覆盖')}：${string(snapshot.loadError.message)}`);
       const report = snapshot.migrationReport;
-      if (report) {
-        const unresolved = Array.isArray(report.unresolved) ? report.unresolved.length : 0;
-        const invalid = Array.isArray(report.invalid) ? report.invalid.length : 0;
-        messages.push(`${label('favorites.migrationReport', '旧收藏迁移')}：${Number(report.migrated) || 0}；${label('favorites.unresolved', '未解析')} ${unresolved}；${label('favorites.invalid', '待修复')} ${invalid}`);
-      }
+      if (report?.counts && report.total) messages.push(`已保留档案 ${report.counts.archive} · 保留说明 ${report.counts.retained} · 需处理 ${report.counts.actionable}`);
       node.replaceChildren(...messages.map(message => el('p', '', message))); node.hidden = messages.length === 0;
       node.classList.toggle('has-error', Boolean(snapshot.loadError));
     }
@@ -514,7 +514,7 @@
       return entry ? tagEditor?.open({ tagId: entry.tagId, membershipId: entry.id }) ?? false : false;
     }
     async function finishEditorBeforeMutation() { return await tagEditor?.requestClose?.() !== false; }
-    async function flushEdits() { return finishEditorBeforeMutation(); }
+    async function flushEdits() { return await finishEditorBeforeMutation() && transferView?.requestClose() !== false; }
 
     function refreshChangedEntries(ids) {
       if (!ids.length) return;
@@ -763,16 +763,18 @@
         }
         const changed = new Set(event.changedTagIds || []);
         const ids = [...(event.changedEntryIds || []), ...[...host.querySelectorAll('[data-favorite-entry]')].map(node => node.dataset.favoriteEntry).filter(id => changed.has(safeCall('getEntry', id)?.tagId))];
-        refreshChangedEntries(ids); syncSelection(); renderHealth(); updateHistory();
+        refreshChangedEntries(ids); syncSelection(); renderHealth(); updateHistory(); transferView?.refresh();
       }) || null;
     }
     function enter() { if (state.destroyed) return; bind(); state.active = true; host.hidden = false; state.prefs = readPreferences(); savePreferences({ favoriteViewVersion: 2 }); render(); }
     function refreshLocale() {
       if (!host || state.destroyed) return false;
+      const transferFocus = host.querySelector('.favorite-transfer-tools')?.contains(doc.activeElement) ? doc.activeElement : null;
       const dialogInput = host.querySelector('[data-favorite-dialog-input]'); const dialogStatus = host.querySelector('[data-favorite-dialog-status]');
       const dialogSnapshot = state.dialog ? { value: dialogInput?.value || '', color: host.querySelector('[data-favorite-dialog-color]')?.value, status: dialogStatus?.textContent || '', focused: doc.activeElement === dialogInput } : null;
       closeContextMenu(); cancelDelete();
       host.replaceChildren(); delete host.dataset.favoritesReady; ensureShell(); render();
+      if (transferFocus?.isConnected) transferFocus.focus();
       if (dialogSnapshot && state.dialog) {
         const dialog = host.querySelector('[data-favorite-dialog]'); const input = host.querySelector('[data-favorite-dialog-input]'); const status = host.querySelector('[data-favorite-dialog-status]');
         const title = typeof state.dialog.title === 'function' ? state.dialog.title() : state.dialog.titleText;
@@ -783,6 +785,7 @@
     }
     async function leave() {
       const saved = await finishEditorBeforeMutation(); if (!saved) return false;
+      if (transferView?.requestClose() === false) return false;
       state.active = false; closeContextMenu(); closePageManager(); cancelDelete(); cancelColumnLoading(); return true;
     }
     function cancelColumnLoading() {
@@ -792,6 +795,7 @@
     function destroy() {
       if (!host || state.destroyed) return;
       state.destroyed = true; state.active = false;
+      transferView?.destroy(); transferView = null;
       host.removeEventListener('click', handleClick); host.removeEventListener('contextmenu', handleContextMenu); host.removeEventListener('change', handleChange); host.removeEventListener('submit', handleSubmit);
       doc.removeEventListener('pointerdown', dismissContextMenu); doc.removeEventListener('pointerdown', dismissPageManager);
 

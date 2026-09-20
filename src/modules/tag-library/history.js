@@ -2,7 +2,7 @@
 const { clone, equal, createProjection } = require('./projection');
 
 // Only affected overlay objects live in history, never a document or base snapshot.
-const KEYS = Object.freeze({ customTags: 'id', tagOverrides: 'tagId', customCategories: 'id', customSubcategories: 'id', categoryOverrides: 'id', subcategoryOverrides: 'id', favoritePages: 'id', favoriteGroups: 'id', memberships: 'id', characterOverrides: 'characterId', recentTagIds: null });
+const KEYS = Object.freeze({ customTags: 'id', tagOverrides: 'tagId', customCategories: 'id', customSubcategories: 'id', categoryOverrides: 'id', subcategoryOverrides: 'id', favoritePages: 'id', favoriteGroups: 'id', memberships: 'id', characterOverrides: 'characterId', unresolved: 'id', recentTagIds: null });
 function diffDocuments(before, after) {
   const changes = [];
   for (const [field, key] of Object.entries(KEYS)) {

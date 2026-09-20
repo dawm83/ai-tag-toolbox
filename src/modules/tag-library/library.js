@@ -7,6 +7,7 @@ const { applyHistory, changeFor } = require('./history');
 const { createTagSearchIndex } = require('./search');
 const { resolveSelection } = require('./selection');
 const { prepareLegacyMigration, fingerprintLegacy, filteredInput } = require('./migration');
+const { projectLibraryBundle, prepareImportCandidate, preparePasteBundle, projectMigrationReport, encodeBundle, encodeDataFile, decodeBundle } = require('./transfer');
 
 const fail = (code, message) => ({ ok: false, error: { code, message } });
 function freeze(value) {
@@ -32,6 +33,7 @@ function createTagLibrary({ base, repository, legacyInput, ids = prefix => `${pr
   let validateDocument;
   const listeners = new Set(), operations = new Map(), undo = [], redo = [];
   let recoveryPending = false;
+  let importPreview = null;
   const readLegacy = async () => filteredInput(typeof legacyInput === 'function' ? await legacyInput() : legacyInput);
   async function initialize() {
     const validBase = createLibraryDocumentValidator(immutableBase);
@@ -103,10 +105,15 @@ function createTagLibrary({ base, repository, legacyInput, ids = prefix => `${pr
     if (previousOperation?.result) return clone(previousOperation.result);
     operations.set(options.operationId, { fingerprint });
     if (options.expectedRevision !== undefined && options.expectedRevision !== current.revision) return fail('REVISION_CONFLICT', '标签库已有新版本，请重新载入');
-    if (command.type === 'applyImport') return fail('FEATURE_UNAVAILABLE', '导入功能尚未接入');
+    if (command.type === 'applyImport') {
+      if (importPreview && now() - importPreview.createdAt > 15 * 60 * 1000) importPreview = null;
+      if (!importPreview || importPreview.preview.id !== command.previewId) return fail('IMPORT_PREVIEW_NOT_FOUND', '导入预览已取消或过期，请重新预览');
+      if (importPreview.preview.basedOnRevision !== current.revision) return fail('REVISION_CONFLICT', '预览后标签库已改变，请重新预览');
+    }
     const historyDirection = command.type === 'undo' ? 'before' : command.type === 'redo' ? 'after' : null;
     let prepared;
-    if (historyDirection) {
+    if (command.type === 'applyImport') prepared = { ok: true, data: { ...importPreview, result: { changed: importPreview.historyDelta.length > 0 } } };
+    else if (historyDirection) {
       const stack = historyDirection === 'before' ? undo : redo, delta = stack.at(-1);
       if (!delta) prepared = { ok: true, data: { document: current, result: { changed: false } } };
       else {
@@ -118,6 +125,7 @@ function createTagLibrary({ base, repository, legacyInput, ids = prefix => `${pr
     const candidate = prepared.data;
     if (!candidate.result.changed) {
       const result = { ok: true, data: candidate.result, revision: current.revision };
+      if (command.type === 'applyImport') importPreview = null;
       operations.set(options.operationId, { fingerprint, result: clone(result) }); return result;
     }
     const checked = validateDocument(candidate.document);
@@ -134,6 +142,7 @@ function createTagLibrary({ base, repository, legacyInput, ids = prefix => `${pr
     }
     const result = { ok: true, data: candidate.result, revision: current.revision };
     operations.set(options.operationId, { fingerprint, result: clone(result) });
+    if (command.type === 'applyImport') importPreview = null;
     searchIndex.invalidate(candidate.change);
     publish(candidate.change);
     return result;
@@ -153,6 +162,15 @@ function createTagLibrary({ base, repository, legacyInput, ids = prefix => `${pr
     return clone({ ...searchIndex.search(query, options), revision: revision() });
   }
   const sorted = rows => clone([...rows].sort((a, b) => a.order - b.order));
+  function previewImport(bundle) {
+    if (!state().writable) return fail('NOT_READY', '标签库尚未就绪');
+    const prepared = prepareImportCandidate({ base: immutableBase, document: current, bundle, ids, now });
+    if (!prepared.ok) return prepared;
+    const checked = validateDocument(prepared.data.document); if (!checked.ok) return checked;
+    importPreview = { ...prepared.data, createdAt: now() };
+    return { ok: true, data: clone(importPreview.preview), revision: current.revision };
+  }
+  function exportBundle(options = {}) { return initialized && !disposed ? projectLibraryBundle({ base: immutableBase, document: current, scope: options.scope ?? 'all' }) : fail('NOT_READY', '标签库尚未就绪'); }
   return Object.freeze({
     ready: async () => clone(await initialization), status: state, revision,
     retryInitialization: () => recover('retry'), recoverBackup: () => recover('backup'),
@@ -170,12 +188,18 @@ function createTagLibrary({ base, repository, legacyInput, ids = prefix => `${pr
     references: tagId => projection ? clone(projection.references(tagId)) : [],
     selected: options => projection ? resolveSelection(current.selection, projection, options) : [],
     execute,
-    exportBundle: () => fail('FEATURE_UNAVAILABLE', '导出功能尚未接入'),
-    previewImport: () => fail('FEATURE_UNAVAILABLE', '导入功能尚未接入'),
+    exportBundle, previewImport,
+    exportFile(options) { const bundle = exportBundle(options); return bundle.ok === false ? bundle : encodeBundle(bundle); },
+    previewImportFile(input) { const decoded = decodeBundle(input); return decoded.ok ? previewImport(decoded.data) : decoded; },
+    previewPaste(text, options) { if (!state().writable) return fail('NOT_READY', '标签库尚未就绪'); const prepared = preparePasteBundle({ document: current, text, options, ids, now }); return prepared.ok ? previewImport(prepared.data) : prepared; },
+    cancelImportPreview(id) { if (importPreview?.preview.id === id) importPreview = null; return { ok: true, data: { canceled: true }, revision: revision() }; },
+    getMigrationReport: options => current ? clone(projectMigrationReport(current, options)) : null,
+    exportMigrationReport: () => current ? clone({ format: 'ai-tag-migration-report', version: 1, receipt: current.migration, unresolved: current.unresolved }) : fail('NOT_READY', '标签库尚未就绪'),
+    exportMigrationFile: () => current ? encodeDataFile({ format: 'ai-tag-migration-report', version: 1, receipt: current.migration, unresolved: current.unresolved }, 'ai-tag-migration-report') : fail('NOT_READY', '标签库尚未就绪'),
     subscribe(fn) { if (typeof fn !== 'function') throw new TypeError('订阅者必须是函数'); listeners.add(fn); return () => listeners.delete(fn); },
     historyState: () => ({ canUndo: undo.length > 0, canRedo: redo.length > 0 }),
     async flush() { await initialization; await queue; return initialized && lastWriteSucceeded; },
-    async dispose() { closing = true; await initialization; await queue; listeners.clear(); disposed = true; }
+    async dispose() { closing = true; await initialization; await queue; importPreview = null; listeners.clear(); disposed = true; }
   });
 }
 module.exports = { createTagLibrary };

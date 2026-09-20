@@ -7,7 +7,7 @@ const { fail, own, object, context, tagPatch, clone } = require('./adapter-commo
 
 /** Membership views are derived on every read; TagView owns all editable text. */
 function createFavoriteAdapter({ library } = {}) {
-  const { run, success, unavailable } = context(library);
+  const { run, success } = context(library);
   const series = () => library.getFavoritePages();
   const sections = pageId => (pageId ? library.getFavoriteGroups(pageId) : series().flatMap(page => library.getFavoriteGroups(page.id)))
     .map(row => ({ ...row, seriesId: row.pageId }));
@@ -160,7 +160,7 @@ function createFavoriteAdapter({ library } = {}) {
     dispose: unsubscribe,
     ready: () => library.ready(), status: () => library.status(), series, sections, getEntry, list, search, saveEntry, saveSeries, saveSection,
     snapshot: () => ({ document: { format: 'ai-tag-favorites', version: 1, revision: library.revision(), series: series(), sections: sections(), entries: rows() },
-      revision: library.revision(), status: library.status(), loadError: library.status().error, migrationReport: null }),
+      revision: library.revision(), status: library.status(), loadError: library.status().error, migrationReport: library.getMigrationReport() }),
     applyBatch, duplicateEntries, setSeriesColors,
     async ensureTagColumns(seriesId, name = '新建标签栏', options) {
       if (!series().some(row => row.id === seriesId)) return fail('INVALID_PARENT', '收藏页不存在');
@@ -185,8 +185,13 @@ function createFavoriteAdapter({ library } = {}) {
     markCopied, selected, setSelected, clearSelected: options => run({ type: 'clearSelection', kind: 'tag' }, options),
     undo: options => run({ type: 'undo' }, options), redo: options => run({ type: 'redo' }, options), historyState: () => library.historyState(),
     subscribe: fn => library.subscribe(event => fn({ ...event, changedEntryIds: event.changedMembershipIds })), flush: () => library.flush(),
+    revision: () => library.revision(),
     exportBundle: () => library.exportBundle({ scope: 'favorites' }), previewImport: value => library.previewImport(value),
-    importBundle: async () => unavailable(), previewPaste: unavailable, importPaste: async () => unavailable(),
+    exportFile: options => library.exportFile(options || { scope: 'favorites' }), previewImportFile: value => library.previewImportFile(value),
+    cancelImportPreview: id => library.cancelImportPreview(id),
+    importBundle: (previewId, options) => run({ type: 'applyImport', previewId }, options),
+    previewPaste: (text, options) => library.previewPaste(text, options), importPaste: (previewId, options) => run({ type: 'applyImport', previewId }, options),
+    getMigrationReport: options => library.getMigrationReport(options), exportMigrationFile: () => library.exportMigrationFile(),
     parseFavoritePaste, validateFavoriteBundle, favoriteMemberCount
   });
 }

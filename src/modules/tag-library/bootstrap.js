@@ -17,7 +17,7 @@ function validateLegacyRoot(filePath) {
     }
   } catch { throw Object.assign(new Error('旧存储格式无效，原文件已保留'), { code: 'INVALID_LEGACY_INPUT' }); }
 }
-const READS = ['status', 'revision', 'getTag', 'listTags', 'search', 'getCategories', 'getSubcategories', 'getFavoritePages', 'getFavoriteGroups', 'getMemberships', 'getCharacterLinks', 'references', 'selected', 'historyState'];
+const READS = ['status', 'revision', 'getTag', 'listTags', 'search', 'getCategories', 'getSubcategories', 'getFavoritePages', 'getFavoriteGroups', 'getMemberships', 'getCharacterLinks', 'references', 'selected', 'historyState', 'exportBundle', 'exportFile', 'previewImport', 'previewImportFile', 'previewPaste', 'cancelImportPreview', 'getMigrationReport', 'exportMigrationReport', 'exportMigrationFile'];
 function createCatalogBootstrap({ userDataDir }) {
   const storagePath = path.join(userDataDir, 'rewrite-storage.json');
   let error;

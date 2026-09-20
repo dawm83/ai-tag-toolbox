@@ -71,6 +71,11 @@ test('real preload preserves malformed legacy bytes even beside valid v2, then r
   assert.equal(after[prefix + 'rewrite_custom_tags'], '[]'); assert.equal(after[prefix + 'rewrite_selected'], '[]');
   assert.deepEqual(fs.readFileSync(dirs.v2), originalV2);
   for (const name of ['repository', 'save', 'backupLegacy', 'readLegacyInput', 'filePath']) assert.equal(loaded.bridge.catalog[name], undefined);
+  for (const name of ['exportBundle', 'exportFile', 'previewImport', 'previewImportFile', 'cancelImportPreview', 'getMigrationReport', 'exportMigrationFile']) assert.equal(typeof loaded.bridge.catalog[name], 'function');
+  const file = loaded.bridge.catalog.exportFile({ scope: 'favorites' }); assert.equal(file.ok, true); assert.equal(file.data.filename.endsWith('.json'), true);
+  const preview = loaded.bridge.catalog.previewImportFile(file.data.bytes); assert.equal(preview.ok, true); loaded.bridge.catalog.cancelImportPreview(preview.data.id);
+  assert.equal(loaded.bridge.catalog.previewImportFile({ path: dirs.v2 }).ok, false);
+  assert.deepEqual(fs.readFileSync(dirs.v2), originalV2);
 });
 
 test('real preload closes an unready corrupt catalog but blocks an accepted failed write until retry', async t => {

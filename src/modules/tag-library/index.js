@@ -9,4 +9,4 @@ function loadBundledBase() {
   // Callers receive their own working copy, never Node's shared JSON module cache.
   return { ok: true, data: structuredClone(base) };
 }
-module.exports = { ...schema, createTagSearchIndex: require('./search').createTagSearchIndex, ...require('./library'), ...require('./commands'), ...require('./selection'), ...require('./repository'), ...require('./migration'), ...require('./tag-adapter'), ...require('./favorite-adapter'), loadBundledBase };
+module.exports = { ...schema, createTagSearchIndex: require('./search').createTagSearchIndex, ...require('./library'), ...require('./commands'), ...require('./selection'), ...require('./repository'), ...require('./migration'), ...require('./transfer'), ...require('./tag-adapter'), ...require('./favorite-adapter'), loadBundledBase };

@@ -223,7 +223,8 @@ contextBridge.exposeInMainWorld('AppModules', {
     'applyBatch', 'duplicateEntries', 'deleteEntries', 'deleteSection', 'deleteSeries', 'reorder',
     'setSeriesColors', 'search', 'copyText', 'markCopied', 'setSelected', 'selected', 'clearSelected',
     'undo', 'redo', 'historyState', 'subscribe', 'flush', 'exportBundle', 'previewImport', 'importBundle',
-    'parseFavoritePaste', 'previewPaste', 'importPaste', 'validateFavoriteBundle', 'favoriteMemberCount'
+    'parseFavoritePaste', 'previewPaste', 'importPaste', 'validateFavoriteBundle', 'favoriteMemberCount', 'revision',
+    'exportFile', 'previewImportFile', 'cancelImportPreview', 'getMigrationReport', 'exportMigrationFile'
   ].filter(name => typeof favorites[name] === 'function').map(name => [name, favorites[name]])) : null,
   joinFavoriteBlocks: modulesRef?.joinFavoriteBlocks,
   async prepareClose() {
