@@ -10,7 +10,7 @@
 
 **Spec:** [统一标签设计规范](../specs/2026-09-19-unified-tag-library-design.md)。发生冲突先按此规范裁定，再记录证据和改动原因。
 
-**Status:** Task 0–7 已完成并通过审查；Task 8 进行中。按用户 2026-09-20 的新指令，已合入 V1.4.320 的 ComfyUI 分支（28ac24d → merge be73b2b），整合检查 511 项通过。后续基于 V1.4.320 实施，最终候选版改为 V1.4.321；统一库尚未切换生产界面，真实用户数据未迁移。详见 docs/qa/unified-tag-library/execution-ledger.md。
+**Status:** Task 0–8 已完成并通过审查；Task 9 生产页面接入进行中。按用户 2026-09-20 的新指令，已合入 V1.4.320 的 ComfyUI 分支（28ac24d → merge be73b2b），整合检查 511 项通过。后续基于 V1.4.320 实施，最终候选版改为 V1.4.321；统一库尚未切换生产界面，真实用户数据未迁移。详见 docs/qa/unified-tag-library/execution-ledger.md。
 
 ## Global Constraints
 
@@ -535,7 +535,7 @@ createTagLocationView({ document, catalog, getLocale })
 
 `catalog`仅使用第3节TagLibrary投影接口；renderer拿不到repository。位置选择器返回选择草稿，不直接写库。confirmDiscard返回`save|discard|stay`，不使用同步window.confirm模拟三按钮。
 
-- [ ] 测试空白格与取消无写入：
+- [x] 测试空白格与取消无写入：
 
 ```js
 const { JSDOM } = require('jsdom');
@@ -557,15 +557,15 @@ test('new favorite editor cancellation leaves no tag or placement', async () => 
 });
 ```
 
-- [ ] 实现7类字段和kind切换；所有表单字段由同一绑定代码读取。输入法处理、Ctrl/Cmd+Enter、Esc、焦点圈定、aria-labelledby、错误聚焦完整。
-- [ ] 显式保存快照：打开记录baseRevision，输入只改局部draft；异步保存前冻结本次payload，成功才关闭；重复点击复用operationId。
-- [ ] 已收藏模式显示分组位置，未收藏显示分类位置；多归属需选membership。分类摘要可切taxonomy模式，收藏不消除分类。
-- [ ] 选择器父子级新建只返回ParentChoice/ChildChoice；父级变化清子级；重复名称在同父级拒绝并提示已有项。
-- [ ] 保存失败保留输入且可重试；冲突显示“标签已在其他位置修改，重新加载后再保存”，不能自动覆盖。
-- [ ] 恢复默认通过明示按钮提交一次restoreTag；若弹窗存在未保存输入先走同一个关闭保护流程，不混合自动保存。
-- [ ] 未保存弹窗切换到另一标签时，先保存/放弃/留下；位置子弹窗取消仅返回父编辑弹窗，不丢草稿。
-- [ ] 测试字段清空、别名短语、多行Prompt、创建嵌套结构取消、保存失败/双击/并发、键盘/焦点、重复归属、共享提示以及纯文本备注/XSS。
-- [ ] `node --test tests/tag-editor-view.test.cjs tests/tag-location-view.test.cjs`，`npm run check`；提交。
+- [x] 实现7类字段和kind切换；所有表单字段由同一绑定代码读取。输入法处理、Ctrl/Cmd+Enter、Esc、焦点圈定、aria-labelledby、错误聚焦完整。
+- [x] 显式保存快照：打开记录baseRevision，输入只改局部draft；异步保存前冻结本次payload，成功才关闭；重复点击复用operationId。
+- [x] 已收藏模式显示分组位置，未收藏显示分类位置；多归属需选membership。分类摘要可切taxonomy模式，收藏不消除分类。
+- [x] 选择器父子级新建只返回ParentChoice/ChildChoice；父级变化清子级；重复名称在同父级拒绝并提示已有项。
+- [x] 保存失败保留输入且可重试；冲突显示“标签已在其他位置修改，重新加载后再保存”，不能自动覆盖。
+- [x] 恢复默认通过明示按钮提交一次restoreTag；若弹窗存在未保存输入先走同一个关闭保护流程，不混合自动保存。
+- [x] 未保存弹窗切换到另一标签时，先保存/放弃/留下；位置子弹窗取消仅返回父编辑弹窗，不丢草稿。
+- [x] 测试字段清空、别名短语、多行Prompt、创建嵌套结构取消、保存失败/双击/并发、键盘/焦点、重复归属、共享提示以及纯文本备注/XSS。
+- [x] `node --test tests/tag-editor-view.test.cjs tests/tag-location-view.test.cjs`，`npm run check`；提交。
 
 **验收:** 编辑和位置组件可以对真实内存library完成新增/收藏/改内容，不依赖旧侧栏。提交：`V1.4.321：增加统一标签编辑与位置弹窗`。
 
