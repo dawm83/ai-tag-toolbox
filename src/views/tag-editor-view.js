@@ -57,7 +57,7 @@
     const restoreButton=button(document,'','data-tag-restore',restore);
     const reloadButton=button(document,'','data-tag-reload',reload);reloadButton.hidden=true;
     const saveButton=button(document,'','data-tag-save',()=>save());
-    const closeButton=button(document,'','data-tag-close',()=>requestClose());actions.append(restoreButton,reloadButton,saveButton,closeButton);
+    const closeButton=button(document,'','data-tag-close',()=>requestClose());actions.append(error,restoreButton,reloadButton,saveButton,closeButton);
     form.addEventListener('submit',event=>{event.preventDefault();if(!composing)save();});
     function notifySafe(message) {try {notify(message);} catch { /* Notification must not change a committed result. */ }}
     function busy() {return !!pending || childOpen || !!guardPending;}

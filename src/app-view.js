@@ -207,6 +207,35 @@
     function galleryText(key, fallback = "", values = {}) {
       return formatText(localized(`ui.gallery.${key}`, fallback), values);
     }
+    function workspaceIcon(name, sprite = "workspace") {
+      const icon = doc.createElementNS("http://www.w3.org/2000/svg", "svg");
+      icon.classList.add("workspace-icon");
+      icon.setAttribute("viewBox", "0 0 24 24");
+      icon.setAttribute("aria-hidden", "true");
+      icon.setAttribute("focusable", "false");
+      const use = doc.createElementNS("http://www.w3.org/2000/svg", "use");
+      use.setAttribute("href", `../assets/icons/${sprite}.svg#${name}`);
+      icon.append(use);
+      return icon;
+    }
+    const navigationIcons = { ai: "message-circle", translation: "languages", vision: "scan-line", gallery: "images", favorites: "star", adult: "eye-off", sponsor: "heart", theme: "palette", locale: "globe" };
+    function decorateWorkspaceControls() {
+      const controls = {
+        copyAll: ["copy", "favorites"], saveFav: ["star"], addTagBtn: ["plus", "favorites"],
+        talkNew: ["plus", "favorites"], talkManage: ["folder", "favorites"],
+        talkImgBtn: ["images"], talkSendBtn: ["arrow-up", "favorites"],
+        tpUpload: ["upload", "favorites"], tpDescribe: ["scan-line"],
+        aiModuleTalk: ["message-circle"], aiModulePrompt: ["layers"],
+        aiModuleApi: ["globe"], aiModuleComfy: ["images"],
+      };
+      for (const [id, [icon, sprite]] of Object.entries(controls)) {
+        const control = $(`#${id}`);
+        if (!control) continue;
+        const label = doc.createElement("span");
+        label.textContent = control.textContent.replace(/^[^\p{L}\p{N}]+/u, "");
+        control.replaceChildren(workspaceIcon(icon, sprite), label);
+      }
+    }
     const navActionConfig = {
       ai: { selector: "#aiBtn", idleKey: "ui.header.aiAssistant", activeKey: "ui.header.backHome", idle: ["🤖 AI 助手", "🤖 AI Assistant"], active: ["← 返回主页", "← Back home"], run: () => route(ui.route === "ai" ? "tags" : "ai") },
       translation: { selector: "#translateBtn", idleKey: "ui.header.translation", activeKey: "ui.header.backHome", idle: ["🌐 翻译", "🌐 Translate"], active: ["← 返回主页", "← Back home"], run: () => route(ui.route === "translation" ? "tags" : "translation") },
@@ -229,7 +258,10 @@
       if (config.activeKey) button.setAttribute("aria-pressed", useActive ? "true" : "false");
       else button.removeAttribute("aria-pressed");
       button.dataset.navState = useActive ? "active" : "idle";
-      button.textContent = localized(useActive ? config.activeKey : config.idleKey, fallback);
+      const label = doc.createElement("span");
+      label.textContent = localized(useActive ? config.activeKey : config.idleKey, fallback).replace(/^[^\p{L}\p{N}]+/u, "");
+      const icon = useActive ? (name === "vision" ? "x" : name === "adult" ? "eye" : "arrow-left") : navigationIcons[name];
+      button.replaceChildren(workspaceIcon(icon), label);
       if (name === "vision") button.setAttribute("aria-expanded", useActive ? "true" : "false");
       if (name === "vision" || name === "favorites") button.title = button.textContent;
     }
@@ -243,6 +275,11 @@
       syncNavAction("sponsor", false);
       syncNavAction("theme", false);
       syncNavAction("locale", false);
+      const context = $("#workspaceContext");
+      if (context) {
+        context.hidden = ui.route !== "favorites" && ui.route !== "gallery";
+        context.textContent = localized(ui.route === "favorites" ? "ui.header.favorites" : "ui.header.gallery", ui.route === "favorites" ? "快捷收藏" : "图片库").replace(/^[^\p{L}\p{N}]+/u, "");
+      }
     }
     function categoryLabel(id, fallback = "") {
       const pack = modules.locales?.[ui.locale] || {};
@@ -412,7 +449,7 @@
         button.style.setProperty("--cat-color", "#0E9B8E");
         const icon = doc.createElement("span");
         icon.className = "cico";
-        icon.textContent = "♙";
+        icon.append(workspaceIcon("user-round"));
         const label = doc.createElement("span");
         label.textContent = ui.locale === "en-US" ? "Character library" : "角色库";
         const count = doc.createElement("span");
@@ -432,7 +469,9 @@
         button.dataset.cat = category.id;
         button.style.setProperty("--cat-color", categoryColor(category.id));
         const label = category.id === "all" ? localized("ui.tag.all", category.name || category.id) : categoryLabel(category.id, category.name || category.id);
-        for (const [className, value] of [['cico', category.icon || '🏷️'], ['', label], ['n', count]]) { const node = doc.createElement('span'); node.className = className; node.textContent = String(value); button.append(node); }
+        const categoryIcons = { all: "layers", quality: "sparkles", negative: "eye-off", character: "user-round", character_names: "user-round", series: "layers", style: "palette" };
+        const icon = doc.createElement('span'); icon.className = 'cico'; icon.append(workspaceIcon(categoryIcons[category.id] || 'tag')); button.append(icon);
+        for (const [className, value] of [['', label], ['n', count]]) { const node = doc.createElement('span'); node.className = className; node.textContent = String(value); button.append(node); }
         host.appendChild(button);
         if (category.id === "all") appendCharacterLibrary();
       });
@@ -564,12 +603,12 @@
           const wrap = doc.createElement("div");
           wrap.className = item.category === "character_names" && characters ? "chip-with-character chip-with-actions" : "chip-with-actions";
           const actions = doc.createElement('span'); actions.className = 'chip-actions';
-          const edit = doc.createElement('button'); edit.type = 'button'; edit.className = 'chip-action chip-edit'; edit.dataset.tagEdit = str(item.id || item.en); edit.textContent = '🖊'; edit.title = localized('ui.custom.editTitle', '编辑 Tag');
-          const star = doc.createElement('button'); star.type = 'button'; star.className = 'chip-action chip-favorite'; star.dataset.tagFavorite = str(item.id || item.en); star.textContent = '★'; star.title = localized('ui.favorites.favorite', '收藏');
+          const edit = doc.createElement('button'); edit.type = 'button'; edit.className = 'chip-action chip-edit'; edit.dataset.tagEdit = str(item.id || item.en); edit.append(workspaceIcon('pencil', 'favorites')); edit.title = localized('ui.custom.editTitle', '编辑 Tag'); edit.setAttribute('aria-label', edit.title);
+          const star = doc.createElement('button'); star.type = 'button'; star.className = 'chip-action chip-favorite'; star.dataset.tagFavorite = str(item.id || item.en); star.append(workspaceIcon('star')); star.title = localized('ui.favorites.favorite', '收藏'); star.setAttribute('aria-label', star.title);
           star.setAttribute('aria-pressed', String(Boolean(item.favorite)));
           star.classList.toggle('is-favorite', Boolean(item.favorite));
           actions.append(edit, star);
-          if (item.edited) { const restore = doc.createElement('button'); restore.type = 'button'; restore.className = 'chip-action chip-restore'; restore.dataset.tagRestore = str(item.id || item.en); restore.textContent = '↺'; restore.title = localized('ui.custom.restore', '恢复默认'); actions.append(restore); }
+          if (item.edited) { const restore = doc.createElement('button'); restore.type = 'button'; restore.className = 'chip-action chip-restore'; restore.dataset.tagRestore = str(item.id || item.en); restore.append(workspaceIcon('undo-2', 'favorites')); restore.title = localized('ui.custom.restore', '恢复默认'); restore.setAttribute('aria-label', restore.title); actions.append(restore); }
           wrap.append(button, actions);
           if (item.note) {
             const note = doc.createElement('span'); note.className = 'tag-note-popover'; note.dataset.tagNote = item.id; note.id = 'tag-note-' + encodeURIComponent(item.id); note.setAttribute('role', 'tooltip'); note.textContent = item.note;
@@ -2468,9 +2507,16 @@
       const sessionList = assistant?.sessions?.() || [];
       const session = sessionList.length ? assistant?.currentSession?.() : null;
       host.replaceChildren();
-      if (!session?.messages?.length)
-        host.innerHTML =
-          '<div class="cmsg sys"><div class="body">输入内容后发送；图片会自动编号并交给 Images 模块。</div></div>';
+      if (!session?.messages?.length) {
+        const welcome = doc.createElement("div"); welcome.className = "workspace-welcome";
+        welcome.append(workspaceIcon("sparkles"));
+        for (const [tag, key, fallback] of [
+          ["h2", "welcomeTitle", "从一个灵感开始"],
+          ["p", "welcomeDescription", "描述你想画的角色、场景或画风，让 AI 帮你整理成绘画提示词。"],
+          ["small", "welcomeHint", "也可以拖入参考图片 · Enter 发送 · Shift + Enter 换行"],
+        ]) { const node = doc.createElement(tag); node.dataset.i18n = `ui.ai.${key}`; node.textContent = localized(node.dataset.i18n, fallback); welcome.append(node); }
+        host.append(welcome);
+      }
       else
         session.messages.forEach((message, index) => {
           const row = doc.createElement("div");
@@ -3510,6 +3556,7 @@
       const localizedTitle = localized("ui.document.title", doc.title);
       if (localizedTitle) doc.title = localizedTitle.replace(/V1\.4\.1/g, `V${modules.version || "1.4.92"}`);
       put("#brandSub", `V${modules.version || "1.4.92"}`);
+      decorateWorkspaceControls();
       if (options.render === false) return;
       syncNavigationStates();
       syncApiMode();

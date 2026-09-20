@@ -7,7 +7,7 @@
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' http: https: ws: wss:; font-src 'self' data:; frame-src 'self' http: https:; object-src 'none'; base-uri 'self'; form-action 'self';"
     />
-    <title>AI 绘画 Tag 工具箱 V1.4.326 · Danbooru 标签选择器</title>
+    <title>AI 绘画 Tag 工具箱 V1.4.327 · Danbooru 标签选择器</title>
     <link
       rel="icon"
       href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎨</text></svg>"
@@ -16,6 +16,7 @@
     <link rel="stylesheet" href="characters.css" />
     <link rel="stylesheet" href="favorites.css" />
     <link rel="stylesheet" href="tag-editor.css" />
+    <link rel="stylesheet" href="workspace-theme.css" />
   </head>
   <body>
     <header>
@@ -23,7 +24,7 @@
         <div class="header-left">
           <button class="hbtn btn btn-icon btn-nav" id="menuBtn" data-i18n-title="ui.header.menu">☰</button>
           <div class="brand">
-            <span class="logo">🎨</span><span data-i18n="ui.header.brand">AI 绘画 Tag 工具箱</span
+            <span class="logo" aria-hidden="true"><svg class="workspace-icon" viewBox="0 0 24 24"><use href="../assets/icons/workspace.svg#palette"></use></svg></span><span data-i18n="ui.header.brand">AI 绘画 Tag 工具箱</span
             ><small id="brandSub" data-i18n="ui.common.loading"></small>
           </div>
         </div>
@@ -58,6 +59,7 @@
         </div>
       </div>
       <div class="header-workspace" id="headerWorkspace">
+        <div id="workspaceContext" class="workspace-context" hidden></div>
         <div class="search" id="searchWrap">
           <input
             id="q"
@@ -532,10 +534,11 @@
                     <div class="cstatus talk-status" id="talkStatus" aria-live="polite"></div>
                   </div>
                   <div class="comfyconv talkconv" id="talkConv" data-conversation-view="true" data-image-context="conversation">
-                    <div class="cmsg sys">
-                      <div class="body">
-                        输入内容后按 Enter 或点「发送」。主 AI 按需要调用固定工具；对话图片和单图识图分别管理。
-                      </div>
+                    <div class="workspace-welcome">
+                      <svg class="workspace-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons/workspace.svg#sparkles"></use></svg>
+                      <h2 data-i18n="ui.ai.welcomeTitle">从一个灵感开始</h2>
+                      <p data-i18n="ui.ai.welcomeDescription">描述你想画的角色、场景或画风，让 AI 帮你整理成绘画提示词。</p>
+                      <small data-i18n="ui.ai.welcomeHint">也可以拖入参考图片 · Enter 发送 · Shift + Enter 换行</small>
                     </div>
                   </div>
                 </div>

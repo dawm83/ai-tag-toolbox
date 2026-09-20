@@ -1,20 +1,22 @@
 {
-  "version": "1.4.326",
+  "version": "1.4.327",
   "buildEvidenceFile": "build-info.json",
   "evidenceLocation": "Desktop package root, outside resources/app.asar",
-  "desktopDirectory": "C:/Users/admin/Desktop/AI绘画Tag工具箱V1.4.326",
+  "desktopDirectory": "C:/Users/admin/Desktop/AI绘画Tag工具箱V1.4.327",
   "sourceBranch": "codex/unified-tag-library",
-  "baseCommit": "811c819041abc5b1e73b2181ffeb7e3e691ad22f",
-  "scope": "Refresh shared Tag content and favorite state when returning from other pages; preserve one editor and one content record",
+  "baseCommit": "be53c6bdd6ea6081e183cfc55a35a88322df1775",
+  "scope": "Unify workspace UI, compact desktop navigation, accessible tag editor controls and light/dark theme styling",
   "checks": {
     "command": "npm run check",
     "testsPassed": 605,
     "testsFailed": 0,
     "realElectronWindow": "Pending manual acceptance per project instructions",
-    "domRegression": "Real shared library and page flows verify unfavorite, edits, search eligibility, multiple memberships, undo and the shared editor",
-    "realAiOrComfyGeneration": false
+    "domRegression": "Existing 605 tests including shared tag editor, navigation, favorites and translation flows",
+    "realAiOrComfyGeneration": false,
+    "visualPreview": "Actual renderer with isolated in-memory fixtures: light/dark themes; 1280x720 and 980x680; tags, editor validation, AI, API, characters, translation and favorites"
   },
   "knownLimits": [
+    "Visual preview uses isolated fixture data; actual Electron rendering, Windows scaling, long user content and live AI/ComfyUI workflows require manual acceptance.",
     "Launcher compatibility without CORS flags still requires a real ComfyUI manual test.",
     "The original default fetch also reached the isolated Electron fixture; CORS is not proven as the sole cause of the original failure.",
     "Unknown prompt submission outcomes require checking the ComfyUI queue before starting another job.",

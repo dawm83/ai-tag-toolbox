@@ -393,6 +393,9 @@
       "agentHint": "Read-only by default. Tool documentation is in the agent-tools folder; local endpoint: http://127.0.0.1:32145."
     },
     "ai": {
+      "welcomeTitle": "Start with an idea",
+      "welcomeDescription": "Describe a character, scene or style. Let AI help shape it into a drawing prompt.",
+      "welcomeHint": "Drop in a reference image · Enter to send · Shift + Enter for a new line",
       "modeAssist": "💬 Assistant",
       "modeDraw": "🎨 Draw",
       "renderImage": "ComfyUI render",

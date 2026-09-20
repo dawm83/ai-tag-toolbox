@@ -357,6 +357,9 @@
       ,"remoteKeyEmpty": "未填写 API Key"
     },
     "ai": {
+      "welcomeTitle": "从一个灵感开始",
+      "welcomeDescription": "描述你想画的角色、场景或画风，让 AI 帮你整理成绘画提示词。",
+      "welcomeHint": "也可以拖入参考图片 · Enter 发送 · Shift + Enter 换行",
       "modeAssist": "💬 助手",
       "modeDraw": "🎨 绘图",
       "renderImage": "ComfyUI 出图",
