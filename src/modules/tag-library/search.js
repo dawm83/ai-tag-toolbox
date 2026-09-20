@@ -72,6 +72,7 @@ function createTagSearchIndex({ getTags, getMemberships, getCharacterLinks, getS
   let rows = null, relations = null, locations = null, favoriteOrder = [];
   let broadContext = null; const broadFields = new Map();
   const results = new Map();
+  const indexedFields = row => row.fields || (row.fields = fieldsFor(row.tag));
   function fieldsForBroad(indexed) {
     if (!broadContext) {
       const taxonomy = getTaxonomy();
@@ -80,12 +81,12 @@ function createTagSearchIndex({ getTags, getMemberships, getCharacterLinks, getS
     if (!broadFields.has(indexed.tag.id)) {
       const tag = indexed.tag, keywords = broadContext.metadata[tag.id]?.keywords || [];
       const fields = [...keywords.map((value, index) => [`keywords.${index}`, value]), ['categoryId', tag.categoryId], ['categoryName', broadContext.categories.get(tag.categoryId)], ['subcategoryName', broadContext.subcategories.get(tag.subcategoryId)]];
-      broadFields.set(tag.id, [...indexed.fields, ...fields.filter(([, value]) => typeof value === 'string' && value).map(([field, original]) => searchField(field, original))]);
+      broadFields.set(tag.id, [...indexedFields(indexed), ...fields.filter(([, value]) => typeof value === 'string' && value).map(([field, original]) => searchField(field, original))]);
     }
     return broadFields.get(indexed.tag.id);
   }
   function ensure() {
-    if (!rows) rows = new Map([...getTags()].map(tag => [tag.id, { tag, fields: fieldsFor(tag) }]));
+    if (!rows) rows = new Map([...getTags()].map(tag => [tag.id, { tag, fields: null }]));
     if (!relations) {
       relations = { identity: new Map(), traits: new Map(), byId: new Map() };
       for (const link of getCharacterLinks()) {
@@ -130,7 +131,7 @@ function createTagSearchIndex({ getTags, getMemberships, getCharacterLinks, getS
         if (scope === 'characterTraits' && characterId && !relations.traits.get(tag.id)?.has(characterId)) continue;
         const roleLinks = links.filter(link => (!characterId || link.characterId === characterId) && (!seriesId || link.seriesTagIds.some(id => id === seriesId && (includeAdult || !rows.get(id)?.tag.adult))));
         if (scope === 'characters' && !roleLinks.length) continue;
-        let fields = precision === 'broad' ? fieldsForBroad(indexed) : indexed.fields;
+        let fields = !needle ? [] : precision === 'broad' ? fieldsForBroad(indexed) : indexedFields(indexed);
         if (scope === 'favorites' && matchPrivate) fields = [...fields, ...[['note', tag.note], ...places.filter(place => (!pageId || place.pageId === pageId) && (!groupId || place.groupId === groupId)).flatMap(place => [['pageName', place.pageName], ['groupName', place.groupName]])].filter(([, value]) => value).map(([field, original]) => searchField(field, original))];
         let match, characterMatches;
         if (scope === 'characters') {
@@ -139,7 +140,7 @@ function createTagSearchIndex({ getTags, getMemberships, getCharacterLinks, getS
           characterMatches = [];
           for (const link of roleLinks) {
             const related = link.seriesTagIds.flatMap(id => {
-              const series = rows.get(id); return series && series.tag.searchable && (includeAdult || !series.tag.adult) ? series.fields.map(field => ({ ...field, field: `series.${id}.${field.field}`, related: true })) : [];
+              const series = rows.get(id); return needle && series && series.tag.searchable && (includeAdult || !series.tag.adult) ? indexedFields(series).map(field => ({ ...field, field: `series.${id}.${field.field}`, related: true })) : [];
             });
             const candidate = needle === null ? { score: 1, hits: [] } : matchFields([...fields, ...related], needle, precision);
             if (candidate) { characterMatches.push({ characterId: link.characterId, score: candidate.score }); if (!match || candidate.score > match.score) match = candidate; }

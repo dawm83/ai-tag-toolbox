@@ -54,3 +54,26 @@ test('runtime seed sharing remains immutable while default loader callers receiv
   assert.notEqual(a.data.tags[0].displayName, 'changed');
   assert.notEqual(loadBundledBase().data.tags[0].displayName, 'changed');
 });
+
+test('an exclusively owned JSON base can be validated in place while ordinary callers retain copy isolation', () => {
+  const owned = makeBase();
+  const prepared = createLibraryDocumentValidator(owned, { takeOwnership: true });
+  assert.equal(prepared.ok, true);
+  assert.equal(prepared.base, owned);
+  assert(Object.isFrozen(owned.tags[0].aliases));
+  assert.equal(prepared.data(emptyUserDocument(owned)).ok, true);
+  const invalid = makeBase(); invalid.tags[0].categoryId = 'missing';
+  assert.equal(createLibraryDocumentValidator(invalid, { takeOwnership: true }).ok, false);
+  assert.equal(Object.isFrozen(invalid), false);
+});
+
+test('category counts do not eagerly read all search text fields', () => {
+  const { createTagSearchIndex } = require('../src/modules/tag-library/search');
+  let textReads = 0;
+  const tag = { ...makeBase().tags[0], get content() { textReads++; return 'blue hair'; } };
+  const index = createTagSearchIndex({ getTags: () => [tag], getMemberships: () => [], getCharacterLinks: () => [], getStructure: () => ({ pages: [], groups: [] }) });
+  assert.equal(index.counts().categories.hair, 1);
+  assert.equal(textReads, 0);
+  assert.equal(index.search('bluehair').total, 1);
+  assert(textReads > 0);
+});

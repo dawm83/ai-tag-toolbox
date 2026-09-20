@@ -10,6 +10,10 @@ const object = o => o !== null && typeof o === 'object' && !Array.isArray(o) && 
 function fail(path, code = 'INVALID_FIELD') { throw { validation: true, code, path }; }
 function shape(o, required, optional, path) {
   if (!object(o)) fail(path);
+  if (!optional.length) {
+    if (Object.keys(o).length !== required.length || required.some(k => !own(o, k))) fail(path);
+    return;
+  }
   const allowed = new Set([...required, ...optional]);
   if (required.some(k => !own(o, k)) || Object.keys(o).some(k => !allowed.has(k))) fail(path);
 }
@@ -49,7 +53,11 @@ function jsonSafe(value, path, ancestors = new WeakSet(), depth = 0) {
 }
 function patch(p, path, allowed = PATCH_FIELDS) {
   shape(p, [], allowed, path);
-  for (const [k, v] of Object.entries(p)) {
+  patchValues(p, path, Object.keys(p));
+}
+function patchValues(p, path, keys) {
+  for (const k of keys) {
+    const v = p[k];
     const field = `${path}.${k}`;
     if (k === 'kind') enumeration(v, ['tag', 'bundle'], field);
     else if (k === 'content') str(v, field, LIMITS.content);
@@ -62,7 +70,7 @@ function patch(p, path, allowed = PATCH_FIELDS) {
 }
 function tag(t, path) {
   shape(t, TAG_FIELDS, [], path); id(t.id, `${path}.id`);
-  patch(Object.fromEntries(PATCH_FIELDS.map(k => [k, t[k]])), path);
+  patchValues(t, path, PATCH_FIELDS);
   ids(t.usages, `${path}.usages`);
   for (const usage of t.usages) enumeration(usage, USAGES, `${path}.usages`);
   shape(t.source, ['kind', 'key'], [], `${path}.source`);
@@ -242,15 +250,15 @@ function freezeSnapshot(value) {
   }
   return value;
 }
-function createLibraryDocumentValidator(base) {
+function createLibraryDocumentValidator(base, options = {}) {
   if (preparedSnapshots.has(base)) return preparedSnapshots.get(base);
   let snapshot, validate;
   const checked = result(null, () => {
-    baseIndexes(base);
-    snapshot = freezeSnapshot(structuredClone(base));
+    const originalIndexes = baseIndexes(base);
+    snapshot = freezeSnapshot(options.takeOwnership === true ? base : structuredClone(base));
     // The original has just passed full validation. Index the owned copy once;
     // subsequent library/migration consumers share only this frozen snapshot.
-    const indexes = {
+    const indexes = snapshot === base ? originalIndexes : {
       tags: new Map(snapshot.tags.map(row => [row.id, row])),
       categories: new Map(snapshot.categories.map(row => [row.id, row])),
       subs: new Map(snapshot.subcategories.map(row => [row.id, row])),

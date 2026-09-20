@@ -3474,7 +3474,7 @@
         if (check) check.textContent = item.dataset.theme === theme ? "✓" : "";
       });
     }
-    function locale(id) {
+    function locale(id, options = {}) {
       const pack = modules.locales?.[id] || {};
       const lookup = (key) =>
         str(key)
@@ -3504,6 +3504,7 @@
       const localizedTitle = localized("ui.document.title", doc.title);
       if (localizedTitle) doc.title = localizedTitle.replace(/V1\.4\.1/g, `V${modules.version || "1.4.92"}`);
       put("#brandSub", `V${modules.version || "1.4.92"}`);
+      if (options.render === false) return;
       syncNavigationStates();
       syncApiMode();
       renderConversationRepository();
@@ -4181,6 +4182,7 @@
         preferences.get("rewrite_theme", "light"),
       );
       applyTheme(theme);
+      locale(preferences.get("app.locale", preferences.get("rewrite_locale", "zh-CN")), { render: false });
       views.settings?.bind?.();
       views.favorites?.bind?.();
       ui.unsubscribeCatalog = catalog?.subscribe?.(change => {
@@ -4196,7 +4198,6 @@
       views.agentStatus?.bind?.();
       views.callMonitor?.bind?.();
       views.translation?.bind?.();
-      views.prompt?.render();
       bind();
       resizeTalkInput();
       loadSettings({ fetch: false });
@@ -4210,7 +4211,6 @@
       renderVisionPreview();
       renderEmbeddedVision();
       views.agentStatus?.render({ status: "idle" });
-      locale(preferences.get("app.locale", preferences.get("rewrite_locale", "zh-CN")));
       route("tags");
     }
     return {

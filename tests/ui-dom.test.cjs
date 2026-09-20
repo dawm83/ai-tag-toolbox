@@ -104,14 +104,42 @@ function boot(options = {}) {
     save: value => { comfyProfile = structuredClone(value); return structuredClone(comfyProfile); },
     setActive: () => structuredClone(comfyProfile), remove: () => false
   };
-  const modules = { catalog: options.catalog, formatTagOutput: options.formatTagOutput, assistant, favorites: options.favorites, joinFavoriteBlocks: options.joinFavoriteBlocks, characters: options.characters, runtime: { listCallRecords: assistant.listCallRecords, clearCallRecords: assistant.clearCallRecords, ...options.runtime }, prompts, tags, images: { get: id => images.get(id), preview: id => images.get(id) }, imageRepository: repository, preferences: { get: (_k, fallback) => fallback, set: () => {} }, translation: options.translation || { findReferences: () => [] }, comfy, locales: options.locales || { 'zh-CN': {} }, version: '1.4.34' };
+  const modules = { catalog: options.catalog, formatTagOutput: options.formatTagOutput, assistant, favorites: options.favorites, joinFavoriteBlocks: options.joinFavoriteBlocks, characters: options.characters, runtime: { listCallRecords: assistant.listCallRecords, clearCallRecords: assistant.clearCallRecords, ...options.runtime }, prompts, tags, images: { get: id => images.get(id), preview: id => images.get(id) }, imageRepository: repository, preferences: options.preferences || { get: (_k, fallback) => fallback, set: () => {} }, translation: options.translation || { findReferences: () => [] }, comfy, locales: options.locales || { 'zh-CN': {} }, version: '1.4.34' };
 
   for (const file of ['views/tag-location-view.js', 'views/tag-editor-view.js', 'views/settings-view.js', 'views/comfy-view.js', 'views/prompt-view.js', 'views/agent-status-view.js', 'views/call-monitor-view.js', 'modules/translation-alignment.js', 'views/translation-view.js', 'views/favorites-view.js', 'app-view.js']) window.eval(source(file));
   if (options.favoritesView) window.AppViews.favorites = { createFavoritesView: () => options.favoritesView };
   const view = window.AppView.create(modules, window.document);
+  options.beforeStart?.(window);
   view.start();
   return { dom, window, view, assistant, repository, gallery, downloadBlobs, continuationCalls, getRunCount: () => runCount, getCancelCount: () => cancelCount, getComfyProfile: () => comfyProfile && structuredClone(comfyProfile) };
 }
+
+test('startup inserts the initial Tag cards once instead of rebuilding them for locale setup', t => {
+  let observer;
+  const app = boot({ tags: {
+    stateSnapshot: () => ({ categories: [], categoryCounts: { all: 1 }, selected: [], category: 'all', revision: 0 }),
+    selected: () => [], getCategories: () => [], subcategories: () => [], size: () => 1,
+    page: () => ({ items: [{ id: 'blue_hair', en: 'blue hair', zh: '蓝发', category: 'hair' }], total: 1 })
+  }, beforeStart: window => { observer = new window.MutationObserver(() => {}); observer.observe(window.document.querySelector('#chips'), { childList: true }); } });
+  t.after(() => { observer.disconnect(); app.dom.window.close(); });
+  const inserted = observer.takeRecords().flatMap(row => [...row.addedNodes]).reduce((sum, row) => sum + (row.querySelectorAll?.('.chip').length || 0), 0);
+  assert.equal(inserted, 1);
+  assert.equal(app.window.document.querySelector('#chips .zh').textContent, '蓝发');
+});
+
+test('the first render applies the saved language and later language changes still refresh cards', t => {
+  const app = boot({
+    preferences: { get: (key, fallback) => key === 'app.locale' ? 'en-US' : fallback, set: () => {} },
+    locales: { 'en-US': require('../locales/en-US.json'), 'zh-CN': require('../locales/zh-CN.json') },
+    tags: { stateSnapshot: () => ({ categories: [], categoryCounts: {}, selected: [], category: 'all', revision: 0 }), selected: () => [], getCategories: () => [], subcategories: () => [], size: () => 1, page: () => ({ items: [{ id: 'blue_hair', en: 'blue hair', zh: '蓝发' }], total: 1 }) }
+  });
+  t.after(() => app.dom.window.close());
+  assert.equal(app.window.document.documentElement.lang, 'en-US');
+  assert.equal(app.window.document.querySelector('#chips .cp').textContent, 'Copy only');
+  app.window.document.querySelector('#localeBtn').click();
+  app.window.document.querySelector('[data-locale="zh-CN"]').click();
+  assert.equal(app.window.document.querySelector('#chips .cp').textContent, '仅复制');
+});
 
 test('full DOM startup renders extracted views and conversation click uses assistant runtime', async () => {
   const app = boot();
