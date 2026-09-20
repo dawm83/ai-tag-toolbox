@@ -99,7 +99,7 @@ function applyLibraryCommand(document, base, command, { ids, now } = {}) {
   function duplicateCheck(content, kind, id, independent) {
     if (kind !== 'tag' || independent) return;
     for (const row of projection().tags()) if (row.id !== id && row.kind === 'tag' && normalizedContent(row.content) === normalizedContent(content)) {
-      reject('DUPLICATE_CONTENT', '已有相同内容的标签，请引用现有条目或明确另存为独立标签', { references: [{ kind: 'selection', id: row.id, label: row.displayName }] });
+      reject('DUPLICATE_CONTENT', '已有相同内容的标签，请引用现有条目或明确另存为独立标签', { existingTagIds: [row.id], references: [{ kind: 'selection', id: row.id, label: row.displayName }] });
     }
   }
   function favorite(tagId, p, moving) {

@@ -1,0 +1,14 @@
+.tag-editor-overlay,
+.tag-location-overlay { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; background: rgb(0 0 0 / .55); }
+.tag-editor-overlay[hidden],
+.tag-location-overlay[hidden] { display: none !important; }
+.tag-editor-dialog { width: min(680px, calc(100vw - 2rem)); max-height: min(90vh, 760px); overflow: auto; padding: 1.25rem; color: var(--text, #eee); background: var(--card, #20242b); border: 1px solid var(--border2, #48515e); border-radius: 12px; box-shadow: 0 16px 50px rgb(0 0 0 / .45); }
+.tag-editor-form { display: grid; gap: .8rem; }
+.tag-editor-field { display: grid; gap: .35rem; color: var(--text, #eee); }
+.tag-editor-field input, .tag-editor-field textarea, .tag-editor-field select { width: 100%; box-sizing: border-box; color: var(--text, #eee); background: var(--input-bg, #15181d); border: 1px solid var(--input-border, #586272); border-radius: 6px; padding: .55rem; }
+.tag-editor-field textarea { min-height: 4rem; resize: vertical; }
+.tag-editor-field[data-tag-field-wrap="adult"], .tag-editor-field[data-tag-field-wrap="searchable"] { display: flex; align-items: center; gap: .5rem; }
+.tag-editor-actions { display: flex; gap: .5rem; justify-content: flex-end; }
+.tag-editor-dialog button { color: var(--text, #eee); background: var(--pri, #5865f2); border: 1px solid var(--border2, #48515e); border-radius: 6px; padding: .5rem .8rem; cursor: pointer; }
+.tag-editor-dialog [role="alert"] { color: #ffb4ab; white-space: pre-wrap; }
+.tag-editor-dialog [data-tag-shared] { opacity: .8; }

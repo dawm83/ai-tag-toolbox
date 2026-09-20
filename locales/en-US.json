@@ -486,6 +486,8 @@
       ,"imageSlot": "Image {slot}"
       ,"imageFallback": "Image"
     },
+    "tagEditor": {"title":"Edit tag","create":"New tag","kind":"Type","tag":"Single tag","bundle":"Bundle / Prompt","content":"Content","displayName":"Display name","aliases":"Aliases (one phrase per line)","note":"Note (plain text)","adult":"Adult content","searchable":"Discoverable in search","location":"Choose location","restore":"Restore defaults","save":"Save","close":"Cancel / Close","shared":"Referenced in {count} places.","required":"Enter content","failed":"Save failed. Your input is preserved; retry saving.","conflict":"The tag was changed elsewhere. Reload before saving.","duplicate":"This content already exists.","independent":"Keep an independent version","inspect":"Inspect existing tag","reference":"Favorite existing tag","unsaved":"Unsaved changes","unsavedText":"Save changes, discard them, or stay here?","discard":"Discard changes","stay":"Stay here","reload":"Reload"},
+    "tagLocation": {"title":"Choose location","category":"Category","subcategory":"Subcategory","page":"Favorite page","group":"Favorite group","choose":"Choose…","create":"Create…","parentName":"New parent name","childName":"New child name","confirm":"Use this location","cancel":"Cancel","required":"Choose a location or enter a new name","duplicate":"An item named {name} already exists; select it instead."},
     "custom": {
       "title": "＋ Add custom tag",
       "english": "English tag (required)",
