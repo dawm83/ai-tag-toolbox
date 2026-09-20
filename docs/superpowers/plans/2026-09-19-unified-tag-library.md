@@ -10,7 +10,7 @@
 
 **Spec:** [统一标签设计规范](../specs/2026-09-19-unified-tag-library-design.md)。发生冲突先按此规范裁定，再记录证据和改动原因。
 
-**Status:** Task 0–8 已完成并通过审查；Task 9 生产页面接入进行中。按用户 2026-09-20 的新指令，已合入 V1.4.320 的 ComfyUI 分支（28ac24d → merge be73b2b），整合检查 511 项通过。后续基于 V1.4.320 实施，最终候选版改为 V1.4.321；统一库尚未切换生产界面，真实用户数据未迁移。详见 docs/qa/unified-tag-library/execution-ledger.md。
+**Status:** Task 0–9 已完成并通过审查；Task 10 迁移报告、导入导出与批量整理进行中。按用户 2026-09-20 的新指令，已合入 V1.4.320 的 ComfyUI 分支（28ac24d → merge be73b2b），整合检查 511 项通过。后续基于 V1.4.320 实施，最终候选版改为 V1.4.321；统一库尚未切换生产界面，真实用户数据未迁移。详见 docs/qa/unified-tag-library/execution-ledger.md。
 
 ## Global Constraints
 
@@ -575,19 +575,19 @@ test('new favorite editor cancellation leaves no tag or placement', async () => 
 
 **Interfaces:** preload仅构造一个library，再将它注入tags/favorites/characters/AI工具；`AppModules.catalog`暴露白名单query/execute/ready/subscribe/flush，不暴露FS。`App.flushBeforeClose()`先统一editor.requestClose，再catalog.flush，再既有assistant/settings持久化。
 
-- [ ] 增加端到端 DOM 测试：使用真实library、tags/favorites/characters适配器，JSDOM加载实际app/view脚本；仅剪贴板和原生窗口关闭回调可替身。
-- [ ] 初始化流程：UI显示“正在准备标签库” → await catalog.ready → 初始化视图；失败显示可恢复错误、禁止增改。不能因ready失败继续展示一个可写空库。
-- [ ] `main.js`单实例保护和second-instance激活已有窗口；测试模拟Electron接口，禁止强杀当前用户进程。解释旧版未实现锁的兼容限制，部署时不能同时激活旧版和新版迁移。
-- [ ] 装配唯一tagEditor/tagLocation；主页star打开位置选择器，不跳收藏页；已有收藏star可显示状态但不重复新增。
-- [ ] 收藏空白格和编辑铅笔调用同一tagEditor.open；删除旧favorite-editor、favorite-quick-editorDOM、300ms自动保存计时器、旧编辑字段事件和旧侧栏CSS。
-- [ ] 角色特征铅笔调用统一tagEditor；人物资料编辑仅保留角色关系/作品用途，身份Tag字段通过统一编辑器。保留之前移除列表星标的结果。
-- [ ] 异步门面全部await：saveEntry/savePage/saveGroup/delete/batch/reorder/select/restore等不能沿用同步safeCall判断。枚举调用点并在报告逐个列出，测试慢Promise。
-- [ ] 页组浏览不再渲染时隐式ensureTagColumns写数据。默认页组由ready初始化/用户命令创建，render纯读。
-- [ ] 统一subscribe通知刷新首页cache、收藏投影、角色索引和底部选择；内容更新局部刷新，不能抢滚动和编辑焦点。dispose解除订阅/事件/定时器。
-- [ ] 备注tooltip、Tag内容、显示名称、别名、页组名称和搜索高亮全部用纯文本节点渲染；替换当前renderTags中把item.en/zh拼进innerHTML的路径，加入恶意字符串DOM测试。统一选中去重，增加共享变更来源提示。
-- [ ] 关闭窗口/切路由/新建另一条都调用同一保存保护。新输入不会被前一次异步保存完成清掉；Ctrl+Z输入与全库撤销不冲突。
-- [ ] 集成测试完整流程：主页blue_hair→收藏指定分组→收藏编辑内容/别名/备注→主页和两个角色立即同步→关闭搜索→所有search不命中而分组可浏览→取消收藏→Tag仍在。
-- [ ] 运行 `npm run check`；记录P3已接入但未人工验收；提交，不立刻把中间版发桌面。
+- [x] 增加端到端 DOM 测试：使用真实library、tags/favorites/characters适配器，JSDOM加载实际app/view脚本；仅剪贴板和原生窗口关闭回调可替身。
+- [x] 初始化流程：UI显示“正在准备标签库” → await catalog.ready → 初始化视图；失败显示可恢复错误、禁止增改。不能因ready失败继续展示一个可写空库。
+- [x] `main.js`单实例保护和second-instance激活已有窗口；测试模拟Electron接口，禁止强杀当前用户进程。解释旧版未实现锁的兼容限制，部署时不能同时激活旧版和新版迁移。
+- [x] 装配唯一tagEditor/tagLocation；主页star打开位置选择器，不跳收藏页；已有收藏star可显示状态但不重复新增。
+- [x] 收藏空白格和编辑铅笔调用同一tagEditor.open；删除旧favorite-editor、favorite-quick-editorDOM、300ms自动保存计时器、旧编辑字段事件和旧侧栏CSS。
+- [x] 角色特征铅笔调用统一tagEditor；人物资料编辑仅保留角色关系/作品用途，身份Tag字段通过统一编辑器。保留之前移除列表星标的结果。
+- [x] 异步门面全部await：saveEntry/savePage/saveGroup/delete/batch/reorder/select/restore等不能沿用同步safeCall判断。枚举调用点并在报告逐个列出，测试慢Promise。
+- [x] 页组浏览不再渲染时隐式ensureTagColumns写数据。默认页组由ready初始化/用户命令创建，render纯读。
+- [x] 统一subscribe通知刷新首页cache、收藏投影、角色索引和底部选择；内容更新局部刷新，不能抢滚动和编辑焦点。dispose解除订阅/事件/定时器。
+- [x] 备注tooltip、Tag内容、显示名称、别名、页组名称和搜索高亮全部用纯文本节点渲染；替换当前renderTags中把item.en/zh拼进innerHTML的路径，加入恶意字符串DOM测试。统一选中去重，增加共享变更来源提示。
+- [x] 关闭窗口/切路由/新建另一条都调用同一保存保护。新输入不会被前一次异步保存完成清掉；Ctrl+Z输入与全库撤销不冲突。
+- [x] 集成测试完整流程：主页blue_hair→收藏指定分组→收藏编辑内容/别名/备注→主页和两个角色立即同步→关闭搜索→所有search不命中而分组可浏览→取消收藏→Tag仍在。
+- [x] 运行 `npm run check`；记录P3已接入但未人工验收；提交，不立刻把中间版发桌面。
 
 **验收:** U02/U04/U05/U16/U20/U22，真实DOM中旧编辑区域不再存在。提交：`V1.4.321：接入统一标签编辑和跨页同步`。
 
