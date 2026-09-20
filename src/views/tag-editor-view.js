@@ -1,71 +1,205 @@
 'use strict';
 
 (function install(root, factory) {
-  let location = root.AppViews?.tagLocation;
-  if (!location && typeof module === 'object' && module.exports) { try { location = require('./tag-location-view'); } catch { location = null; } }
-  const api = factory(location);
+  const helpers = typeof module === 'object' && module.exports ? require('./tag-location-view') : root.AppViews?.tagLocation;
+  const api = factory(helpers);
   if (typeof module === 'object' && module.exports) module.exports = api;
   root.AppViews = root.AppViews || {};
   root.AppViews.tagEditor = api;
-})(typeof globalThis !== 'undefined' ? globalThis : window, function factory(locationApi) {
-  const ALLOWED = ['kind', 'content', 'displayName', 'aliases', 'note', 'adult', 'searchable'];
-  const text = value => value == null ? '' : String(value);
-  const copy = value => Array.isArray(value) ? value.slice() : value && typeof value === 'object' ? { ...value } : value;
-  const id = prefix => `${prefix}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
-  const defaultLocale = (locale, key) => ({
-    title: locale === 'en-US' ? 'Edit tag' : '编辑标签', create: locale === 'en-US' ? 'New tag' : '新增标签', save: locale === 'en-US' ? 'Save' : '保存', close: locale === 'en-US' ? 'Cancel / Close' : '取消 / 关闭',
-    kind: locale === 'en-US' ? 'Type' : '类型', tag: locale === 'en-US' ? 'Single tag' : '单个标签', bundle: locale === 'en-US' ? 'Bundle / Prompt' : '组合 / Prompt', content: locale === 'en-US' ? 'Content' : '内容', displayName: locale === 'en-US' ? 'Display name' : '显示名称', aliases: locale === 'en-US' ? 'Aliases (one phrase per line)' : '别名（每行一个，保留短语）', note: locale === 'en-US' ? 'Note (plain text)' : '备注（纯文本）', adult: locale === 'en-US' ? 'Adult content' : '成人内容', searchable: locale === 'en-US' ? 'Discoverable in search' : '允许搜索发现', location: locale === 'en-US' ? 'Choose location' : '选择位置', restore: locale === 'en-US' ? 'Restore defaults' : '恢复默认', shared: locale === 'en-US' ? 'Referenced in {count} places.' : '此标签被 {count} 处引用。', required: locale === 'en-US' ? 'Enter content' : '请输入内容', failed: locale === 'en-US' ? 'Save failed. Your input is preserved; retry saving.' : '保存失败，输入已保留，可重试。', conflict: locale === 'en-US' ? 'The tag was changed elsewhere. Reload before saving.' : '标签已在其他位置修改，重新加载后再保存', duplicate: locale === 'en-US' ? 'This content already exists.' : '已有相同内容。', independent: locale === 'en-US' ? 'Keep an independent version' : '保留独立版本', inspect: locale === 'en-US' ? 'Inspect existing tag' : '查看已有标签', reference: locale === 'en-US' ? 'Favorite existing tag' : '收藏已有标签', unsaved: locale === 'en-US' ? 'Unsaved changes' : '有未保存修改', unsavedText: locale === 'en-US' ? 'Save changes, discard them, or stay here?' : '保存修改、放弃修改，还是留在这里？', discard: locale === 'en-US' ? 'Discard changes' : '放弃修改', stay: locale === 'en-US' ? 'Stay here' : '留在这里', reload: locale === 'en-US' ? 'Reload' : '重新加载'
-  })[key] || key;
-  function createTagEditorView(options = {}) {
-    const document = options.document || globalThis.document;
-    const catalog = options.catalog;
-    const notify = typeof options.notify === 'function' ? options.notify : () => {};
-    const getLocale = typeof options.getLocale === 'function' ? options.getLocale : () => 'zh-CN';
-    const localize = typeof options.localize === 'function' ? options.localize : null;
-    const t = key => localize?.(`ui.tagEditor.${key}`, defaultLocale(getLocale(), key)) || defaultLocale(getLocale(), key);
-    const overlay = document.createElement('div'); overlay.className = 'tag-editor-overlay'; overlay.dataset.tagEditorOverlay = ''; overlay.hidden = true;
-    const panel = document.createElement('section'); panel.className = 'tag-editor-dialog'; panel.tabIndex = -1; panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-modal', 'true');
-    const title = document.createElement('h2'); title.id = `tag-editor-title-${Date.now()}`; panel.setAttribute('aria-labelledby', title.id); panel.append(title);
-    const form = document.createElement('form'); form.className = 'tag-editor-form'; panel.append(form); overlay.append(panel); document.body.append(overlay);
-    const fields = {};
-    function field(name, type, labelText) {
-      const wrap = document.createElement('label'); wrap.className = 'tag-editor-field'; wrap.dataset.tagFieldWrap = name; const caption = document.createElement('span'); caption.textContent = labelText; wrap.append(caption); const input = document.createElement(type === 'textarea' ? 'textarea' : type); input.dataset.tagField = name; input.name = name; input.id = `tag-field-${name}`; if (type === 'checkbox') input.type = 'checkbox'; input.setAttribute('aria-label', labelText); wrap.append(input); form.append(wrap); fields[name] = input; return input;
+})(typeof globalThis !== 'undefined' ? globalThis : window, function factory(helpers) {
+  const FIELDS = ['kind', 'content', 'displayName', 'aliases', 'note', 'adult', 'searchable'];
+  const PATCH_FIELDS = [...FIELDS, 'categoryId', 'subcategoryId'];
+  const defaults = () => ({ kind:'tag', content:'', displayName:'', aliases:[], note:'', adult:false, searchable:true });
+  const clone = value => value == null ? value : JSON.parse(JSON.stringify(value));
+  const equal = (a,b) => JSON.stringify(a) === JSON.stringify(b);
+  let operations = 0;
+  function prefill(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(key => !PATCH_FIELDS.includes(key))) return null;
+    for (const [key,v] of Object.entries(value)) {
+      if (key==='aliases') { if (!Array.isArray(v) || v.length>64 || v.some(x=>typeof x!=='string'||!x.trim()||x.length>256||x.includes('\0')) || new Set(v).size!==v.length) return null; }
+      else if (key==='kind') { if (!['tag','bundle'].includes(v)) return null; }
+      else if (['adult','searchable'].includes(key)) { if (typeof v!=='boolean') return null; }
+      else if (typeof v!=='string' || v.includes('\0') || v.length>({content:32768,note:4096,categoryId:1024,subcategoryId:1024}[key]||256)) return null;
     }
-    const kind = field('kind', 'select', t('kind')); for (const value of ['tag', 'bundle']) { const opt = document.createElement('option'); opt.value = value; opt.textContent = t(value); kind.append(opt); }
-    field('content', 'textarea', t('content')); field('displayName', 'input', t('displayName')); field('aliases', 'textarea', t('aliases')); field('note', 'textarea', t('note')); field('adult', 'checkbox', t('adult')); field('searchable', 'checkbox', t('searchable'));
-    const locationButton = document.createElement('button'); locationButton.type = 'button'; locationButton.dataset.tagLocation = ''; locationButton.textContent = t('location'); form.append(locationButton);
-    const restoreButton = document.createElement('button'); restoreButton.type = 'button'; restoreButton.dataset.tagRestore = ''; restoreButton.textContent = t('restore'); form.append(restoreButton);
-    const error = document.createElement('p'); error.dataset.tagError = ''; error.setAttribute('role', 'alert'); form.append(error); const shared = document.createElement('p'); shared.dataset.tagShared = ''; form.append(shared); const actions = document.createElement('div'); actions.className = 'tag-editor-actions';
-    const saveButton = document.createElement('button'); saveButton.type = 'submit'; saveButton.dataset.tagSave = ''; saveButton.textContent = t('save'); const closeButton = document.createElement('button'); closeButton.type = 'button'; closeButton.dataset.tagClose = ''; closeButton.textContent = t('close'); actions.append(saveButton, closeButton); form.append(actions);
-    document.body.append(overlay);
-    let picker = options.locationView || null; let ownsPicker = false;
-    if (!picker && locationApi?.createTagLocationView) { picker = locationApi.createTagLocationView({ document, catalog, getLocale, localize }); ownsPicker = true; }
-    const state = { open: false, disposed: false, tagId: null, membershipId: null, base: null, draft: {}, placement: null, initialValues: null, operationId: null, saving: null, session: 0, composing: false, origin: null, independent: false };
-    const controls = Object.values(fields);
-    function getValue() { const rawAliases = fields.aliases.value; return { kind: kind.value, content: fields.content.value, displayName: fields.displayName.value, aliases: rawAliases === '' ? [] : rawAliases.split(/\r?\n/), note: fields.note.value, adult: Boolean(fields.adult.checked), searchable: Boolean(fields.searchable.checked) }; }
-    function equals(a, b) { return ALLOWED.every(key => JSON.stringify(a?.[key]) === JSON.stringify(b?.[key])); }
-    function dirty() { return state.open && !equals(state.draft, state.base); }
-    function setFieldValues(value) { for (const key of ALLOWED) { if (!fields[key]) continue; if (key === 'adult' || key === 'searchable') fields[key].checked = value[key] === true; else if (key === 'aliases') fields[key].value = Array.isArray(value[key]) ? value[key].join('\n') : text(value[key]); else fields[key].value = text(value[key]); } }
-    function readChanged(name) { const value = getValue(); for (const key of name ? [name] : []) if (JSON.stringify(value[key]) !== JSON.stringify(state.draft[key])) { state.draft[key] = copy(value[key]); if (key === 'aliases') state.draft[key] = value[key].slice(); } }
-    function updateShared() { const refs = state.tagId ? catalog.references?.(state.tagId) || [] : []; shared.textContent = refs.length ? t('shared').replace('{count}', String(refs.length)) : ''; }
-    function errorMessage(result) { error.textContent = result?.error?.code === 'REVISION_CONFLICT' ? t('conflict') : result?.error?.code === 'STORAGE_WRITE_FAILED' ? t('failed') : result?.error?.message || t('failed'); error.focus(); }
-    function freeze(value) { controls.forEach(node => { node.disabled = value; }); saveButton.disabled = value; }
-    function operationFor(payload) { const fingerprint = JSON.stringify(payload); if (!state.operationId || state.operationFingerprint !== fingerprint) { state.operationId = id('tag-save'); state.operationFingerprint = fingerprint; } return state.operationId; }
-    function payload() { const patch = {}; for (const key of ALLOWED) if (!state.tagId || JSON.stringify(state.draft[key]) !== JSON.stringify(state.base?.[key])) patch[key] = copy(state.draft[key]); return { type: 'saveTag', ...(state.tagId ? { tagId: state.tagId } : {}), patch, ...(state.placement ? { placement: state.placement } : {}), ...(state.independent ? { allowIndependent: true } : {}) }; }
-    function duplicateActions(result, frozenPayload) { error.textContent = t('duplicate'); const ids = result?.error?.existingTagIds || []; if (!ids.length) return; for (const known of ids.slice(0, 8)) { const row = catalog.getTag?.(known); if (!row) continue; const inspect = document.createElement('button'); inspect.type = 'button'; if (state.tagId) inspect.hidden = true; inspect.dataset.tagReference = known; inspect.textContent = `${t('inspect')}: ${row.displayName || row.content}`; inspect.addEventListener('click', async () => { if (frozenPayload.placement?.kind === 'favorite') { const op = id('favorite-existing'); const fav = await catalog.execute({ type: 'favoriteTag', tagId: known, placement: frozenPayload.placement }, { operationId: op, expectedRevision: catalog.revision() }); if (!fav.ok) errorMessage(fav); else closeAfterSave(); } }); if (!state.tagId) error.append(inspect); const independent = document.createElement('button'); independent.type = 'button'; independent.dataset.tagIndependent = ''; independent.textContent = t('independent'); independent.addEventListener('click', async () => { state.independent = true; state.operationId = null; error.textContent = ''; await save(); }); error.append(independent); } }
-    async function save() { if (!state.open || state.saving) return state.saving || Promise.resolve({ ok: false, error: { code: 'BUSY' } }); if (!text(state.draft.content).trim()) { error.textContent = t('required'); fields.content.focus(); return { ok: false, error: { code: 'INVALID_FIELD' } }; } const command = payload(); const operationId = operationFor(command); const session = state.session; freeze(true); const promise = state.saving = Promise.resolve(catalog.execute(command, { operationId, expectedRevision: state.baseRevision })).then(result => { if (session !== state.session) return result; if (result.ok) { state.saving = null; state.open = false; overlay.hidden = true; freeze(false); state.base = null; state.draft = {}; state.operationFingerprint = null; state.independent = false; state.origin?.focus?.(); return result; } freeze(false); state.saving = null; if (result.error?.code === 'DUPLICATE_CONTENT') duplicateActions(result, command); else errorMessage(result); return result; }).catch(caught => { freeze(false); state.saving = null; error.textContent = caught.message || t('failed'); error.focus(); return { ok: false, error: { code: 'STORAGE_WRITE_FAILED', message: caught.message } }; }); return promise; }
-    function closeAfterSave() { state.open = false; overlay.hidden = true; freeze(false); state.origin?.focus?.(); }
-    async function guardClose() { if (state.saving) return false; if (!dirty()) { closeAfterSave(); return true; } const decision = await (options.confirmDiscard?.() || Promise.resolve('stay')); if (decision === 'save') { const result = await save(); return Boolean(result.ok); } if (decision === 'discard') { closeAfterSave(); return true; } return false; }
-    async function open(input = {}) { if (state.open && !(await guardClose())) return false; const session = ++state.session; state.origin = document.activeElement; state.tagId = input.tagId || null; state.membershipId = input.membershipId || null; state.placement = copy(input.placement); state.initialValues = !state.tagId ? copy(input.initialValues || {}) : null; const row = state.tagId ? catalog.getTag?.(state.tagId) : null; if (state.tagId && !row) { error.textContent = 'TAG_NOT_FOUND'; return false; } const source = row ? { ...row } : { kind: 'tag', content: '', displayName: '', aliases: [], note: '', adult: false, searchable: true }; if (!state.tagId) for (const key of ALLOWED) if (Object.hasOwn(state.initialValues || {}, key)) source[key] = copy(state.initialValues[key]); state.base = { ...source, aliases: Array.isArray(source.aliases) ? source.aliases.slice() : [] }; state.draft = { ...state.base, aliases: state.base.aliases.slice() }; state.baseRevision = catalog.revision?.() ?? 0; state.operationId = null; state.operationFingerprint = null; state.independent = false; title.textContent = state.tagId ? t('title') : t('create'); setFieldValues(state.draft); updateShared(); error.replaceChildren(); error.textContent = ''; overlay.hidden = false; state.open = true; panel.focus(); return true; }
-    function onKeydown(event) { if (!state.open) return; if (event.isComposing || state.composing) return; if (event.key === 'Escape') { event.preventDefault(); guardClose(); } else if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') { event.preventDefault(); save(); } else if (event.key === 'Tab') { const focusable = [...panel.querySelectorAll('button,input,textarea,select')].filter(node => !node.disabled); const first = focusable[0], last = focusable.at(-1); if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); } else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); } } }
-    for (const node of controls) { node.addEventListener('input', () => readChanged(node.name)); node.addEventListener('change', () => readChanged(node.name)); node.addEventListener('compositionstart', () => { state.composing = true; }); node.addEventListener('compositionend', () => { state.composing = false; readChanged(node.name); }); }
-    form.addEventListener('submit', event => { event.preventDefault(); save(); }); closeButton.addEventListener('click', guardClose);
-    locationButton.addEventListener('click', async () => { if (!picker) return; const session = state.session; const value = await picker.choose({ kind: state.placement?.kind || (state.tagId && catalog.getMemberships?.(state.tagId)?.length ? 'favorite' : 'taxonomy'), current: state.placement, draft: state.placement }); if (session === state.session) { if (value) state.placement = value; locationButton.focus(); } });
-    restoreButton.addEventListener('click', async () => { if (!state.tagId) return; if (dirty() && !(await guardClose())) return; const operationId = id('restore'); const result = await catalog.execute({ type: 'restoreTag', tagId: state.tagId }, { operationId, expectedRevision: catalog.revision() }); if (!result.ok) errorMessage(result); else open({ tagId: state.tagId }); });
-    function onFocusIn(event) { if (state.open && !panel.contains(event.target) && !picker?.top?.()) panel.focus(); }
-    document.addEventListener('keydown', onKeydown, true); document.addEventListener('focusin', onFocusIn, true);
-    function dispose() { if (state.disposed) return; state.disposed = true; document.removeEventListener('keydown', onKeydown, true); document.removeEventListener('focusin', onFocusIn, true); if (ownsPicker) picker.dispose(); overlay.remove(); }
-    return { open, save, requestClose: guardClose, isDirty: dirty, dispose, locationView: picker, getDraft: () => ({ ...state.draft, placement: copy(state.placement) }) };
+    return clone(value);
   }
-  return { createTagEditorView };
+  function createTagEditorView({ document, catalog, notify = () => {}, getLocale = () => 'zh-CN', localize, confirmDiscard, locationView } = {}) {
+    const { createDialogTools, createTagLocationView, element, button, translator } = helpers;
+    const t = translator('tagEditor',getLocale,localize);
+    let disposed=false, opened=false, session=0, opening=0, origin=null, record=null, draft=null, baseline=null, placement=null, initialPlacement=null;
+    let revision=0, pending=null, retry=null, independent=false, childOpen=false, guardPending=null, composing=false, discardResolve=null;
+    const dialog=createDialogTools(document,'editor',keydown);
+    const picker=locationView || createTagLocationView({document,catalog,getLocale,localize});
+    const discardDialog=createDialogTools(document,'discard',event=>{if(event.key==='Escape'&&!event.isComposing){event.preventDefault();event.stopImmediatePropagation();finishDecision('stay');}});
+    const discardText=element(document,'p'); discardDialog.panel.append(discardText);
+    const discardButtons={}; for(const key of ['save','discard','stay']) { const node=button(document,'',`data-tag-${key==='save'?'confirm-save':key}`,()=>finishDecision(key)); discardButtons[key]=node; discardDialog.panel.append(node); }
+    const form=element(document,'form'); form.className='tag-editor-form'; dialog.panel.append(form);
+    const fields={}, captions={};
+    for(const name of FIELDS) {
+      const label=element(document,'label'); label.className='tag-editor-field'; label.dataset.tagFieldWrap=name;
+      const caption=element(document,'span'); captions[name]=caption; const node=element(document,name==='kind'?'select':['content','aliases','note'].includes(name)?'textarea':'input');
+      if(['adult','searchable'].includes(name)) node.type='checkbox';
+      node.dataset.tagField=name; node.name=name; fields[name]=node; label.append(caption,node); form.append(label);
+      for(const event of ['input','change']) node.addEventListener(event,()=>readField(name));
+      node.addEventListener('compositionstart',()=>{composing=true;}); node.addEventListener('compositionend',()=>{composing=false;readField(name);});
+    }
+    for(const value of ['tag','bundle']) {const option=element(document,'option');option.value=value;fields.kind.append(option);}
+    const taxonomySummary=element(document,'p'); taxonomySummary.dataset.tagTaxonomySummary=''; form.append(taxonomySummary);
+    const membershipLabel=element(document,'label'), membershipCaption=element(document,'span'), membershipSelect=element(document,'select');
+    membershipSelect.dataset.tagMembership=''; membershipLabel.append(membershipCaption,membershipSelect); form.append(membershipLabel);
+    const locationSummary=element(document,'p'); locationSummary.dataset.tagLocationSummary=''; form.append(locationSummary);
+    const chooseButton=button(document,'','data-tag-location',()=>chooseLocation());
+    const taxonomyButton=button(document,'','data-tag-taxonomy',()=>chooseLocation('taxonomy'));
+    const shared=element(document,'p');shared.dataset.tagShared=''; form.append(chooseButton,taxonomyButton,shared);
+    const error=element(document,'p');error.dataset.tagError='';error.setAttribute('role','alert');error.tabIndex=-1;error.id=dialog.title.id+'-error'; form.append(error);
+    const duplicates=element(document,'div');duplicates.dataset.tagDuplicates='';form.append(duplicates);
+    const actions=element(document,'div');actions.className='tag-editor-actions';form.append(actions);
+    const restoreButton=button(document,'','data-tag-restore',restore);
+    const reloadButton=button(document,'','data-tag-reload',reload);reloadButton.hidden=true;
+    const saveButton=button(document,'','data-tag-save',()=>save());
+    const closeButton=button(document,'','data-tag-close',()=>requestClose());actions.append(restoreButton,reloadButton,saveButton,closeButton);
+    form.addEventListener('submit',event=>{event.preventDefault();if(!composing)save();});
+    function notifySafe(message) {try {notify(message);} catch { /* Notification must not change a committed result. */ }}
+    function busy() {return !!pending || childOpen || !!guardPending;}
+    function isDirty() {return opened && (!equal(draft,baseline)||!equal(placement,initialPlacement));}
+    function clearError() {error.textContent='';duplicates.replaceChildren();reloadButton.hidden=true;for(const node of Object.values(fields)){node.removeAttribute('aria-invalid');node.removeAttribute('aria-describedby');}}
+    function readField(name) {
+      if(!opened||pending)return;
+      const node=fields[name]; draft[name]=['adult','searchable'].includes(name)?node.checked:name==='aliases'?(node.value===''?[]:node.value.split(/\r?\n/).filter(value=>value.trim())):node.value;
+      independent=false; clearError();
+    }
+    function freeze(value) {for(const node of form.querySelectorAll('input,textarea,select,button')) node.disabled=value;form.setAttribute('aria-busy',String(value));}
+    function labelPlacement(value) {
+      if(!value)return t('unclassified');
+      const taxonomy=value.kind==='taxonomy', p=taxonomy?value.category:value.page, c=taxonomy?value.subcategory:value.group;
+      const parents=taxonomy?catalog.getCategories():catalog.getFavoritePages();
+      const children=p?.id?(taxonomy?catalog.getSubcategories(p.id):catalog.getFavoriteGroups(p.id)):[];
+      return `${p?.create?.name || parents.find(row=>row.id===p?.id)?.name || t('unclassified')} / ${c?.create?.name || children.find(row=>row.id===c?.id)?.name || t('unclassified')}`;
+    }
+    function taxonomyPlacement() {return draft?.categoryId && draft?.subcategoryId?{kind:'taxonomy',category:{id:draft.categoryId},subcategory:{id:draft.subcategoryId}}:null;}
+    function memberships() {return record?catalog.getTag(record.id)?.favoriteLocations || []:[];}
+    function fromMembership(id) {const row=memberships().find(row=>row.membershipId===id);return row?{kind:'favorite',page:{id:row.pageId},group:{id:row.groupId},membershipId:row.membershipId}:null;}
+    function summaries() {
+      taxonomySummary.textContent=`${t('taxonomy')}: ${labelPlacement(placement?.kind==='taxonomy'?placement:taxonomyPlacement())}`;
+      locationSummary.textContent=placement?`${t(placement.kind==='favorite'?'favorite':'taxonomy')}: ${labelPlacement(placement)}`:t('membership');
+    }
+    membershipSelect.addEventListener('change',()=>{placement=fromMembership(membershipSelect.value);clearError();summaries();});
+    function render() {
+      dialog.title.textContent=t(record?'title':'create');
+      for(const name of FIELDS) {const node=fields[name];captions[name].textContent=t(name); if(['adult','searchable'].includes(name))node.checked=draft[name];else node.value=name==='aliases'?draft.aliases.join('\n'):draft[name];}
+      for(const option of fields.kind.options)option.textContent=t(option.value);
+      chooseButton.textContent=t('location');taxonomyButton.textContent=t('taxonomy');restoreButton.textContent=t('restore');reloadButton.textContent=t('reload');saveButton.textContent=t('save');closeButton.textContent=t('close');
+      restoreButton.hidden=record?.source?.kind!=='bundled';
+      const rows=memberships();membershipLabel.hidden=rows.length<2;membershipCaption.textContent=t('membership');membershipSelect.replaceChildren();
+      const empty=element(document,'option',t('membership'));empty.value='';membershipSelect.append(empty);
+      for(const row of rows){const option=element(document,'option',`${row.pageName} / ${row.groupName}`);option.value=row.membershipId;membershipSelect.append(option);}membershipSelect.value=placement?.membershipId || '';
+      shared.textContent=record?t('shared',{count:catalog.references(record.id).length}):'';
+      clearError();freeze(false);summaries();
+    }
+    function fail(code, field) {showError({code,fields:field?[field]:[]});return {ok:false,error:{code,fields:field?[field]:[]}};}
+    function showError(value) {
+      const key={REVISION_CONFLICT:'conflict',DUPLICATE_CONTENT:'duplicate',DUPLICATE_MEMBERSHIP:'duplicateMembership',TAG_IN_USE:'inUse',INVALID_FIELD:'invalid',INVALID_PARENT:'invalid',DUPLICATE_NAME:'invalid'}[value.code] || 'failed';
+      error.textContent=t(key);reloadButton.hidden=value.code!=='REVISION_CONFLICT';
+      const name=value.fields?.map(path=>path.split('.').at(-1)).find(name=>fields[name]);
+      if(name){fields[name].setAttribute('aria-invalid','true');fields[name].setAttribute('aria-describedby',error.id);fields[name].focus();}
+      else if(value.code==='REVISION_CONFLICT')reloadButton.focus();else error.focus();
+    }
+    function close() {opened=false;session++;dialog.close();origin=null;}
+    function operation(command) {
+      const fingerprint=JSON.stringify(command);
+      if(!retry||retry.fingerprint!==fingerprint||retry.revision!==revision)retry={fingerprint,revision,id:`tag-editor:${Date.now()}:${++operations}`};
+      return retry.id;
+    }
+    function commit(command) {
+      if(pending)return pending;
+      const token=session, operationId=operation(command); freeze(true);clearError();
+      const frozen=clone(command);
+      const promise=Promise.resolve().then(()=>catalog.execute(frozen,{operationId,expectedRevision:revision})).catch(()=>({ok:false,error:{code:'STORAGE_WRITE_FAILED'}})).then(result=>{
+        if(disposed||token!==session)return result;
+        freeze(false);pending=null;
+        if(result.ok){notifySafe(t('saved'));close();}
+        else {showError(result.error);if(result.error.code==='DUPLICATE_CONTENT')duplicateActions(result.error,token);}
+        return result;
+      });pending=promise;return promise;
+    }
+    function save() {
+      if(pending)return pending;
+      if(!opened||disposed||childOpen)return Promise.resolve({ok:false,error:{code:'BUSY'}});
+      if(!draft.content.trim()){const result=fail('INVALID_FIELD','content');error.textContent=t('required');return Promise.resolve(result);}
+      if(memberships().length>1&&!placement){membershipSelect.focus();error.textContent=t('membership');return Promise.resolve({ok:false,error:{code:'INVALID_PARENT'}});}
+      const patch={};for(const key of PATCH_FIELDS)if(Object.hasOwn(draft,key)&&(!record||!equal(draft[key],baseline[key])))patch[key]=clone(draft[key]);
+      return commit({type:'saveTag',...(record?{tagId:record.id}:{}),patch,...(placement?{placement:clone(placement)}:{}),...(independent?{allowIndependent:true}:{})});
+    }
+    function duplicateActions(value,token) {
+      duplicates.replaceChildren();
+      for(const known of (value.existingTagIds||[]).slice(0,8)) {
+        const row=catalog.getTag(known);if(!row)continue;
+        const summary=element(document,'p',`${row.displayName || row.content}\n${row.content}\n${row.note}`);duplicates.append(summary);
+        const inspect=button(document,t('inspect'),null,()=>{if(token===session&&!busy())open({tagId:known});});inspect.dataset.tagInspect=known;duplicates.append(inspect);
+        if(!record&&placement?.kind==='favorite') {
+          const reference=button(document,t('reference'),null,()=>{if(token!==session||busy())return;commit({type:'favoriteTag',tagId:known,placement:clone(placement)});});reference.dataset.tagReference=known;duplicates.append(reference);
+        }
+      }
+      duplicates.append(button(document,t('independent'),'data-tag-independent',()=>{if(token!==session||busy())return;independent=true;save();}));
+    }
+    function finishDecision(value) {if(!discardResolve)return;const resolve=discardResolve;discardResolve=null;discardDialog.close();resolve(value);}
+    function askDecision(reason) {
+      if(confirmDiscard)return Promise.resolve().then(()=>confirmDiscard({reason,tagId:record?.id||null})).catch(()=> 'stay');
+      discardDialog.title.textContent=t('unsaved');discardText.textContent=t('unsavedText');for(const key of Object.keys(discardButtons))discardButtons[key].textContent=t(key);
+      const promise=new Promise(resolve=>{discardResolve=resolve;});discardDialog.open();return promise;
+    }
+    async function protect(reason) {
+      if(!isDirty())return 'discard';
+      if(guardPending)return 'stay';
+      const token=session;guardPending=askDecision(reason);const choice=await guardPending;guardPending=null;
+      if(disposed||token!==session)return 'stay';
+      return ['save','discard'].includes(choice)?choice:'stay';
+    }
+    async function requestClose() {
+      if(!opened)return true;if(busy())return false;
+      const token=session,choice=await protect('close');if(disposed||token!==session)return false;
+      if(choice==='save')return Boolean((await save()).ok);if(choice==='discard'){close();return true;}return false;
+    }
+    async function open(input={}) {
+      if(disposed||busy())return false;
+      const attempt=++opening;
+      if(opened&&!(await requestClose()))return false;
+      if(disposed||attempt!==opening)return false;
+      const source=input.tagId?catalog.getTag(input.tagId):null;
+      if(input.tagId&&!source){notifySafe(t('invalid'));return false;}
+      const initial=input.tagId?{}:prefill(input.initialValues||{});if(!initial){notifySafe(t('invalid'));return false;}
+      record=source;draft=source?Object.fromEntries(PATCH_FIELDS.map(key=>[key,clone(source[key])])):{...defaults(),...initial};baseline=clone(draft);
+      placement=clone(input.placement)||null;
+      const rows=memberships();const membershipId=input.membershipId || placement?.membershipId;
+      if(membershipId){const current=fromMembership(membershipId);if(!current){notifySafe(t('invalid'));return false;}placement=placement?.kind==='favorite'?{...placement,membershipId}:current;}
+      if(!placement){if(rows.length===1)placement=fromMembership(rows[0].membershipId);else if(!rows.length)placement=taxonomyPlacement();}
+      initialPlacement=clone(placement);revision=catalog.revision();retry=null;independent=false;composing=false;session++;origin=document.activeElement;opened=true;render();dialog.open();fields.content.focus();return true;
+    }
+    async function chooseLocation(kind) {
+      if(!opened||busy())return;
+      const mode=kind||placement?.kind||(memberships().length?'favorite':'taxonomy');
+      if(mode==='favorite'&&memberships().length>1&&!membershipSelect.value){error.textContent=t('membership');membershipSelect.focus();return;}
+      const current=mode==='taxonomy'?(placement?.kind==='taxonomy'?placement:taxonomyPlacement()):placement;
+      const token=session;childOpen=true;chooseButton.focus();
+      try {const value=await picker.choose({kind:mode,current:clone(current),draft:clone(current)});if(disposed||token!==session)return;if(value){placement=clone(value);clearError();summaries();}}
+      finally {childOpen=false;if(!disposed&&token===session&&opened)chooseButton.focus();}
+    }
+    async function reload() {
+      if(!opened||busy())return;const token=session;const input=record?{tagId:record.id,membershipId:placement?.membershipId}:{initialValues:clone(baseline),placement:clone(initialPlacement)};
+      const choice=await protect('reload');if(disposed||token!==session)return;
+      if(choice==='save'){await save();return;}if(choice==='discard'){close();await open(input);}
+    }
+    async function restore() {
+      if(!opened||busy()||record?.source?.kind!=='bundled')return;const token=session;const choice=await protect('restore');if(disposed||token!==session)return;
+      if(choice==='save'){await save();return;}if(choice==='discard')await commit({type:'restoreTag',tagId:record.id});
+    }
+    function keydown(event) {
+      if(!opened||childOpen||guardPending||event.isComposing||composing)return;
+      if(event.key==='Escape'){event.preventDefault();event.stopImmediatePropagation();requestClose();}
+      else if((event.ctrlKey||event.metaKey)&&event.key==='Enter'){event.preventDefault();save();}
+    }
+    function dispose() {if(disposed)return;disposed=true;session++;opening++;opened=false;finishDecision('stay');discardDialog.dispose();if(!locationView)picker.dispose();dialog.dispose();}
+    return {open,save,requestClose,isDirty,dispose,locationView:picker};
+  }
+  return {createTagEditorView};
 });

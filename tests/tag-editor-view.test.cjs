@@ -38,7 +38,7 @@ test('seven fields save, clear and preserve untouched CRLF content and aliases',
   assert.deepEqual(h.library.getTag(id).aliases,['long phrase','other phrase']); assert.equal(h.library.getTag(id).content,'new\ntext'); assert.equal(h.document.querySelector('img'),null);
 });
 test('failure preserves draft; same retry uses same operation and changed retry uses a new operation', async t => {
-  const h = await setup(t); const calls=[]; const catalog = { getTag: h.library.getTag.bind(h.library), references: h.library.references.bind(h.library), revision: h.library.revision.bind(h.library), getMemberships: h.library.getMemberships.bind(h.library), execute: (c,o) => { calls.push({c,o}); return h.library.execute(c,o); } }; await h.editor.dispose();
+  const h = await setup(t); const calls=[]; const catalog = { ...h.library, execute: (c,o) => { calls.push({c,o}); return h.library.execute(c,o); } }; await h.editor.dispose();
   const reopened = await setup(t, { catalog, harness: h });
   await reopened.editor.open({initialValues:{content:'fresh'},placement}); h.controls.failNextSave(); assert.equal((await reopened.editor.save()).error.code,'STORAGE_WRITE_FAILED');
   assert.equal(reopened.field('content').value,'fresh'); assert.equal((await reopened.editor.save()).ok,true); assert.equal(calls[0].o.operationId,calls[1].o.operationId);
@@ -76,4 +76,45 @@ test('keyboard IME suppresses save, Ctrl Enter saves and focus is trapped', asyn
 });
 test('restore explicitly commits only restore after discarding dirty draft', async t => {
   const h=await setup(t); await h.library.execute({type:'saveTag',tagId:'blue_hair',patch:{note:'override'}},{operationId:'setup'}); await h.editor.open({tagId:'blue_hair'}); h.input('note','unsaved'); h.document.querySelector('[data-tag-restore]').click(); await new Promise(resolve=>setImmediate(resolve)); assert.equal(h.library.getTag('blue_hair').note,''); assert.equal(h.repository.saveCount,2);
+});
+test('placement-only edit is dirty, memberships require selection, taxonomy retains favorites',async t=>{
+ const h=await setup(t); await h.library.execute({type:'favoriteTag',tagId:'blue_hair',placement},{operationId:'fav'});
+ await h.library.execute({type:'favoriteTag',tagId:'blue_hair',placement:{kind:'favorite',page:{id:'home'},group:{create:{name:'Second'}}}},{operationId:'fav2'});
+ await h.editor.open({tagId:'blue_hair'}); const select=h.document.querySelector('[data-tag-membership]'); assert.ok(select); assert.equal(select.value,''); assert.match(h.document.querySelector('[data-tag-taxonomy-summary]').textContent,/头发/);
+ select.value=h.library.getMemberships('blue_hair')[0].id; select.dispatchEvent(new h.dom.window.Event('change',{bubbles:true})); h.document.querySelector('[data-tag-taxonomy]').click();
+ h.document.querySelector('[data-location-parent]').value='hair'; h.document.querySelector('[data-location-parent]').dispatchEvent(new h.dom.window.Event('change',{bubbles:true})); h.document.querySelector('[data-location-child]').value='shape'; h.document.querySelector('[data-location-confirm]').click(); await new Promise(r=>setImmediate(r)); assert.equal(h.editor.isDirty(),true); assert.equal((await h.editor.save()).ok,true); assert.equal(h.library.getTag('blue_hair').subcategoryId,'shape'); assert.equal(h.library.getMemberships('blue_hair').length,2);
+});
+test('default dirty guard is an accessible three choice modal and real checkbox controls',async t=>{
+ const h=await setup(t,{confirmDiscard:undefined}); await h.editor.open({initialValues:{content:'default guard'}}); assert.equal(h.field('adult').tagName,'INPUT'); assert.equal(h.field('adult').type,'checkbox'); h.input('note','dirty'); const closing=h.editor.requestClose(); const modal=h.document.querySelector('[data-tag-discard-overlay]'); assert.equal(modal.hidden,false); h.document.querySelector('[data-tag-stay]').click(); assert.equal(await closing,false); assert.equal(h.editor.isDirty(),true);
+});
+test('duplicate inspect is available without favorite placement and protects dirty edits',async t=>{
+ const h=await setup(t,{confirmDiscard:async()=> 'stay'}); await h.editor.open({initialValues:{content:'fresh'}}); h.input('content','blue hair'); await h.editor.save(); h.document.querySelector('[data-tag-inspect="blue_hair"]').click(); await new Promise(r=>setImmediate(r)); assert.equal(h.field('content').value,'blue hair'); assert.equal(h.field('displayName').value,'');
+});
+test('invalid prefill rejected without write; new prefill is copied; checkbox and locale refresh',async t=>{
+ const h=await setup(t); assert.equal(await h.editor.open({initialValues:{aliases:'invalid'}}),false); assert.equal(h.repository.saveCount,0); const initial={content:'new',aliases:['two words']}; await h.editor.open({initialValues:initial}); initial.aliases.push('mutated'); const result=await h.editor.save(); assert.deepEqual(h.library.getTag(result.data.tagId).aliases,['two words']);
+});
+test('child owns focus continuously; stale child result cannot change reopened editor',async t=>{
+ const h=await setup(t); await h.editor.open({tagId:'blue_hair'}); h.document.querySelector('[data-tag-location]').click(); const overlay=h.document.querySelector('[data-tag-location-overlay]'); assert.ok(overlay.contains(h.document.activeElement)); assert.equal(await h.editor.open({tagId:'long_hair'}),false); h.document.querySelector('[data-location-cancel]').click(); await new Promise(r=>setImmediate(r)); assert.equal(await h.editor.open({tagId:'long_hair'}),true);
+});
+test('reload requires discard and restore save choice does not silently restore after save',async t=>{
+ let answer='save'; const h=await setup(t,{confirmDiscard:async()=>answer}); await h.editor.open({tagId:'blue_hair'}); h.input('note','keep'); h.document.querySelector('[data-tag-restore]').click(); await new Promise(r=>setImmediate(r)); assert.equal(h.library.getTag('blue_hair').note,'keep');
+ await h.editor.open({tagId:'blue_hair'}); h.input('note','draft'); await h.library.execute({type:'saveTag',tagId:'long_hair',patch:{note:'external'}},{operationId:'ext'}); await h.editor.save(); answer='discard'; h.document.querySelector('[data-tag-reload]').click(); await new Promise(r=>setImmediate(r)); assert.equal(h.field('note').value,'keep'); assert.equal(h.editor.isDirty(),false);
+});
+test('external single picker created after editor owns Escape, focus, and remains reusable after editor disposal',async t=>{
+ const {createTagLocationView}=require('../src/views/tag-location-view');let actual;const injected={choose:input=>actual.choose(input)};
+ const h=await setup(t,{locationView:injected}); actual=createTagLocationView({document:h.document,catalog:h.library,getLocale:()=> 'en-US'});t.after(()=>actual.dispose());
+ await h.editor.open({initialValues:{content:'external'}});h.field('adult').click();assert.equal(h.field('adult').checked,true);h.document.querySelector('[data-tag-location]').click();
+ const child=h.document.querySelector('[data-tag-location-overlay]');assert.equal(h.document.querySelectorAll('[data-tag-location-overlay]').length,1);assert.ok(child.contains(h.document.activeElement));h.document.dispatchEvent(new h.dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));await new Promise(r=>setImmediate(r));assert.equal(h.document.querySelector('[data-tag-editor-overlay]').hidden,false);assert.equal(h.editor.isDirty(),true);
+ h.editor.dispose();const pending=actual.choose({kind:'taxonomy'});h.document.querySelector('[data-location-cancel]').click();assert.equal(await pending,null);
+});
+test('exact membership move rejects duplicate destination with draft retained',async t=>{
+ const h=await setup(t);const a=await h.library.execute({type:'favoriteTag',tagId:'blue_hair',placement},{operationId:'a'});await h.library.execute({type:'favoriteTag',tagId:'blue_hair',placement:{kind:'favorite',page:{id:'home'},group:{create:{name:'Second'}}}},{operationId:'b'});const destination=h.library.getFavoriteGroups('home').find(x=>x.name==='Second');
+ await h.editor.open({tagId:'blue_hair',membershipId:a.data.membershipId,placement:{kind:'favorite',page:{id:'home'},group:{id:destination.id}}});h.input('note','retained');assert.equal((await h.editor.save()).error.code,'DUPLICATE_MEMBERSHIP');assert.equal(h.field('note').value,'retained');assert.equal(h.library.getTag('blue_hair').note,'');assert.equal(h.library.getMemberships().find(x=>x.id===a.data.membershipId).groupId,'daily');
+});
+test('late external picker and delayed confirmation cannot revive disposed editor',async t=>{
+ let resolve;const h=await setup(t,{locationView:{choose:()=>new Promise(r=>{resolve=r;})}});await h.editor.open({initialValues:{content:'late'}});h.document.querySelector('[data-tag-location]').click();h.editor.dispose();resolve(placement);await new Promise(r=>setImmediate(r));assert.equal(h.document.querySelector('[data-tag-editor-overlay]'),null);assert.equal(h.repository.saveCount,0);
+});
+test('initial locale keys match both packs and switching locale refreshes all editor captions',async t=>{
+ let locale='en-US';const h=await setup(t,{getLocale:()=>locale});await h.editor.open({initialValues:{content:'locale'}});assert.match(h.document.querySelector('[data-tag-location]').textContent,/Choose/);await h.editor.requestClose();locale='zh-CN';await h.editor.open({initialValues:{content:'locale'}});assert.equal(h.document.querySelector('[data-tag-location]').textContent,'选择位置');
+ const {messages}=require('../src/views/tag-location-view');for(const [file,index] of [['../locales/zh-CN.json',0],['../locales/en-US.json',1]]){const pack=require(file);for(const [section,entries]of Object.entries(messages))for(const [key,words]of Object.entries(entries))assert.equal(pack.ui[section][key],words[index]);}
 });

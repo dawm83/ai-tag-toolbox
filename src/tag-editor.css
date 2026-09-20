@@ -12,3 +12,11 @@
 .tag-editor-dialog button { color: var(--text, #eee); background: var(--pri, #5865f2); border: 1px solid var(--border2, #48515e); border-radius: 6px; padding: .5rem .8rem; cursor: pointer; }
 .tag-editor-dialog [role="alert"] { color: #ffb4ab; white-space: pre-wrap; }
 .tag-editor-dialog [data-tag-shared] { opacity: .8; }
+.tag-editor-dialog [hidden] { display: none !important; }
+.tag-editor-dialog > label { display: grid; gap: .35rem; margin-block: .7rem; }
+.tag-editor-dialog > label input, .tag-editor-dialog > label select, .tag-editor-form > label select { box-sizing: border-box; max-width: 100%; color: var(--text, #eee); background: var(--input-bg, #15181d); border: 1px solid var(--input-border, #586272); padding: .55rem; border-radius: 6px; }
+.tag-editor-field input[type="checkbox"] { width: auto; accent-color: var(--pri, #5865f2); }
+.tag-editor-dialog :focus-visible { outline: 2px solid var(--pri, #5865f2); outline-offset: 3px; }
+.tag-editor-dialog button:disabled { opacity: .6; cursor: wait; }
+.tag-editor-dialog [data-tag-duplicates] { overflow-wrap: anywhere; white-space: pre-wrap; }
+.tag-editor-dialog [data-tag-duplicates] button { margin: .25rem; }
