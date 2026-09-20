@@ -3456,6 +3456,12 @@
       }
       if (route === "gallery") renderGallery();
       if (route === "favorites") views.favorites?.enter?.();
+      if (route === "tags" && !wasTags) {
+        // Off-screen catalog changes invalidate queries but do not redraw hidden
+        // cards. Re-enter with current shared Tags and favorite memberships.
+        renderCategories();
+        renderTags();
+      }
       if (route === "characters") {
         renderCategories();
         renderCharacters();

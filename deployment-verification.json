@@ -1,17 +1,17 @@
 {
-  "version": "1.4.325",
+  "version": "1.4.326",
   "buildEvidenceFile": "build-info.json",
   "evidenceLocation": "Desktop package root, outside resources/app.asar",
-  "desktopDirectory": "C:/Users/admin/Desktop/AI绘画Tag工具箱V1.4.325",
+  "desktopDirectory": "C:/Users/admin/Desktop/AI绘画Tag工具箱V1.4.326",
   "sourceBranch": "codex/unified-tag-library",
-  "baseCommit": "e4d388824e0ef99df934748aaf2e74563b30ce12",
-  "scope": "Remove the remaining private seed clone, reduce validation allocations and avoid duplicate initial rendering",
+  "baseCommit": "811c819041abc5b1e73b2181ffeb7e3e691ad22f",
+  "scope": "Refresh shared Tag content and favorite state when returning from other pages; preserve one editor and one content record",
   "checks": {
     "command": "npm run check",
-    "testsPassed": 601,
+    "testsPassed": 605,
     "testsFailed": 0,
     "realElectronWindow": "Pending manual acceptance per project instructions",
-    "electronStartupFixture": "Full preload and page in Electron 31.7.7 with isolated synthetic data; startup and category/search clicks measured",
+    "domRegression": "Real shared library and page flows verify unfavorite, edits, search eligibility, multiple memberships, undo and the shared editor",
     "realAiOrComfyGeneration": false
   },
   "knownLimits": [
