@@ -1,20 +1,21 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createTags } = require('../src/modules/tags');
+const { createUnifiedFixture } = require('./fixtures/unified-modules.cjs');
 const { createCharacters } = require('../src/modules/characters');
 const { createPrimaryTools } = require('../src/modules/primary-tools');
 const { createFixedSubagents } = require('../src/modules/fixed-subagents');
 const { createPrimaryAgent } = require('../src/modules/primary-agent');
 
-function setup() {
-  const tags = createTags({ sources: { base: [['blue hair', '蓝发', '', 'hair', '颜色', 0], ['alice', '爱丽丝', '', 'character', '角色名', 0]] } });
-  const characters = createCharacters({ tags, data: { characters: [{ id: 'alice', seriesId: 'story', tagIds: ['blue hair'], specificTagIds: ['specific:uniform'] }], specificTags: [{ id: 'specific:uniform', en: 'story academy uniform' }], manifest: {} } });
-  return { tags, characters };
+async function setup() {
+  return createUnifiedFixture({
+    sources: { base: [['blue hair', '蓝发', '', 'hair', '颜色', 0], ['alice', '爱丽丝', '', 'character', '角色名', 0]] },
+    data: { characters: [{ id: 'alice', seriesId: 'story', tagIds: ['blue hair'], specificTagIds: ['specific:uniform'] }], specificTags: [{ id: 'specific:uniform', en: 'story academy uniform' }], manifest: {} }
+  });
 }
 
 test('AI retrieves hidden words only through the character result with bounded schemas', async () => {
-  const { tags, characters } = setup();
+  const { tags, characters } = await setup();
   const tools = createPrimaryTools({ tags, characters });
   const found = await tools.call('characters.search', { query: '爱丽丝' });
   assert.equal(found.ok, true, JSON.stringify(found));
@@ -25,7 +26,7 @@ test('AI retrieves hidden words only through the character result with bounded s
 });
 
 test('tag search reserves empty attached data and fills it for character matches', async () => {
-  const { tags, characters } = setup();
+  const { tags, characters } = await setup();
   const tools = createPrimaryTools({ tags, characters });
   const ordinary = await tools.call('tags.search', { query: 'blue hair' });
   assert.deepEqual(ordinary.data.items[0].attachedData, {});
@@ -42,7 +43,7 @@ test('tag search reserves empty attached data and fills it for character matches
 });
 
 test('role IDs resolve into attributed references before the generation subagent sees them', async () => {
-  const { tags, characters } = setup();
+  const { tags, characters } = await setup();
   let messages;
   const subagents = createFixedSubagents({ visionAI: { complete: async input => { messages = input; return { positiveTags: ['alice', 'white dress'] }; } }, prompts: { generateTags: '既有规则' } });
   const tools = createPrimaryTools({ tags, characters, runtime: { runSubAgent: (name, { input }) => subagents.resolve(name).run(input) } });

@@ -4,7 +4,8 @@ import os from 'node:os';
 
 const require = createRequire(import.meta.url);
 const { createFavorites, PALETTE } = require('../src/modules/favorites');
-const { createStorage } = require('../src/modules/storage');
+const { createTagLibrary, loadBundledBase } = require('../src/modules/tag-library');
+const base = loadBundledBase().data;
 
 function documentWith(count) {
   const series = Array.from({ length: 20 }, (_, index) => ({ id: `series-${index}`, name: `Series ${index}`, order: index, colorMode: 'auto', color: PALETTE[index % PALETTE.length] }));
@@ -23,9 +24,17 @@ function documentWith(count) {
 
 const results = [];
 for (const count of [3000, 10000]) {
-  const favorites = createFavorites({ storage: createStorage() });
+  let document = null;
+  const loading = performance.now();
+  const library = createTagLibrary({ base, repository: { read: async () => document, save: async value => { document = structuredClone(value); } } });
+  const ready = await library.ready();
+  if (!ready.ok) throw new Error(ready.error.message);
+  const loadMs = performance.now() - loading;
+  const favorites = createFavorites({ library });
   const importing = performance.now();
-  const imported = favorites.importBundle(documentWith(count), { mode: 'replace' });
+  const preview = favorites.previewImport(documentWith(count));
+  if (!preview.ok) throw new Error(preview.error.message);
+  const imported = await favorites.importBundle(preview.data.id);
   if (!imported.ok) throw new Error(imported.error.message);
   const importMs = performance.now() - importing;
   const cold = performance.now();
@@ -39,16 +48,17 @@ for (const count of [3000, 10000]) {
   }
   samples.sort((a, b) => a - b);
   const editStart = performance.now();
-  favorites.saveEntry({ id: 'entry-0', note: 'changed reference' });
+  const first = favorites.list({ limit: 1 }).items[0];
+  const edited = await favorites.saveEntry({ id: first.id, note: 'changed reference' });
+  if (!edited.ok) throw new Error(edited.error.message);
   favorites.search('changed reference', { scope: 'internal', limit: 80 });
   const editAndReindexMs = performance.now() - editStart;
   const shelfStart = performance.now();
   for (const series of favorites.series()) {
     favorites.list({ seriesId: series.id, limit: 120 });
-    favorites.list({ seriesId: series.id, sectionId: null, limit: 1 });
     for (const section of favorites.sections(series.id)) favorites.list({ seriesId: series.id, sectionId: section.id, limit: 1 });
   }
-  const measured = { entries: count, totalMatches: found.total, importMs, coldSearchMs, p50Ms: samples[15], p95Ms: samples[28], editAndReindexMs, shelfDataReadMs: performance.now() - shelfStart };
+  const measured = { entries: count, seedTags: base.tags.length, loadMs, totalMatches: found.total, importMs, coldSearchMs, p50Ms: samples[15], p95Ms: samples[28], editAndReindexMs, shelfDataReadMs: performance.now() - shelfStart };
   if (process.argv.includes('--view')) {
     const { JSDOM } = require('jsdom');
     const { createFavoritesView } = require('../src/views/favorites-view');

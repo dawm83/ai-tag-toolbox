@@ -5,8 +5,8 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { buildUnifiedSeed } = require('../src/modules/tag-library/seed');
 const { validateBase, validateLibraryDocument } = require('../src/modules/tag-library/schema');
-const { loadTagFiles, createTags } = require('../src/modules/tags');
-const { emptyUserDocument } = require('./fixtures/tag-library.cjs');
+const { loadTagFiles, normaliseTag } = require('../src/modules/tags');
+const { emptyUserDocument, createHarness } = require('./fixtures/tag-library.cjs');
 const root = path.resolve(__dirname, '..');
 
 test('seed keeps ordinary bytes and IDs, distinguishes namesakes, and maps colliding explicit identities', () => {
@@ -38,18 +38,32 @@ test('seed keeps ordinary bytes and IDs, distinguishes namesakes, and maps colli
   assert.equal(buildUnifiedSeed(input).ok, false);
 });
 
-test('full bundled seed is reproducible, retains every ordinary ID, all fallback characters and 804 specific terms', () => {
+test('full bundled seed is reproducible, retains every ordinary ID, all fallback characters and 804 specific terms', async () => {
   const tags = loadTagFiles({ assetDir: path.join(root, 'assets') });
   const read = name => JSON.parse(fs.readFileSync(path.join(root, 'assets/数据资产/角色', name + '.json'), 'utf8'));
   const input = { tags, characters: read('characters'), specificTags: read('specific-tags'), manifest: read('manifest') };
   const result = buildUnifiedSeed(input);
   assert.equal(result.ok, true, JSON.stringify(result.error));
   const base = result.data, byId = new Map(base.tags.map(t => [t.id, t]));
-  const ordinary = createTags({ sources: tags }).list({ includeAdult: true });
-  for (const old of ordinary) {
+  const h = createHarness({ base }); assert.equal((await h.ready).ok, true);
+  const model = Array.isArray(tags.model) ? tags.model : Object.values(tags.model || {}).map(row => Array.isArray(row) ? { en: row[0], categoryCode: row[1], count: row[2] } : row);
+  const ordinary = new Map();
+  for (const [source, rows] of [['base', tags.base], ['extra', tags.extra], ['model', model]]) for (const row of rows || []) {
+    const old = normaliseTag(row, source); if (!old) continue;
+    const current = h.library.getTag(old.id);
+    assert.ok(current, old.id);
+    for (const alias of old.aliases) assert.ok(current.aliases.includes(alias), old.id);
+    if (!ordinary.has(old.id)) ordinary.set(old.id, old);
+    else if (ordinary.get(old.id).count === null) ordinary.get(old.id).count = old.count;
+  }
+  assert.equal(ordinary.size, 19692);
+  for (const old of ordinary.values()) {
     assert.equal(byId.get(old.id)?.content, old.en, old.id);
-    for (const alias of old.aliases) assert(byId.get(old.id).aliases.includes(alias), old.id);
     assert.equal(base.metadataById[old.id].count, old.count);
+    for (const map of [tags.synonyms.byEn, tags.synonyms.aliases]) {
+      const values = map?.[old.en] || map?.[old.id] || [];
+      for (const alias of Array.isArray(values) ? values : String(values).split(/[\s,，、;；]+/).filter(Boolean)) assert.ok(byId.get(old.id).aliases.includes(alias), old.id);
+    }
   }
   assert.equal(base.characterLinks.length, 34122);
   assert.equal(Object.values(base.characterInfo).filter(c => c.fallback).length, 523);

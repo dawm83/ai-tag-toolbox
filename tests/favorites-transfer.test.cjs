@@ -2,9 +2,8 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createStorage } = require('../src/modules/storage');
-const { createFavorites } = require('../src/modules/favorites');
 const { parseFavoritePaste, validateFavoriteBundle } = require('../src/modules/favorites-transfer');
+const { createUnifiedFixture, addFavoriteLocation } = require('./fixtures/unified-modules.cjs');
 
 test('TSV paste keeps comma groups intact and accepts quoted newlines', () => {
   const result = parseFavoritePaste('"soft lighting, backlighting"\t"柔光\n说明"', {
@@ -35,37 +34,36 @@ test('paste parsing reports row errors and never silently drops extra TSV column
   assert.equal(emptyFirstField.data.errors[0].row, 1);
 });
 
-test('paste preview validates the existing target and import commits all rows as one undo unit', () => {
-  const favorites = createFavorites({ storage: createStorage() });
-  const series = favorites.saveSeries({ name: 'Paste' }).data;
-  const section = favorites.saveSection({ seriesId: series.id, name: 'Rows' }).data;
+test('paste preview validates the existing target and import commits all rows as one undo unit', async () => {
+  const { favorites } = await createUnifiedFixture();
+  const { seriesId, sectionId } = await addFavoriteLocation(favorites, 'Paste', 'Rows');
   const before = favorites.snapshot().revision;
-  let events = 0;
-  favorites.subscribe(() => { events += 1; });
-  const options = { format: 'lines', kind: 'tag', seriesId: series.id, sectionId: section.id };
-  assert.equal(favorites.previewPaste('one\ntwo', options).data.entries.length, 2);
-  assert.equal(favorites.previewPaste('one', { ...options, sectionId: 'missing' }).error.code, 'SECTION_NOT_FOUND');
-  const imported = favorites.importPaste('one\ntwo', options);
-  assert.equal(imported.ok, true);
-  assert.equal(imported.data.ids.length, 2);
+  let events = 0; favorites.subscribe(() => { events += 1; });
+  const options = { format: 'lines', kind: 'tag', seriesId, sectionId };
+  const preview = favorites.previewPaste('one\ntwo', options);
+  assert.equal(preview.ok, true, JSON.stringify(preview.error));
+  assert.equal(favorites.list().total, 0);
+  assert.equal(favorites.previewPaste('one', { ...options, sectionId: 'missing' }).ok, false);
+  const imported = await favorites.importPaste(preview.data.id);
+  assert.equal(imported.ok, true, JSON.stringify(imported.error));
   assert.equal(favorites.snapshot().revision, before + 1);
   assert.equal(events, 1);
-  assert.equal(favorites.list({ seriesId: series.id, sectionId: section.id }).total, 2);
-  favorites.undo();
-  assert.equal(favorites.list({ seriesId: series.id, sectionId: section.id }).total, 0);
+  assert.equal(favorites.list({ seriesId, sectionId }).total, 2);
+  await favorites.undo();
+  assert.equal(favorites.list({ seriesId, sectionId }).total, 0);
 });
 
-test('paste row errors are atomic and leave shelf revision unchanged', () => {
-  const favorites = createFavorites({ storage: createStorage() });
-  const series = favorites.saveSeries({ name: 'Paste' }).data;
+test('paste row errors are atomic and leave shelf revision unchanged', async () => {
+  const { favorites } = await createUnifiedFixture();
+  const { seriesId, sectionId } = await addFavoriteLocation(favorites, 'Paste');
   const before = favorites.snapshot().revision;
-  const result = favorites.importPaste('valid\t说明\textra', { format: 'tsv', kind: 'tag', seriesId: series.id, sectionId: null });
+  const result = favorites.previewPaste('valid\t说明\textra', { format: 'tsv', kind: 'tag', seriesId, sectionId });
   assert.equal(result.ok, false);
   assert.equal(favorites.snapshot().revision, before);
-  assert.equal(favorites.list({ seriesId: series.id }).total, 0);
+  assert.equal(favorites.list({ seriesId }).total, 0);
 });
 
-test('bundle validation rejects newer versions, duplicate IDs and dangling parents', () => {
+test('legacy bundle validation rejects newer versions, duplicate IDs and dangling parents', () => {
   const base = { format: 'ai-tag-favorites', version: 1, revision: 1, series: [], sections: [], entries: [] };
   assert.equal(validateFavoriteBundle({ ...base, version: 2 }).error.code, 'UNSUPPORTED_VERSION');
   const duplicate = { ...base, series: [
@@ -80,7 +78,7 @@ test('bundle validation rejects newer versions, duplicate IDs and dangling paren
   assert.equal(validateFavoriteBundle(dangling).error.code, 'SERIES_NOT_FOUND');
 });
 
-test('bundle validation normalizes an empty section ID to the series root', () => {
+test('legacy bundle validation normalizes an empty section ID to the series root', () => {
   const bundle = {
     format: 'ai-tag-favorites', version: 1, revision: 1,
     series: [{ id: 's', name: 'Root', order: 0, colorMode: 'auto', color: '#112233' }], sections: [],
@@ -89,35 +87,38 @@ test('bundle validation normalizes an empty section ID to the series root', () =
   assert.equal(validateFavoriteBundle(bundle).data.entries[0].sectionId, null);
 });
 
-test('export and replace import round-trip all editable shelf fields without selections', () => {
-  const source = createFavorites({ storage: createStorage() });
-  const series = source.saveSeries({ name: 'Light' }).data;
-  source.setSeriesColors([series.id], { mode: 'custom', color: '#123ABC' });
-  const section = source.saveSection({ seriesId: series.id, name: 'Portrait' }).data;
-  const entry = source.saveEntry({
-    kind: 'bundle', seriesId: series.id, sectionId: section.id, title: 'Soft', rawText: ' soft, (light:1.2) ',
-    zh: '柔光', aliases: ['soft'], note: 'note', globalSearchable: false, pinned: true, nsfw: true
-  }).data;
-  source.setSelected(entry.id, true);
+test('export and confirmed import round-trip shared editable fields without selections', async () => {
+  const { favorites: source } = await createUnifiedFixture();
+  const { seriesId, sectionId } = await addFavoriteLocation(source, 'Light', 'Portrait');
+  await source.setSeriesColors([seriesId], { mode: 'custom', color: '#123ABC' });
+  const entry = (await source.saveEntry({
+    kind: 'bundle', seriesId, sectionId, title: '柔光', rawText: ' soft, (light:1.2) ',
+    aliases: ['soft'], note: 'note', globalSearchable: false, nsfw: true
+  })).data;
+  await source.applyBatch({ ids: [entry.id], patch: { pinned: true } });
+  await source.setSelected(entry.id, true);
   const bundle = source.exportBundle();
+  assert.equal(bundle.format, 'ai-tag-library');
+  assert.equal(Object.hasOwn(bundle, 'selection'), false);
 
-  const target = createFavorites({ storage: createStorage() });
-  target.saveSeries({ name: 'Old' });
-  const preview = target.previewImport(bundle, { mode: 'replace' });
+  const { favorites: target } = await createUnifiedFixture();
+  const old = (await target.saveSeries({ name: 'Old' })).data;
+  const preview = target.previewImport(bundle);
   assert.equal(preview.ok, true);
-  assert.equal(preview.data.incoming.entries, 1);
-  assert.equal(preview.data.replaced.series, 1);
-  assert.equal(target.importBundle(bundle, { mode: 'replace' }).ok, true);
-  const restored = target.exportBundle();
-  assert.deepEqual({ ...restored, revision: bundle.revision }, bundle);
+  assert.equal(target.list().total, 0);
+  assert.equal((await target.importBundle(preview.data.id)).ok, true);
+  const restored = target.list({ includeAdult: true }).items[0];
+  for (const field of ['kind', 'title', 'rawText', 'aliases', 'note', 'globalSearchable', 'nsfw']) assert.deepEqual(restored[field], entry[field], field);
+  assert.equal(restored.pinned, true);
+  assert.equal(target.series().find(row => row.id === restored.seriesId).color, '#123ABC');
   assert.equal(target.selected({ includeAdult: true }).length, 0);
-  assert.equal(target.undo().ok, true);
-  assert.equal(target.series()[0].name, 'Old');
+  assert.equal((await target.undo()).ok, true);
+  assert.deepEqual(target.series().map(row => row.id), [old.id]);
 });
 
-test('append import remaps conflicting IDs and preserves references atomically', () => {
-  const existing = createFavorites({ storage: createStorage() });
-  const localSeries = existing.saveSeries({ name: 'Local' }).data;
+test('legacy append import remaps conflicting IDs and preserves references atomically', async () => {
+  const { favorites: existing } = await createUnifiedFixture();
+  const localSeries = (await existing.saveSeries({ name: 'Local' })).data;
   const bundle = {
     format: 'ai-tag-favorites', version: 1, revision: 9,
     series: [{ ...localSeries, name: 'Imported' }],
@@ -127,23 +128,24 @@ test('append import remaps conflicting IDs and preserves references atomically',
       globalSearchable: true, pinned: false, nsfw: false, order: 0, sourceTagId: null, createdAt: 1, updatedAt: 1
     }]
   };
-  const preview = existing.previewImport(bundle, { mode: 'append' });
-  assert.equal(preview.data.conflicts.series, 1);
-  const result = existing.importBundle(bundle, { mode: 'append' });
+  const preview = existing.previewImport(bundle);
+  assert.equal(preview.ok, true, JSON.stringify(preview.error));
+  const result = await existing.importBundle(preview.data.id);
   assert.equal(result.ok, true);
-  const imported = existing.list({ includeAdult: true, limit: 80 }).items[0];
+  const imported = existing.list({ includeAdult: true }).items[0];
   assert.notEqual(imported.seriesId, localSeries.id);
   assert.equal(existing.sections(imported.seriesId)[0].id, imported.sectionId);
+  assert.equal(existing.series().find(row => row.id === localSeries.id).name, 'Local');
 });
 
-test('invalid imports leave state and revision unchanged', () => {
-  const favorites = createFavorites({ storage: createStorage() });
-  const series = favorites.saveSeries({ name: 'Keep' }).data;
-  favorites.saveEntry({ kind: 'tag', seriesId: series.id, rawText: 'keep me' });
+test('invalid imports leave state and revision unchanged', async () => {
+  const { favorites } = await createUnifiedFixture();
+  const { seriesId, sectionId } = await addFavoriteLocation(favorites, 'Keep');
+  await favorites.saveEntry({ kind: 'tag', seriesId, sectionId, rawText: 'keep me' });
   const before = favorites.snapshot();
-  const invalid = { ...favorites.exportBundle(), entries: [{ ...favorites.exportBundle().entries[0], rawText: '' }] };
-  assert.equal(favorites.previewImport(invalid, { mode: 'append' }).ok, false);
-  assert.equal(favorites.importBundle(invalid, { mode: 'replace' }).ok, false);
+  const invalid = favorites.exportBundle(); invalid.tags[0].content = '';
+  assert.equal(favorites.previewImport(invalid).ok, false);
+  assert.equal((await favorites.importBundle('missing-preview')).ok, false);
   assert.deepEqual(favorites.snapshot().document, before.document);
   assert.equal(favorites.snapshot().revision, before.revision);
 });

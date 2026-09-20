@@ -550,12 +550,11 @@ test('real canonical favorites keeps exact bundle content and live selection whi
 });
 
 test('global favorite results and English favorites labels use the real page and store', async t => {
-  const { createFavorites } = require('../src/modules/favorites');
-  const favorites = createFavorites();
-  const seriesId = favorites.saveSeries({ name: 'Lighting' }).data.id;
-  favorites.saveSection({ seriesId, name: 'Main' });
-  favorites.saveEntry({ seriesId, kind: 'bundle', title: 'Light group', rawText: 'soft lighting' });
-  favorites.saveEntry({ seriesId, rawText: 'private lighting', globalSearchable: false });
+  const { createUnifiedFixture, addFavoriteLocation } = require('./fixtures/unified-modules.cjs');
+  const { favorites } = await createUnifiedFixture();
+  const { seriesId, sectionId } = await addFavoriteLocation(favorites, 'Lighting', 'Main');
+  await favorites.saveEntry({ seriesId, sectionId, kind: 'bundle', title: 'Light group', rawText: 'soft lighting' });
+  await favorites.saveEntry({ seriesId, sectionId, rawText: 'private lighting', globalSearchable: false });
   const tags = { stateSnapshot: () => ({ categories: [], categoryCounts: {}, selected: [], query: 'lighting', adult: false }), selected: () => [], page: () => ({ items: [], total: 0 }), restore() {}, subcategories: () => [] };
   const locales = { 'en-US': require('../locales/en-US.json') };
   const app = boot({ favorites, tags, locales });

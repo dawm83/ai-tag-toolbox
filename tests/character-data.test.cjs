@@ -3,13 +3,13 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
-const { createTags, loadTagFiles } = require('../src/modules/tags');
+const { createUnifiedFixture } = require('./fixtures/unified-modules.cjs');
 
 const root = path.resolve(__dirname, '..');
 const readJson = (...parts) => JSON.parse(fs.readFileSync(path.join(root, ...parts), 'utf8'));
 const normalize = value => String(value).trim().toLowerCase().replaceAll('_', ' ').replace(/\s+/g, ' ');
 
-test('generated character catalogue keeps every featured source row and resolves every derived reference', () => {
+test('generated character catalogue keeps every featured source row and resolves every derived reference', async () => {
   const characters = readJson('assets', '数据资产', '角色', 'characters.json');
   const general = readJson('assets', '数据资产', '标签', 'character-general-tags.json');
   const specific = readJson('assets', '数据资产', '角色', 'specific-tags.json');
@@ -27,7 +27,8 @@ test('generated character catalogue keeps every featured source row and resolves
 
   const generalIds = new Set(general.map(item => item.en.toLowerCase()));
   const specificIds = new Set(specific.map(item => item.id));
-  const tags = createTags({ sources: loadTagFiles({ assetDir: path.join(root, 'assets') }) });
+  const base = readJson('assets', '数据资产', '标签', 'unified-tag-base.json');
+  const { tags } = await createUnifiedFixture({ base });
   assert.equal(generalIds.size, general.length);
   assert.equal(specificIds.size, specific.length);
   for (const character of characters) {

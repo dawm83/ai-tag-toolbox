@@ -2,389 +2,284 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
+const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { createStorage } = require('../src/modules/storage');
-
-const make = options => {
-  const { createFavorites } = require('../src/modules/favorites');
-  const storage = options?.storage || createStorage();
-  return { storage, favorites: createFavorites({ storage, tags: options?.tags }) };
+const { createFavorites } = require('../src/modules/favorites');
+const { createLibraryRepository } = require('../src/modules/tag-library/repository');
+const { prepareLegacyMigration } = require('../src/modules/tag-library/migration');
+const { createHarness, makeBase, emptyUserDocument } = require('./fixtures/tag-library.cjs');
+const { createUnifiedFixture, addFavoriteLocation } = require('./fixtures/unified-modules.cjs');
+const make = createUnifiedFixture;
+const entry = async (favorites, location, rawText, patch = {}) => {
+  const result = await favorites.saveEntry({ seriesId: location.seriesId, sectionId: location.sectionId, rawText, ...patch });
+  assert.equal(result.ok, true, JSON.stringify(result.error)); return result.data;
 };
+async function migrated(values, base = makeBase()) {
+  let sequence = 0;
+  const prepared = prepareLegacyMigration({ base, legacy: { version: 1, values }, ids: prefix => prefix + ':legacy-' + ++sequence, now: () => 100 });
+  assert.equal(prepared.ok, true, JSON.stringify(prepared.error));
+  const h = await make({ base, document: prepared.data.document });
+  return { ...h, report: prepared.data.report };
+}
 
-test('free input persists and copies rawText byte-for-byte without writing to tags', () => {
-  let tagWrites = 0;
-  const tags = { get: () => null, addCustom: () => { tagWrites += 1; } };
-  const { storage, favorites } = make({ tags });
-  const series = favorites.saveSeries({ name: '光照' }).data;
-  const rawText = String.raw`  soft lighting, (backlighting:1.2), name \(series\)
-second line  `;
-  const saved = favorites.saveEntry({ kind: 'bundle', seriesId: series.id, title: '人像', rawText }).data;
-  assert.equal(favorites.copyText([saved.id]), rawText);
-  assert.equal(saved.globalSearchable, true);
-  assert.equal(tagWrites, 0);
-  const restored = make({ storage, tags }).favorites;
-  assert.equal(restored.getEntry(saved.id).rawText, rawText);
+test('free input persists and copies rawText byte-for-byte from the shared tag', async () => {
+  const h = await make(), { favorites, tags } = h;
+  const place = await addFavoriteLocation(favorites);
+  const rawText = '  (light:1.2), blue_hair\nescaped\\(detail\\)  ';
+  const row = await entry(favorites, place, rawText, { kind: 'bundle', title: '组合' });
+  assert.equal(favorites.copyText([row.id]), rawText);
+  assert.equal(tags.get(row.tagId).content, rawText);
+  assert.equal((await h.reopen()).favorites.getEntry(row.id).rawText, rawText);
+  assert.equal((await favorites.saveEntry({ id: row.id, rawText: '   ' })).ok, false);
+  assert.equal(favorites.getEntry(row.id).rawText, rawText);
 });
 
-test('CRUD validates parents, preserves stable IDs, and commits each batch once', () => {
-  const { favorites } = make();
-  const events = [];
-  favorites.subscribe(event => events.push(event));
-  const a = favorites.saveSeries({ name: 'A' }).data;
-  const b = favorites.saveSeries({ name: 'B' }).data;
-  assert.notEqual(a.color, b.color);
-  const section = favorites.saveSection({ seriesId: a.id, name: 'S' }).data;
-  const first = favorites.saveEntry({ kind: 'tag', seriesId: a.id, sectionId: section.id, rawText: 'x' }).data;
-  const sameName = favorites.saveEntry({ kind: 'tag', seriesId: a.id, sectionId: section.id, rawText: 'x' }).data;
-  assert.notEqual(first.id, sameName.id);
-  assert.equal(favorites.saveEntry({ id: first.id, title: 'renamed' }).data.id, first.id);
-  assert.equal(favorites.saveEntry({ kind: 'tag', seriesId: 'missing', rawText: 'bad' }).error.code, 'SERIES_NOT_FOUND');
-  assert.equal(favorites.saveSection({ seriesId: 'missing', name: 'bad' }).error.code, 'SERIES_NOT_FOUND');
-
-  const before = favorites.snapshot().revision;
-  const changed = favorites.applyBatch({ ids: [first.id, sameName.id], patch: { seriesId: b.id, sectionId: section.id, pinned: true } });
-  assert.equal(changed.ok, true);
-  assert.equal(favorites.snapshot().revision, before + 1);
+test('CRUD validates parents, preserves stable IDs, and commits explicit copies and batches once', async () => {
+  const { favorites } = await make(), events = [];
+  const a = await addFavoriteLocation(favorites, 'A'), b = await addFavoriteLocation(favorites, 'B');
+  assert.notEqual(a.series.color, b.series.color);
+  favorites.subscribe(value => events.push(value));
+  const first = await entry(favorites, a, 'x');
+  assert.equal((await favorites.saveEntry({ seriesId: a.seriesId, sectionId: a.sectionId, rawText: 'x' })).ok, false);
+  const copied = await favorites.duplicateEntries({ ids: [first.id], mode: 'independent' });
+  assert.equal(copied.ok, true);
+  const second = favorites.getEntry(copied.data.ids[0]);
+  assert.notEqual(second.tagId, first.tagId);
+  assert.equal((await favorites.saveEntry({ id: first.id, title: 'renamed' })).data.id, first.id);
+  assert.equal((await favorites.saveEntry({ seriesId: 'missing', sectionId: a.sectionId, rawText: 'bad' })).error.code, 'INVALID_PARENT');
+  assert.equal((await favorites.saveSection({ seriesId: 'missing', name: 'bad' })).error.code, 'INVALID_PARENT');
+  const before = favorites.revision();
+  const moved = await favorites.applyBatch({ ids: [first.id, second.id], patch: { seriesId: b.seriesId, sectionId: b.sectionId, pinned: true } });
+  assert.equal(moved.ok, true); assert.equal(favorites.revision(), before + 1);
   assert.equal(events.at(-1).changedEntryIds.length, 2);
-  assert.equal(favorites.getEntry(first.id).sectionId, null);
-
-  const copies = favorites.duplicateEntries({ ids: [first.id, sameName.id], seriesId: a.id, sectionId: section.id });
-  assert.equal(copies.data.ids.length, 2);
-  assert.ok(copies.data.ids.every(id => ![first.id, sameName.id].includes(id)));
-  assert.equal(favorites.deleteSection(section.id).ok, true);
-  assert.equal(favorites.getEntry(copies.data.ids[0]).sectionId, favorites.sections(a.id)[0].id);
+  assert.equal(favorites.getEntry(first.id).sectionId, b.sectionId);
+  const refs = await favorites.duplicateEntries({ ids: [first.id, second.id], seriesId: a.seriesId, sectionId: a.sectionId, mode: 'reference' });
+  assert.equal(refs.data.ids.length, 2);
+  assert.equal(favorites.getEntry(refs.data.ids[0]).tagId, first.tagId);
 });
 
-test('page name and color save together, reject invalid input atomically, and undo together', () => {
-  const { storage, favorites } = make();
-  const page = favorites.saveSeries({ name: '原名称' }).data;
-  const revision = favorites.snapshot().revision;
-  assert.equal(favorites.saveSeries({ id: page.id, name: '新名称', color: 'invalid' }).ok, false);
-  assert.deepEqual(favorites.series()[0], page);
-  assert.equal(favorites.snapshot().revision, revision);
-  assert.equal(favorites.saveSeries({ id: page.id, name: '新名称', color: '#aabbcc' }).ok, true);
-  assert.equal(favorites.snapshot().revision, revision + 1);
-  assert.equal(make({ storage }).favorites.series()[0].color, '#AABBCC');
-  favorites.undo();
-  assert.deepEqual(favorites.series()[0], page);
+test('page name and color save atomically, persist together, and undo together', async () => {
+  const h = await make(), { favorites } = h;
+  const page = (await favorites.saveSeries({ name: '原名称' })).data, revision = favorites.revision();
+  assert.equal((await favorites.saveSeries({ id: page.id, name: '新名称', color: 'invalid' })).ok, false);
+  assert.deepEqual(favorites.series()[0], page); assert.equal(favorites.revision(), revision);
+  assert.equal((await favorites.saveSeries({ id: page.id, name: '新名称', color: '#AABBCC' })).ok, true);
+  assert.equal(favorites.revision(), revision + 1);
+  assert.equal((await h.reopen()).favorites.series()[0].color, '#AABBCC');
+  await favorites.undo(); assert.deepEqual(favorites.series()[0], page);
 });
 
-test('reorder, series deletion modes, deterministic colors, and bulk colors are undoable', () => {
-  const { favorites } = make();
-  const a = favorites.saveSeries({ name: 'A' }).data;
-  const b = favorites.saveSeries({ name: 'B' }).data;
-  const c = favorites.saveSeries({ name: 'C' }).data;
-  const entry = favorites.saveEntry({ kind: 'tag', seriesId: a.id, rawText: 'x' }).data;
-  assert.equal(favorites.reorder({ kind: 'series', parentId: null, ids: [c.id, a.id, b.id] }).ok, true);
-  assert.deepEqual(favorites.series().map(row => row.id), [c.id, a.id, b.id]);
-  assert.equal(favorites.reorder({ kind: 'series', parentId: null, ids: [a.id, b.id] }).error.code, 'INVALID_ORDER');
-
-  favorites.setSeriesColors([a.id, b.id], { mode: 'custom', color: '#287EA4' });
-  assert.ok(favorites.series().filter(row => [a.id, b.id].includes(row.id)).every(row => row.color === '#287EA4'));
-  favorites.undo();
-  assert.equal(favorites.series().find(row => row.id === a.id).color, a.color);
-  favorites.redo();
-  assert.equal(favorites.series().find(row => row.id === a.id).color, '#287EA4');
-  favorites.setSeriesColors([a.id], { mode: 'auto' });
-  assert.equal(favorites.series().find(row => row.id === a.id).colorMode, 'auto');
-
-  assert.equal(favorites.deleteSeries(a.id, { mode: 'move', targetSeriesId: b.id }).ok, true);
-  assert.equal(favorites.getEntry(entry.id).seriesId, b.id);
-  assert.equal(favorites.deleteSeries(c.id, { mode: 'delete' }).ok, true);
+test('reorder, explicit move, series deletion and bulk colors are undoable', async () => {
+  const { favorites } = await make();
+  const a = await addFavoriteLocation(favorites, 'A'), b = await addFavoriteLocation(favorites, 'B'), c = await addFavoriteLocation(favorites, 'C');
+  const row = await entry(favorites, a, 'x');
+  assert.equal((await favorites.reorder({ kind: 'series', parentId: null, ids: [c.seriesId, a.seriesId, b.seriesId] })).ok, true);
+  assert.deepEqual(favorites.series().map(row => row.id), [c.seriesId, a.seriesId, b.seriesId]);
+  assert.equal((await favorites.reorder({ kind: 'series', parentId: null, ids: [a.seriesId, b.seriesId] })).ok, false);
+  await favorites.setSeriesColors([a.seriesId, b.seriesId], { mode: 'custom', color: '#287EA4' });
+  assert.ok(favorites.series().filter(row => [a.seriesId, b.seriesId].includes(row.id)).every(row => row.color === '#287EA4'));
+  await favorites.undo(); assert.equal(favorites.series().find(row => row.id === a.seriesId).color, a.series.color);
+  await favorites.redo(); assert.equal(favorites.series().find(row => row.id === a.seriesId).color, '#287EA4');
+  await favorites.setSeriesColors([a.seriesId], { mode: 'auto' });
+  assert.equal(favorites.series().find(row => row.id === a.seriesId).colorMode, 'auto');
+  assert.equal((await favorites.applyBatch({ ids: [row.id], patch: { seriesId: b.seriesId, sectionId: b.sectionId } })).ok, true);
+  assert.equal((await favorites.deleteSeries(a.seriesId)).ok, true);
+  assert.equal(favorites.getEntry(row.id).seriesId, b.seriesId);
+  assert.equal((await favorites.deleteSeries(c.seriesId, { mode: 'delete' })).ok, true);
 });
 
-test('default series move creates or reuses uncategorized and one undo restores the hierarchy', () => {
-  const first = make().favorites;
-  const source = first.saveSeries({ name: 'Source' }).data;
-  const section = first.saveSection({ seriesId: source.id, name: 'Nested' }).data;
-  const entry = first.saveEntry({ kind: 'tag', seriesId: source.id, sectionId: section.id, rawText: 'kept' }).data;
-
-  assert.equal(first.deleteSeries(source.id, { mode: 'move' }).ok, true);
-  const fallback = first.series().find(row => row.name === '未分类');
-  assert.ok(fallback);
-  assert.equal(first.getEntry(entry.id).seriesId, fallback.id);
-  assert.equal(first.getEntry(entry.id).sectionId, null);
-  assert.equal(first.sections(source.id).length, 0);
-
-  assert.equal(first.undo().ok, true);
-  assert.deepEqual(first.series().map(row => row.id), [source.id]);
-  assert.deepEqual(first.sections(source.id).map(row => row.id), [section.id]);
-  assert.equal(first.getEntry(entry.id).seriesId, source.id);
-  assert.equal(first.getEntry(entry.id).sectionId, section.id);
-
-  const second = make().favorites;
-  const reusable = second.saveSeries({ name: '未分类' }).data;
-  const removable = second.saveSeries({ name: 'Remove' }).data;
-  const reusedEntry = second.saveEntry({ kind: 'tag', seriesId: removable.id, rawText: 'reuse' }).data;
-  assert.equal(second.deleteSeries(removable.id, { mode: 'move' }).ok, true);
-  assert.deepEqual(second.series().map(row => row.id), [reusable.id]);
-  assert.equal(second.getEntry(reusedEntry.id).seriesId, reusable.id);
+test('default series deletion reuses uncategorized and one undo restores its hierarchy', async () => {
+  const { favorites } = await make();
+  const fallback = await addFavoriteLocation(favorites, '未分类', '未分类'), source = await addFavoriteLocation(favorites, 'Source', 'Nested');
+  const row = await entry(favorites, source, 'kept');
+  assert.equal((await favorites.deleteSeries(source.seriesId, { mode: 'move' })).ok, true);
+  assert.equal(favorites.getEntry(row.id).seriesId, fallback.seriesId);
+  assert.equal(favorites.getEntry(row.id).sectionId, fallback.sectionId);
+  assert.equal(favorites.sections(source.seriesId).length, 0);
+  assert.equal((await favorites.undo()).ok, true);
+  assert.deepEqual(favorites.sections(source.seriesId).map(row => row.id), [source.sectionId]);
+  assert.equal(favorites.getEntry(row.id).sectionId, source.sectionId);
 });
 
-test('historyKey coalesces edits, redo restores the latest value, and history is bounded to 30', () => {
-  const { favorites } = make();
-  const series = favorites.saveSeries({ name: 'Drafts' }).data;
-  const entry = favorites.saveEntry({ kind: 'tag', seriesId: series.id, rawText: 'blue hair' }).data;
-  favorites.saveEntry({ id: entry.id, note: 'a' }, { historyKey: 'note-edit' });
-  favorites.saveEntry({ id: entry.id, note: 'ab' }, { historyKey: 'note-edit' });
-  favorites.undo();
-  assert.equal(favorites.getEntry(entry.id).note, '');
-  favorites.redo();
-  assert.equal(favorites.getEntry(entry.id).note, 'ab');
-
-  for (let index = 0; index < 35; index += 1) favorites.saveEntry({ id: entry.id, note: `note-${index}` });
+test('explicit saves are separate undo units and shared history is bounded to 30', async () => {
+  const { favorites } = await make(), place = await addFavoriteLocation(favorites, 'Drafts');
+  const row = await entry(favorites, place, 'blue hair');
+  await favorites.saveEntry({ id: row.id, note: 'a' });
+  await favorites.saveEntry({ id: row.id, note: 'ab' });
+  await favorites.undo(); assert.equal(favorites.getEntry(row.id).note, 'a');
+  await favorites.redo(); assert.equal(favorites.getEntry(row.id).note, 'ab');
+  for (let index = 0; index < 35; index++) await favorites.saveEntry({ id: row.id, note: 'note-' + index });
   let undoCount = 0;
-  while (favorites.historyState().canUndo) { favorites.undo(); undoCount += 1; }
+  while (favorites.historyState().canUndo) { assert.equal((await favorites.undo()).ok, true); undoCount++; }
   assert.equal(undoCount, 30);
 });
 
 test('no-op edits and batches do not write a revision or publish an event', async () => {
-  const { favorites } = make();
-  const series = favorites.saveSeries({ name: 'Stable' }).data;
-  const entry = favorites.saveEntry({ kind: 'tag', seriesId: series.id, rawText: 'same' }).data;
-  const before = favorites.snapshot().revision;
-  let events = 0;
-  favorites.subscribe(() => { events += 1; });
-  await new Promise(resolve => setTimeout(resolve, 5));
-  favorites.saveEntry({ id: entry.id, note: '' });
-  favorites.applyBatch({ ids: [entry.id], patch: { pinned: false, globalSearchable: true } });
-  assert.equal(favorites.snapshot().revision, before);
-  assert.equal(events, 0);
+  const h = await make(), { favorites } = h, place = await addFavoriteLocation(favorites);
+  const row = await entry(favorites, place, 'same'), revision = favorites.revision(), saves = h.repository.saveCount;
+  let events = 0; favorites.subscribe(() => events++);
+  await favorites.saveEntry({ id: row.id, note: '' });
+  await favorites.applyBatch({ ids: [row.id], patch: { pinned: false, globalSearchable: true } });
+  assert.equal(favorites.revision(), revision); assert.equal(events, 0); assert.equal(h.repository.saveCount, saves);
 });
 
-test('section and entry reorder require complete siblings and retain their parent', () => {
-  const { favorites } = make();
-  const series = favorites.saveSeries({ name: 'Ordered' }).data;
-  const a = favorites.saveSection({ seriesId: series.id, name: 'A' }).data;
-  const b = favorites.saveSection({ seriesId: series.id, name: 'B' }).data;
-  assert.equal(favorites.reorder({ kind: 'section', parentId: series.id, ids: [b.id, a.id] }).ok, true);
-  assert.deepEqual(favorites.sections(series.id).map(row => row.id), [b.id, a.id]);
-  const first = favorites.saveEntry({ kind: 'tag', seriesId: series.id, sectionId: a.id, rawText: 'first' }).data;
-  const second = favorites.saveEntry({ kind: 'tag', seriesId: series.id, sectionId: a.id, rawText: 'second' }).data;
-  assert.equal(favorites.reorder({ kind: 'entry', parentId: a.id, ids: [second.id, first.id] }).ok, true);
-  assert.deepEqual(favorites.list({ seriesId: series.id, sectionId: a.id }).items.map(row => row.id), [second.id, first.id]);
+test('section and entry reorder require complete siblings and retain their parent', async () => {
+  const { favorites } = await make(), a = await addFavoriteLocation(favorites, 'Ordered', 'A');
+  const b = (await favorites.saveSection({ seriesId: a.seriesId, name: 'B' })).data;
+  assert.equal((await favorites.reorder({ kind: 'section', parentId: a.seriesId, ids: [b.id, a.sectionId] })).ok, true);
+  assert.deepEqual(favorites.sections(a.seriesId).map(row => row.id), [b.id, a.sectionId]);
+  const first = await entry(favorites, a, 'first'), second = await entry(favorites, a, 'second');
+  assert.equal((await favorites.reorder({ kind: 'entry', parentId: a.sectionId, ids: [first.id] })).ok, false);
+  assert.equal((await favorites.reorder({ kind: 'entry', parentId: a.sectionId, ids: [second.id, first.id] })).ok, true);
+  assert.deepEqual(favorites.list({ sectionId: a.sectionId }).items.map(row => row.id), [second.id, first.id]);
 });
 
-test('ordered shelf cache invalidates after edits, moves, reorders and undo', () => {
-  const { favorites } = make();
-  const seriesA = favorites.saveSeries({ name: 'A' }).data;
-  const seriesB = favorites.saveSeries({ name: 'B' }).data;
-  const a1 = favorites.saveEntry({ kind: 'tag', seriesId: seriesA.id, rawText: 'a1' }).data;
-  const a2 = favorites.saveEntry({ kind: 'tag', seriesId: seriesA.id, rawText: 'a2' }).data;
-  const b1 = favorites.saveEntry({ kind: 'tag', seriesId: seriesB.id, rawText: 'b1' }).data;
-
-  assert.deepEqual(favorites.list({ limit: 80 }).items.map(row => row.id), [a1.id, a2.id, b1.id]);
-  favorites.saveEntry({ id: a1.id, rawText: 'renamed' });
-  assert.equal(favorites.list({ seriesId: seriesA.id }).items[0].rawText, 'renamed');
-
-  favorites.saveEntry({ id: a1.id, seriesId: seriesB.id, sectionId: null });
-  assert.deepEqual(favorites.list({ seriesId: seriesA.id }).items.map(row => row.id), [a2.id]);
-  assert.deepEqual(favorites.list({ seriesId: seriesB.id }).items.map(row => row.id), [a1.id, b1.id]);
-
-  favorites.reorder({ kind: 'entry', parentId: seriesB.id, ids: [b1.id, a1.id] });
-  assert.deepEqual(favorites.list({ seriesId: seriesB.id }).items.map(row => row.id), [b1.id, a1.id]);
-  favorites.undo();
-  assert.deepEqual(favorites.list({ seriesId: seriesB.id }).items.map(row => row.id), [a1.id, b1.id]);
-
-  favorites.reorder({ kind: 'series', parentId: null, ids: [seriesB.id, seriesA.id] });
-  assert.equal(favorites.list({ limit: 1 }).items[0].seriesId, seriesB.id);
-  favorites.undo();
-  assert.equal(favorites.list({ limit: 1 }).items[0].seriesId, seriesA.id);
+test('ordered shelf cache invalidates after edits, moves, reorders and undo', async () => {
+  const { favorites } = await make(), a = await addFavoriteLocation(favorites, 'A'), b = await addFavoriteLocation(favorites, 'B');
+  const a1 = await entry(favorites, a, 'a1'), a2 = await entry(favorites, a, 'a2'), b1 = await entry(favorites, b, 'b1');
+  assert.deepEqual(favorites.list().items.map(row => row.id), [a1.id, a2.id, b1.id]);
+  await favorites.saveEntry({ id: a1.id, rawText: 'renamed' });
+  assert.equal(favorites.list({ seriesId: a.seriesId }).items[0].rawText, 'renamed');
+  await favorites.saveEntry({ id: a1.id, seriesId: b.seriesId, sectionId: b.sectionId });
+  assert.deepEqual(favorites.list({ seriesId: a.seriesId }).items.map(row => row.id), [a2.id]);
+  assert.deepEqual(favorites.list({ seriesId: b.seriesId }).items.map(row => row.id), [b1.id, a1.id]);
+  await favorites.reorder({ kind: 'entry', parentId: b.sectionId, ids: [a1.id, b1.id] });
+  assert.deepEqual(favorites.list({ seriesId: b.seriesId }).items.map(row => row.id), [a1.id, b1.id]);
+  await favorites.undo(); assert.deepEqual(favorites.list({ seriesId: b.seriesId }).items.map(row => row.id), [b1.id, a1.id]);
+  await favorites.reorder({ kind: 'series', parentId: null, ids: [b.seriesId, a.seriesId] });
+  assert.equal(favorites.list({ limit: 1 }).items[0].seriesId, b.seriesId);
+  await favorites.undo(); assert.equal(favorites.list({ limit: 1 }).items[0].seriesId, a.seriesId);
 });
 
-test('legacy migration preserves unresolved and invalid rows, leaves the old key, and runs once', () => {
-  const storage = createStorage();
-  const old = [
-    { id: 'old-1', name: '旧组合', tags: ['blue_hair', 'unknown_tag'] },
-    { id: 'old-bad', name: '待修复', tags: [null, ''] }
-  ];
-  storage.set('rewrite_favorites', old);
-  const tags = { get: id => id === 'blue_hair' ? { en: 'blue hair' } : null };
-  const first = make({ storage, tags }).favorites;
-  assert.equal(first.list({ limit: 80 }).total, 2);
-  assert.match(first.getEntry(first.list({ limit: 80 }).items[0].id).rawText, /unknown_tag/);
-  assert.equal(first.snapshot().migrationReport.invalid.length, 1);
-  assert.equal(first.snapshot().migrationReport.unresolved.includes('unknown_tag'), true);
-  assert.deepEqual(storage.get('rewrite_favorites'), old);
-  assert.equal(make({ storage, tags }).favorites.list({ limit: 80 }).total, 2);
+test('legacy migration preserves unresolved and invalid raw rows and the original input', async () => {
+  const old = [{ id: 'old-1', name: '旧组合', tags: ['blue_hair', 'unknown_tag'] }, { id: 'old-bad', name: '待修复', tags: [null, ''] }];
+  const before = structuredClone(old);
+  const h = await migrated({ rewrite_favorites: old });
+  const unresolved = (await h.repository.read()).unresolved;
+  assert.deepEqual(unresolved.find(row => row.sourceId === 'old-1').payload, old[0]);
+  assert.ok(unresolved.some(row => row.sourceId === 'old-bad'));
+  assert.deepEqual(old, before);
+  assert.equal((await h.reopen()).favorites.list().total, h.favorites.list().total);
 });
 
-test('legacy migration preserves a row when base tag lookup fails', () => {
-  const storage = createStorage();
-  storage.set('rewrite_favorites', [{ id: 'old-1', name: 'Fallback', tags: ['kept_tag'] }]);
-  const favorites = make({ storage, tags: { get: () => { throw new Error('dictionary unavailable'); } } }).favorites;
-  assert.equal(favorites.list({ limit: 80 }).items[0].rawText, 'kept_tag');
-  assert.deepEqual(favorites.snapshot().migrationReport.unresolved, ['kept_tag']);
+test('legacy migration preserves the original unresolved row when no dictionary entry matches', async () => {
+  const h = await migrated({ rewrite_favorites: [{ id: 'old-1', name: 'Fallback', tags: ['kept_tag'] }] });
+  const document = await h.repository.read();
+  assert.deepEqual(document.unresolved[0].payload.tags, ['kept_tag']);
+  assert.equal(h.favorites.list().total, 0);
 });
 
-test('legacy migration inherits adult flags from resolved tags and old rows', () => {
-  const storage = createStorage();
-  storage.set('rewrite_favorites', [
-    { name: 'Known adult', tags: ['adult_tag'] },
-    { name: 'Old adult', tags: ['unknown_tag'], nsfw: true }
-  ]);
-  const favorites = make({ storage, tags: { get: id => id === 'adult_tag' ? { en: 'adult tag', nsfw: true } : null } }).favorites;
+test('legacy migration inherits adult flags from resolved tags and old rows', async () => {
+  const base = makeBase(); base.tags[0].adult = true;
+  const { favorites } = await migrated({ rewrite_favorites: [{ name: 'Known adult', tags: ['blue_hair'] }, { name: 'Old adult', tags: ['long_hair'], nsfw: true }] }, base);
   assert.deepEqual(favorites.list({ includeAdult: true }).items.map(row => row.nsfw), [true, true]);
   assert.equal(favorites.list({ includeAdult: false }).total, 0);
 });
 
-test('repairing a legacy invalid row removes its empty-text exemption', () => {
-  const storage = createStorage();
-  storage.set('rewrite_favorites', [{ id: 'broken', name: 'Broken', tags: [] }]);
-  const favorites = make({ storage }).favorites;
-  const entry = favorites.list({ includeAdult: true }).items[0];
-  assert.equal(entry.legacyInvalid, true);
-  assert.equal(favorites.saveEntry({ id: entry.id, rawText: 'repaired' }).ok, true);
-  assert.equal(favorites.getEntry(entry.id).legacyInvalid, undefined);
-  const rejected = favorites.saveEntry({ id: entry.id, rawText: '' });
-  assert.equal(rejected.ok, false);
-  assert.equal(favorites.getEntry(entry.id).rawText, 'repaired');
+test('invalid old rows remain recoverable while new entries cannot exploit an empty-text exemption', async () => {
+  const h = await migrated({ rewrite_favorites: [{ id: 'broken', name: 'Broken', tags: [] }] });
+  const original = (await h.repository.read()).unresolved;
+  assert.ok(original.some(row => row.sourceId === 'broken'));
+  const place = await addFavoriteLocation(h.favorites, 'Repair');
+  const repaired = await entry(h.favorites, place, 'repaired');
+  assert.equal((await h.favorites.saveEntry({ id: repaired.id, rawText: '' })).ok, false);
+  assert.equal(h.favorites.getEntry(repaired.id).rawText, 'repaired');
+  assert.deepEqual((await h.repository.read()).unresolved, original);
 });
 
-test('empty section IDs normalize to the series root', () => {
-  const { favorites } = make();
-  const series = favorites.saveSeries({ name: 'Root' }).data;
-  const entry = favorites.saveEntry({ kind: 'tag', seriesId: series.id, sectionId: '', rawText: 'root tag' }).data;
-  assert.equal(entry.sectionId, null);
-  assert.equal(favorites.list({ seriesId: series.id, sectionId: null }).total, 1);
+test('new favorites require an explicit valid group instead of a hidden page-root entry', async () => {
+  const { favorites } = await make(), { seriesId } = await addFavoriteLocation(favorites, 'Root');
+  const before = favorites.revision();
+  assert.equal((await favorites.saveEntry({ seriesId, sectionId: '', rawText: 'root tag' })).ok, false);
+  assert.equal((await favorites.saveEntry({ seriesId, sectionId: null, rawText: 'root tag' })).ok, false);
+  assert.equal(favorites.revision(), before); assert.equal(favorites.list().total, 0);
 });
 
-test('corrupt shelf reports loadError and refuses to overwrite stored data', () => {
-  const storage = createStorage();
-  const corrupt = { format: 'wrong', version: 1, revision: 7, series: [], sections: [], entries: [] };
-  storage.set('favorites_shelf_v1', corrupt);
-  const favorites = make({ storage }).favorites;
-  assert.equal(favorites.snapshot().loadError.code, 'INVALID_FAVORITES_DOCUMENT');
-  assert.equal(favorites.saveSeries({ name: 'blocked' }).error.code, 'LOAD_ERROR');
-  assert.deepEqual(storage.get('favorites_shelf_v1'), corrupt);
+test('a corrupt library reports initialization failure and cannot overwrite stored data', async () => {
+  const corrupt = { format: 'wrong', version: 1, revision: 7 }, h = createHarness({ document: corrupt });
+  assert.equal((await h.ready).ok, false);
+  const favorites = createFavorites({ library: h.library });
+  assert.ok(favorites.snapshot().loadError);
+  assert.equal((await favorites.saveSeries({ name: 'blocked' })).ok, false);
+  assert.deepEqual(await h.repository.read(), corrupt);
 });
 
-test('a throwing storage write does not mutate state or report a successful flush', async () => {
-  const values = new Map();
-  let rejectWrites = true;
-  const storage = {
-    get: (key, fallback) => values.has(key) ? structuredClone(values.get(key)) : fallback,
-    set(key, value) { if (rejectWrites) throw new Error('disk full'); values.set(key, structuredClone(value)); return value; },
-    flush: async () => true
-  };
-  const favorites = make({ storage }).favorites;
-  assert.equal(favorites.saveSeries({ name: 'Not saved' }).error.code, 'STORAGE_WRITE_FAILED');
+test('a rejected save preserves state and failed undo preserves its history', async () => {
+  const h = await make(), { favorites } = h;
+  h.controls.failNextSave();
+  assert.equal((await favorites.saveSeries({ name: 'Not saved' })).error.code, 'STORAGE_WRITE_FAILED');
   assert.equal(favorites.series().length, 0);
-  assert.equal(await favorites.flush(), false);
-  rejectWrites = false;
-  assert.equal(favorites.saveSeries({ name: 'Saved' }).ok, true);
-  assert.equal(await favorites.flush(), true);
-  rejectWrites = true;
-  assert.equal(favorites.undo().error.code, 'STORAGE_WRITE_FAILED');
+  assert.equal((await favorites.saveSeries({ name: 'Saved' })).ok, true);
+  h.controls.failNextSave();
+  assert.equal((await favorites.undo()).error.code, 'STORAGE_WRITE_FAILED');
   assert.equal(favorites.historyState().canUndo, true);
   assert.equal(favorites.series()[0].name, 'Saved');
+  assert.equal((await favorites.undo()).ok, true);
 });
 
-test('an adapter rejection reported by createStorage prevents a false successful mutation', () => {
-  const values = new Map();
-  const adapter = {
-    getItem: key => values.get(key) ?? null,
-    setItem: () => false,
-    removeItem: key => values.delete(key),
-    key: index => [...values.keys()][index] || null,
-    get length() { return values.size; }
-  };
-  const favorites = make({ storage: createStorage({ adapter }) }).favorites;
-  assert.equal(favorites.saveSeries({ name: 'Rejected' }).error.code, 'STORAGE_WRITE_FAILED');
-  assert.equal(favorites.series().length, 0);
+test('repository write rejection never publishes a successful mutation', async () => {
+  const h = await make(), { favorites } = h; let events = 0;
+  favorites.subscribe(() => events++); h.controls.failNextSave();
+  assert.equal((await favorites.saveSeries({ name: 'Rejected' })).error.code, 'STORAGE_WRITE_FAILED');
+  assert.equal(events, 0); assert.equal(favorites.series().length, 0);
+  assert.equal((await h.repository.read()).favoritePages.length, 0);
 });
 
-test('file storage recovery accepts the next domain write and clears the failed flush', async t => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'favorites-storage-recovery-'));
-  const filename = path.join(dir, 'state.json');
-  const originalWriteFile = fs.promises.writeFile;
-  let diskFull = true;
-  fs.promises.writeFile = async (...args) => {
-    if (diskFull) throw Object.assign(new Error('disk full'), { code: 'ENOSPC' });
-    return originalWriteFile(...args);
-  };
-  t.after(() => {
-    fs.promises.writeFile = originalWriteFile;
-    fs.rmSync(dir, { recursive: true, force: true });
-  });
-
-  const storage = createStorage({ filePath: filename, prefix: 'favorites-recovery' });
-  const favorites = make({ storage }).favorites;
-  assert.equal(favorites.saveSeries({ name: 'A' }).ok, true);
-  assert.equal(await favorites.flush(), false);
-
-  diskFull = false;
-  assert.equal(favorites.saveSeries({ name: 'B' }).ok, true);
-  assert.deepEqual(favorites.series().map(row => row.name), ['A', 'B']);
+test('atomic file storage can recover after a failed save and reload the next successful write', async t => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'favorites-library-recovery-'));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  let diskFull = false;
+  const repository = createLibraryRepository({ filePath: path.join(directory, 'tag-library-v2.json'), backupDir: path.join(directory, 'backups'), fsImpl: {
+    open: async (...args) => { if (diskFull) throw Object.assign(new Error('disk full'), { code: 'ENOSPC' }); return fs.open(...args); }
+  } });
+  const base = makeBase(); await repository.save(emptyUserDocument(base));
+  const h = await make({ base, repository }), { favorites } = h;
+  const original = await repository.read(); diskFull = true;
+  assert.equal((await favorites.saveSeries({ name: 'Rejected' })).ok, false);
+  assert.deepEqual(await repository.read(), original);
+  diskFull = false; assert.equal((await favorites.saveSeries({ name: 'Saved' })).ok, true);
   assert.equal(await favorites.flush(), true);
-
-  const restored = make({ storage: createStorage({ filePath: filename, prefix: 'favorites-recovery' }) }).favorites;
-  assert.deepEqual(restored.series().map(row => row.name), ['A', 'B']);
+  assert.ok((await h.reopen()).favorites.series().some(row => row.name === 'Saved'));
 });
 
-test('deleting the first row records only that entry as changed', () => {
-  const { favorites } = make();
-  const series = favorites.saveSeries({ name: 'History' }).data;
-  const entries = Array.from({ length: 40 }, (_, index) => favorites.saveEntry({ kind: 'tag', seriesId: series.id, rawText: `tag-${index}` }).data);
-  let event;
-  favorites.subscribe(value => { event = value; });
-  favorites.deleteEntries([entries[0].id]);
-  assert.deepEqual(event.changedEntryIds, [entries[0].id]);
-  favorites.undo();
-  assert.equal(favorites.getEntry(entries[0].id).rawText, 'tag-0');
+test('deleting the first row records only that membership as changed and undo restores it', async () => {
+  const { favorites } = await make(), place = await addFavoriteLocation(favorites, 'History'), entries = [];
+  for (let index = 0; index < 40; index++) entries.push(await entry(favorites, place, 'tag-' + index));
+  let event; favorites.subscribe(value => { event = value; });
+  await favorites.deleteEntries([entries[0].id]); assert.deepEqual(event.changedEntryIds, [entries[0].id]);
+  await favorites.undo(); assert.equal(favorites.getEntry(entries[0].id).rawText, 'tag-0');
 });
 
-test('recent view keeps 20 unique live IDs and flush reflects storage result', async () => {
-  const storage = createStorage();
-  const { createFavorites } = require('../src/modules/favorites');
-  const favorites = createFavorites({ storage });
-  const series = favorites.saveSeries({ name: 'Recent' }).data;
-  const ids = Array.from({ length: 22 }, (_, index) => favorites.saveEntry({ kind: 'tag', seriesId: series.id, rawText: `tag ${index}` }).data.id);
-  favorites.markCopied(ids);
-  favorites.markCopied([ids[5]]);
+test('shared recent history retains 200 unique live tag references and excludes unfavorited memberships', async () => {
+  const { favorites } = await make(), place = await addFavoriteLocation(favorites, 'Recent'), ids = [];
+  for (let index = 0; index < 202; index++) ids.push((await entry(favorites, place, 'tag ' + index)).id);
+  await favorites.markCopied(ids); await favorites.markCopied([ids[5]]);
   const recent = favorites.list({ view: 'recent', limit: 80 });
-  assert.equal(recent.total, 20);
-  assert.equal(recent.items[0].id, ids[5]);
-  favorites.deleteEntries([ids[5]]);
-  assert.equal(favorites.list({ view: 'recent', limit: 80 }).items.some(row => row.id === ids[5]), false);
+  assert.equal(recent.total, 200); assert.equal(recent.items[0].id, ids[5]);
+  await favorites.deleteEntries([ids[5]]);
+  assert.equal(favorites.list({ view: 'recent' }).items.some(row => row.id === ids[5]), false);
   assert.equal(await favorites.flush(), true);
-
-  const failing = createFavorites({ storage: { get: storage.get, set: storage.set, flush: async () => false } });
-  assert.equal(await failing.flush(), false);
 });
 
-
-test('opening legacy unfiled entries moves them into a real column once without changing their text', () => {
-  const { favorites, storage } = make();
-  const page = favorites.saveSeries({ name: 'Page' }).data;
-  const section = favorites.saveSection({ seriesId: page.id, name: 'First' }).data;
-  const existing = favorites.saveEntry({ seriesId: page.id, sectionId: section.id, rawText: 'existing' }).data;
-  const unfiled = favorites.saveEntry({ seriesId: page.id, rawText: '  preserved,\n text  ', title: 'old', note: 'note' }).data;
-  assert.equal(typeof favorites.ensureTagColumns, 'function');
-  const revision = favorites.snapshot().revision;
-  assert.equal(favorites.ensureTagColumns(page.id).ok, true);
-  assert.equal(favorites.snapshot().revision, revision + 1);
-  assert.deepEqual(favorites.list({ seriesId: page.id, sectionId: section.id }).items.map(row => row.id), [existing.id, unfiled.id]);
-  const restored = make({ storage }).favorites.getEntry(unfiled.id);
-  assert.equal(restored.rawText, '  preserved,\n text  ');
-  assert.equal(restored.note, 'note');
-  favorites.ensureTagColumns(page.id);
-  assert.equal(favorites.snapshot().revision, revision + 1);
+test('legacy unfiled entries migrate to real groups once without changing their text', async () => {
+  const rawText = '  preserved,\n text  ';
+  const shelf = { format: 'ai-tag-favorites', version: 1, revision: 0,
+    series: [{ id: 'p', name: 'Page', color: '#112233', colorMode: 'auto', order: 0 }], sections: [],
+    entries: [{ id: 'e', kind: 'bundle', seriesId: 'p', sectionId: null, title: 'old', rawText, zh: '', aliases: [], note: 'note', globalSearchable: true, nsfw: false, pinned: false, order: 0, sourceTagId: null, sourceCharacterId: null, createdAt: 0, updatedAt: 0 }] };
+  const h = await migrated({ favorites_shelf_v1: shelf }), { favorites } = h, row = favorites.list().items[0];
+  assert.ok(row.sectionId); assert.equal(row.rawText, rawText); assert.equal(row.note, 'note');
+  const before = favorites.revision(); await favorites.ensureTagColumns(row.seriesId); assert.equal(favorites.revision(), before);
+  assert.equal((await h.reopen()).favorites.getEntry(row.id).rawText, rawText);
 });
 
-test('deleting the last column keeps its entries in a replacement column and undo restores the original', () => {
-  const { favorites } = make();
-  const page = favorites.saveSeries({ name: 'Page' }).data;
-  const section = favorites.saveSection({ seriesId: page.id, name: 'Only' }).data;
-  const entry = favorites.saveEntry({ seriesId: page.id, sectionId: section.id, rawText: 'retained' }).data;
-  assert.equal(favorites.deleteSection(section.id).ok, true);
-  const columns = favorites.sections(page.id);
-  assert.equal(columns.length, 1);
-  assert.notEqual(columns[0].id, section.id);
-  assert.equal(favorites.getEntry(entry.id).sectionId, columns[0].id);
-  favorites.undo();
-  assert.deepEqual(favorites.sections(page.id).map(row => row.id), [section.id]);
-  assert.equal(favorites.getEntry(entry.id).sectionId, section.id);
+test('deleting the last group relocates memberships and undo restores the original group', async () => {
+  const { favorites } = await make(), place = await addFavoriteLocation(favorites, 'Page', 'Only');
+  const row = await entry(favorites, place, 'retained');
+  assert.equal((await favorites.deleteSection(place.sectionId)).ok, true);
+  const relocated = favorites.getEntry(row.id);
+  assert.notEqual(relocated.sectionId, place.sectionId);
+  assert.equal(favorites.series().find(page => page.id === relocated.seriesId).name, '未分类');
+  assert.ok(favorites.sections(relocated.seriesId).some(group => group.id === relocated.sectionId));
+  await favorites.undo(); assert.equal(favorites.getEntry(row.id).sectionId, place.sectionId);
 });

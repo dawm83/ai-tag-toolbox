@@ -2,7 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { createTranslation } = require('../src/modules/translation');
-const { createTags } = require('../src/modules/tags');
+const { createUnifiedFixture } = require('./fixtures/unified-modules.cjs');
 const { createImages } = require('../src/modules/images');
 
 test('local translations retain recent results and evict old queries after 256 entries', () => {
@@ -22,23 +22,27 @@ test('local translations retain recent results and evict old queries after 256 e
   assert.equal(calls, before + 2);
 });
 
-test('tag search caches recent sorting work without retaining every old query', t => {
-  const tags = createTags({ sources: { tags: ['alpha one', 'alpha two', 'beta one', 'beta two'].map(en => ({ en, category: 'other' })) } });
-  const compare = String.prototype.localeCompare;
+test('shared tag search caches at most 32 distinct query results and invalidates after edits', async t => {
+  const { tags } = await createUnifiedFixture({ sources: { tags: ['alpha one', 'alpha two', 'beta one', 'beta two'].map(en => ({ en, category: 'other' })) } });
+  const sort = Array.prototype.sort;
   let comparisons = 0;
-  t.mock.method(String.prototype, 'localeCompare', function (...args) { comparisons += 1; return compare.apply(this, args); });
+  Array.prototype.sort = function (...args) { comparisons += 1; return sort.apply(this, args); };
+  t.after(() => { Array.prototype.sort = sort; });
   const alpha = tags.search('alpha');
   const beta = tags.search('beta');
   assert.equal(alpha.length, 2);
   assert.equal(beta.length, 2);
-  for (let index = 0; index < 254; index += 1) tags.search(`missing${index}`);
-  tags.search('alpha');
+  for (let index = 0; index < 30; index += 1) tags.search('missing' + index);
+  comparisons = 0;
+  assert.deepEqual(tags.search('beta'), beta);
+  assert.equal(comparisons, 0);
   tags.search('overflow');
   comparisons = 0;
   assert.deepEqual(tags.search('alpha'), alpha);
-  assert.equal(comparisons, 0);
-  assert.deepEqual(tags.search('beta'), beta);
   assert.ok(comparisons > 0, 'an evicted query must recompute its sorted results');
+  await tags.edit('alpha one', { en: 'gamma one' });
+  assert.equal(tags.search('alpha').length, 1);
+  assert.equal(tags.search('gamma')[0].id, 'alpha one');
 });
 
 test('image analysis retains four recent variants per image and respects invalidation', async () => {

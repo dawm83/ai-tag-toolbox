@@ -5,6 +5,23 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const root = path.resolve(__dirname, '..');
+
+test('content factories require one shared library and contain no legacy storage branch', () => {
+  for (const [name, factory] of [['tags', 'createTags'], ['favorites', 'createFavorites'], ['characters', 'createCharacters']]) {
+    const source = fs.readFileSync(path.join(root, 'src/modules', name + '.js'), 'utf8');
+    assert.doesNotMatch(source, /rewrite_custom_tags|favorites_shelf_v1|rewrite_character_edits_v1|options\.library\)\s*return/);
+    assert.throws(() => require('../src/modules/' + name)[factory](), /统一标签库/);
+  }
+});
+
+test('view modules do not acquire repository, filesystem or legacy storage authority', () => {
+  const viewFiles = fs.readdirSync(path.join(root, 'src/views')).filter(file => file.endsWith('.js')).map(file => path.join(root, 'src/views', file));
+  for (const filename of [...viewFiles, path.join(root, 'src/app-view.js')]) {
+    const source = fs.readFileSync(filename, 'utf8');
+    assert.doesNotMatch(source, /require\s*\(\s*['"](?:node:|(?:fs|path)['"]|[^'"]*(?:tag-library\/repository|modules\/storage))/);
+    assert.doesNotMatch(source, /rewrite_custom_tags|favorites_shelf_v1|rewrite_character_edits_v1/);
+  }
+});
 test('view factories load as browser scripts before the app composer', () => {
   const context = vm.createContext({});
   for (const name of ['settings', 'comfy', 'prompt', 'agent-status', 'call-monitor']) {
