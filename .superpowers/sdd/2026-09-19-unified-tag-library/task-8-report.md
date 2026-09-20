@@ -67,3 +67,16 @@ picker 生命周期：注入时 editor 不 dispose 外部实例，Task 9 总控�
 
 JSDOM + real memory library/repository 为本任务证据，未声称真实 Electron 桌面视觉/输入法/屏幕阅读器验收。Task 9 接线后仍需生产入口/统一 picker/关闭流程集成验证，Task 11 才统一升 V1.4.321 并候选桌面验收。
 
+
+## 审查修复 round 1（取代前述层级边界）
+
+两个审查发现已定向修复。已有收藏条目收到显式 favorite destination 时，单归属自动附上当前 membershipId；多归属缺少或无效 membershipId 的 save 在 execute 前拒绝，并聚焦现有归属选择器。此时不创建新页/组，也不增加第三条归属；必须选择精确归属后再保存。显式 taxonomy placement 不会因传入 membershipId 被替换成 favorite placement，分类编辑继续保留收藏关系。新增引用仍由独立 favoriteTag 命令负责。
+
+createDialogTools 按活动 stack 深度将 overlay inline zIndex 设置为 1000 + index；关闭时移除该弹窗的 inline z-index 并重排余下活动弹窗，重新打开重新计算。创建顺序不再影响层级，picker 和 discard 同样适用。
+
+新增三条回归先 RED 后 GREEN：incoming placement 绕过归属选择、单归属绑定且 taxonomy 独立、外部 picker 先创建/嵌套 discard/关闭中间弹窗的 computed z-index。无真实 Electron 视觉验收声明。
+
+- focused：27/27 PASS。
+- npm run check：538/538 PASS，source checks 与 regressions-v194 PASS。
+- 完整日志：`.superpowers/sdd/2026-09-19-unified-tag-library/task-8-fix-round-1-check.log`。
+- 本轮范围仅两个组件、两份测试与本报告；运行版本仍为 1.4.320。

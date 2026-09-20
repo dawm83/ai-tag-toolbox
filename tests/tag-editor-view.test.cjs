@@ -118,3 +118,13 @@ test('initial locale keys match both packs and switching locale refreshes all ed
  let locale='en-US';const h=await setup(t,{getLocale:()=>locale});await h.editor.open({initialValues:{content:'locale'}});assert.match(h.document.querySelector('[data-tag-location]').textContent,/Choose/);await h.editor.requestClose();locale='zh-CN';await h.editor.open({initialValues:{content:'locale'}});assert.equal(h.document.querySelector('[data-tag-location]').textContent,'选择位置');
  const {messages}=require('../src/views/tag-location-view');for(const [file,index] of [['../locales/zh-CN.json',0],['../locales/en-US.json',1]]){const pack=require(file);for(const [section,entries]of Object.entries(messages))for(const [key,words]of Object.entries(entries))assert.equal(pack.ui[section][key],words[index]);}
 });
+test('incoming favorite destination cannot bypass exact membership selection',async t=>{
+ const h=await setup(t);const a=await h.library.execute({type:'favoriteTag',tagId:'blue_hair',placement},{operationId:'a'});await h.library.execute({type:'favoriteTag',tagId:'blue_hair',placement:{kind:'favorite',page:{id:'home'},group:{create:{name:'second'}}}},{operationId:'b'});
+ const before=h.repository.saveCount;await h.editor.open({tagId:'blue_hair',placement:{kind:'favorite',page:{create:{name:'new-page'}},group:{create:{name:'new-group'}}}});
+ assert.equal((await h.editor.save()).ok,false);assert.equal(h.repository.saveCount,before);assert.equal(h.library.getFavoritePages().length,1);assert.equal(h.library.getMemberships('blue_hair').length,2);
+ const select=h.document.querySelector('[data-tag-membership]');select.value=a.data.membershipId;select.dispatchEvent(new h.dom.window.Event('change',{bubbles:true}));h.input('note','exact');assert.equal((await h.editor.save()).ok,true);assert.equal(h.library.getMemberships('blue_hair').length,2);
+});
+test('single existing membership binds incoming favorite destination while taxonomy remains separate',async t=>{
+ const h=await setup(t);const a=await h.library.execute({type:'favoriteTag',tagId:'blue_hair',placement},{operationId:'a'});await h.editor.open({tagId:'blue_hair',placement:{kind:'favorite',page:{id:'home'},group:{create:{name:'moved'}}}});assert.equal((await h.editor.save()).ok,true);const rows=h.library.getMemberships('blue_hair');assert.equal(rows.length,1);assert.equal(rows[0].id,a.data.membershipId);assert.notEqual(rows[0].groupId,'daily');
+ await h.editor.open({tagId:'blue_hair',membershipId:a.data.membershipId,placement:{kind:'taxonomy',category:{id:'hair'},subcategory:{id:'shape'}}});assert.equal((await h.editor.save()).ok,true);assert.equal(h.library.getTag('blue_hair').subcategoryId,'shape');assert.equal(h.library.getMemberships('blue_hair')[0].groupId,rows[0].groupId);
+});

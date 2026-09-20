@@ -126,7 +126,8 @@
       if(pending)return pending;
       if(!opened||disposed||childOpen)return Promise.resolve({ok:false,error:{code:'BUSY'}});
       if(!draft.content.trim()){const result=fail('INVALID_FIELD','content');error.textContent=t('required');return Promise.resolve(result);}
-      if(memberships().length>1&&!placement){membershipSelect.focus();error.textContent=t('membership');return Promise.resolve({ok:false,error:{code:'INVALID_PARENT'}});}
+      const rows=memberships();
+      if((rows.length>1&&!placement)||(record&&rows.length&&placement?.kind==='favorite'&&!fromMembership(placement.membershipId))){membershipSelect.focus();error.textContent=t('membership');return Promise.resolve({ok:false,error:{code:'INVALID_PARENT'}});}
       const patch={};for(const key of PATCH_FIELDS)if(Object.hasOwn(draft,key)&&(!record||!equal(draft[key],baseline[key])))patch[key]=clone(draft[key]);
       return commit({type:'saveTag',...(record?{tagId:record.id}:{}),patch,...(placement?{placement:clone(placement)}:{}),...(independent?{allowIndependent:true}:{})});
     }
@@ -171,7 +172,8 @@
       record=source;draft=source?Object.fromEntries(PATCH_FIELDS.map(key=>[key,clone(source[key])])):{...defaults(),...initial};baseline=clone(draft);
       placement=clone(input.placement)||null;
       const rows=memberships();const membershipId=input.membershipId || placement?.membershipId;
-      if(membershipId){const current=fromMembership(membershipId);if(!current){notifySafe(t('invalid'));return false;}placement=placement?.kind==='favorite'?{...placement,membershipId}:current;}
+      if(membershipId){const current=fromMembership(membershipId);if(!current){notifySafe(t('invalid'));return false;}placement=placement?.kind==='taxonomy'?placement:placement?.kind==='favorite'?{...placement,membershipId}:current;}
+      else if(placement?.kind==='favorite'&&rows.length===1)placement={...placement,membershipId:rows[0].membershipId};
       if(!placement){if(rows.length===1)placement=fromMembership(rows[0].membershipId);else if(!rows.length)placement=taxonomyPlacement();}
       initialPlacement=clone(placement);revision=catalog.revision();retry=null;independent=false;composing=false;session++;origin=document.activeElement;opened=true;render();dialog.open();fields.content.focus();return true;
     }

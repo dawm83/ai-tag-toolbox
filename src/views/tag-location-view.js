@@ -58,9 +58,10 @@
     }
     function focusin(event) { if (top() && !panel.contains(event.target)) focus(); }
     document.addEventListener('keydown', keydown, true); document.addEventListener('focusin', focusin, true);
+    const restack = () => stack.forEach((entry, index) => { entry.overlay.style.zIndex = String(1000 + index); });
     const api = { overlay, panel, title, top, focus,
-      open() { if (!overlay.hidden) return; origin = document.activeElement; stack.at(-1)?.panel.setAttribute('aria-hidden', 'true'); stack.push(api); overlay.hidden = false; panel.removeAttribute('aria-hidden'); focus(); },
-      close() { if (overlay.hidden) return; const wasTop = top(); const index = stack.indexOf(api); if (index >= 0) stack.splice(index, 1); overlay.hidden = true; panel.removeAttribute('aria-hidden'); if (wasTop) { stack.at(-1)?.panel.removeAttribute('aria-hidden'); if (origin?.isConnected) origin.focus(); else stack.at(-1)?.focus(); } },
+      open() { if (!overlay.hidden) return; origin = document.activeElement; stack.at(-1)?.panel.setAttribute('aria-hidden', 'true'); stack.push(api); restack(); overlay.hidden = false; panel.removeAttribute('aria-hidden'); focus(); },
+      close() { if (overlay.hidden) return; const wasTop = top(); const index = stack.indexOf(api); if (index >= 0) stack.splice(index, 1); overlay.hidden = true; overlay.style.removeProperty('z-index'); restack(); panel.removeAttribute('aria-hidden'); if (wasTop) { stack.at(-1)?.panel.removeAttribute('aria-hidden'); if (origin?.isConnected) origin.focus(); else stack.at(-1)?.focus(); } },
       dispose() { api.close(); document.removeEventListener('keydown', keydown, true); document.removeEventListener('focusin', focusin, true); overlay.remove(); }
     };
     return api;
