@@ -273,6 +273,39 @@ body.dark #tabTalk .message-action:hover { color:var(--text); background:var(--w
   #tabTalk .talkbar { flex-wrap:wrap; }
   #tabApi>.apibody,#tabComfy>.form { padding:16px; }
 }
+/* Maximized Electron windows use one row. Keep the normal centered rows when
+ * restored, even on a large monitor. Narrow logical widths compact preference
+ * buttons while their text remains available to assistive technology. */
+html.window-maximized body>header {
+  display:flex; flex-wrap:nowrap; gap:12px; padding:10px 18px;
+}
+html.window-maximized header .header-side-left { display:flex; flex:0 0 auto; width:auto; gap:14px; }
+html.window-maximized header .header-left { flex:none; }
+html.window-maximized header .header-leading { margin:0; gap:6px; flex-wrap:nowrap; }
+html.window-maximized header #headerWorkspace { flex:1 1 360px; width:auto; min-width:260px; max-width:none; justify-content:center; }
+html.window-maximized header .header-workspace .search { width:100%; min-width:0; max-width:none; margin:0; }
+html.window-maximized header .header-workspace #aiCfgBtns { max-width:440px; }
+html.window-maximized header .header-trailing { flex:0 0 auto; width:auto; gap:6px; flex-wrap:nowrap; }
+html.window-maximized header .header-trailing .btn.nav-action,
+html.window-maximized header .header-leading :is(#themeBtn,#localeBtn,#nsfwBtn,#sponsorBtn).btn.nav-action {
+  height:38px; min-height:38px; min-width:0; flex:0 0 auto; padding:0 10px; font-size:12px; gap:6px;
+}
+@media (max-width:1700px) {
+  html.window-maximized header .brand small { display:none; }
+  html.window-maximized header .header-leading :is(#themeBtn,#localeBtn,#sponsorBtn).btn.nav-action { width:38px; padding:0; }
+  html.window-maximized header .header-leading :is(#themeBtn,#localeBtn,#sponsorBtn)>span {
+    position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap;
+  }
+}
+@media (max-width:1250px) {
+  html.window-maximized body>header { gap:8px; padding:8px 12px; }
+  html.window-maximized header .brand>[data-i18n] { display:none; }
+  html.window-maximized header .header-side-left { gap:8px; }
+  html.window-maximized header #headerWorkspace { min-width:230px; }
+  html.window-maximized header .header-trailing .btn.nav-action { padding:0 8px; }
+  html.window-maximized header .header-workspace .ai-module-tab { padding:4px 5px; }
+  html.window-maximized header .ai-module-tab .workspace-icon { display:none; }
+}
 @media (prefers-reduced-motion:reduce) {
   *,*::before,*::after { scroll-behavior:auto!important; transition:none!important; animation-duration:.01ms!important; animation-iteration-count:1!important; }
 }

@@ -32,6 +32,7 @@ async function boot(flush, primary = true) {
     setMenuBarVisibility() {}
     loadFile() {}
     isMinimized() { return this.minimized === true; }
+    isMaximized() { return this.maximized === true; }
     restore() { this.minimized = false; this.restored = true; }
     show() { this.shown = true; }
     focus() { this.focused = true; }
@@ -99,4 +100,23 @@ test('secondary instance exits without a window and primary activates its existi
   assert.equal(primary.windows.length, 1);
   assert.equal(primary.win.restored, true); assert.equal(primary.win.shown, true); assert.equal(primary.win.focused, true);
   primary.win.close(); await new Promise(resolve => setImmediate(resolve));
+});
+
+test('maximized layout follows maximize, restore and renderer reload', async () => {
+  const classes = new Set(); let resizes = 0;
+  const renderer = vm.createContext({
+    document: { documentElement: { classList: { toggle(name, on) { if (on) classes.add(name); else classes.delete(name); } } } },
+    Event: class Event { constructor(type) { this.type = type; } },
+    window: { dispatchEvent(event) { if (event.type === 'resize') resizes++; } }
+  });
+  const host = await boot(script => { vm.runInContext(script, renderer); return Promise.resolve(); });
+  host.win.webContents.emit('dom-ready');
+  assert.equal(classes.has('window-maximized'), false);
+  host.win.maximized = true; host.win.emit('maximize');
+  assert.equal(classes.has('window-maximized'), true);
+  classes.clear(); host.win.webContents.emit('dom-ready');
+  assert.equal(classes.has('window-maximized'), true, 'reload must restore the current window layout');
+  host.win.maximized = false; host.win.emit('unmaximize');
+  assert.equal(classes.has('window-maximized'), false);
+  assert.equal(resizes, 4, 'AI tab indicator should be measured after each layout switch');
 });

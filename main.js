@@ -30,7 +30,7 @@ function createWindow() {
     height: 900,
     minWidth: 980,
     minHeight: 680,
-    title: 'AI 绘画 Tag 工具箱 V1.4.328',
+    title: 'AI 绘画 Tag 工具箱 V1.4.329',
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -40,6 +40,17 @@ function createWindow() {
     }
   });
   win.setMenuBarVisibility(false);
+  // Window chrome owns maximization state; the renderer only receives a
+  // presentation class, including after a reload while already maximized.
+  function syncMaximizedLayout() {
+    if (win.isDestroyed() || win.webContents.isDestroyed()) return;
+    const maximized = win.isMaximized();
+    win.webContents.executeJavaScript(`document.documentElement.classList.toggle('window-maximized', ${maximized}); window.dispatchEvent(new Event('resize'));`)
+      .catch(() => {});
+  }
+  win.on('maximize', syncMaximizedLayout);
+  win.on('unmaximize', syncMaximizedLayout);
+  win.webContents.on('dom-ready', syncMaximizedLayout);
   // The sponsor page opens in the user's default browser. Other target=_blank
   // links (for example generated image previews) keep their existing Electron
   // behavior, while non-http URLs are never forwarded to the system browser.
