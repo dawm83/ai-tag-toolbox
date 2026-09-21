@@ -1206,6 +1206,7 @@ header{padding:12px 20px;gap:9px;background:var(--card);border-bottom-color:var(
 .generation-controls{display:flex;align-items:center;gap:7px;min-width:0;padding:4px 7px;border:1px solid var(--border2);border-radius:8px;background:var(--card)}
 .generation-controls[hidden]{display:none!important}
 .generation-tags-result{margin-top:10px}
+.generation-tags-result .codeblock{margin:0}
 .generation-tags-result>p{display:flex;align-items:center;gap:8px;margin:8px 0}
 .generation-controls select{min-width:110px;max-width:138px;height:28px;padding:3px 24px 3px 7px;border:1px solid var(--border2);border-radius:6px;background:var(--well);color:var(--text);font-size:11.5px}
 .generation-auto-select{flex:none;white-space:nowrap;font-size:11px}

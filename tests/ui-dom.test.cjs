@@ -1013,20 +1013,23 @@ test('failed replies keep progress in messages without copying it into the Comfy
 });
 
 
-test('Tags-only messages expose copyable Tags without candidate images', async t => {
+test('Tags-only messages render one text code block with a copy-all action', async t => {
   const app = boot({ initialMessages: [{ id: 'tags-result', role: 'assistant', text: 'Tag 已生成。', status: 'done', result: { outputType: 'tags', status: 'completed', prompt: '1girl, blue hair', negative: 'lowres', positiveTags: ['1girl','blue hair'], negativeTags: ['lowres'] } }] });
   t.after(() => app.dom.window.close());
   let copied;
   app.window.navigator.clipboard.writeText = async value => { copied = value; };
   app.view.route('ai'); app.view.showAi('talk');
   const doc = app.window.document;
-  assert.match(doc.querySelector('.generation-tags-result').textContent, /blue hair/);
-  doc.querySelector('[data-copy-generation-tags="positive"]').click();
+  const result = doc.querySelector('.generation-tags-result');
+  assert(result);
+  assert.equal(result.querySelectorAll('.codeblock').length, 1);
+  assert.equal(result.querySelectorAll('.chip').length, 0);
+  assert.equal(result.querySelector('.codelang').textContent, 'text');
+  assert.match(result.querySelector('.codepre').textContent, /1girl, blue hair/);
+  assert.match(result.querySelector('.codepre').textContent, /Negative prompt:\nlowres/);
+  result.querySelector('.codebtn').click();
   await new Promise(resolve => setTimeout(resolve, 0));
-  assert.equal(copied, '1girl, blue hair');
-  doc.querySelector('.generation-tags-result .chip').click();
-  await new Promise(resolve => setTimeout(resolve, 0));
-  assert.equal(copied, '1girl');
+  assert.equal(copied, '1girl, blue hair\n\nNegative prompt:\nlowres');
 });
 
 test('conversation timeline explains the routed task, a blocked tool and the answer phase', t => {

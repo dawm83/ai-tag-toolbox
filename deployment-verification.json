@@ -1,11 +1,11 @@
 {
-  "version": "1.4.334",
+  "version": "1.4.335",
   "buildEvidenceFile": "build-info.json",
   "evidenceLocation": "Desktop package root, outside resources/app.asar",
-  "desktopDirectory": "C:/Users/admin/Desktop/AI绘画Tag工具箱V1.4.334",
+  "desktopDirectory": "C:/Users/admin/Desktop/AI绘画Tag工具箱V1.4.335",
   "sourceBranch": "codex/unified-tag-library",
-  "implementationCommit": "ac099be",
-  "scope": "Intent routing, scoped primary tools, original user requests, answer phase and paired tool receipts",
+  "implementationCommit": "pending",
+  "scope": "Tag-only results use one text code block with a copy-all action",
   "checks": {
     "command": "npm run check",
     "testsPassed": 636,

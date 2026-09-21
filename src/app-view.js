@@ -2483,27 +2483,12 @@
       $(".generation-tags-result", row)?.remove();
       if (message.role !== "assistant" || messageHasRender(message) || !message.result?.prompt) return;
       const panel = doc.createElement("section"); panel.className = "generation-tags-result";
-      for (const [kind, title, value, tagRows] of [
-        ["positive", localized("ui.ai.positiveTags", "正向 Tag"), message.result.prompt, message.result.positiveTags],
-        ["negative", localized("ui.ai.negativeTags", "负向 Tag"), message.result.negative, message.result.negativeTags]
-      ]) {
-        if (!value) continue;
-        const heading = doc.createElement("p");
-        const copyButton = doc.createElement("button"); copyButton.type = "button"; copyButton.className = "abtn btn btn-secondary";
-        copyButton.dataset.copyGenerationTags = kind;
-        copyButton.textContent = localized(kind === "positive" ? "ui.ai.copyPositiveTags" : "ui.ai.copyNegativeTags", `复制${title}`);
-        copyButton.onclick = async () => { if (await copy(value)) notify(localized("ui.common.copied", "已复制")); };
-        heading.append(title + " ", copyButton); panel.append(heading);
-        const chips = doc.createElement("div"); chips.className = "chips";
-        for (const tag of Array.isArray(tagRows) && tagRows.length ? tagRows : value.split(/[,，\n]+/).map(item => item.trim()).filter(Boolean)) {
-          const button = doc.createElement("button"); button.type = "button"; button.className = "chip btn btn-chip";
-          button.style.setProperty("--c", categoryColor(kind === "negative" ? "negative" : "other"));
-          const label = doc.createElement("span"); label.className = "en"; label.textContent = tag; button.append(label);
-          button.onclick = async () => { if (await copy(tag)) notify(localized("ui.common.copied", "已复制")); };
-          chips.append(button);
-        }
-        panel.append(chips);
-      }
+      const positive = str(message.result.prompt);
+      const negative = str(message.result.negative);
+      const output = [positive, negative ? `Negative prompt:\n${negative}` : ""].filter(Boolean).join("\n\n");
+      const block = markdownCodeBlock(output, "text");
+      block.dataset.copyGenerationTags = "all";
+      panel.append(block);
       if (message.result.status === "failed" && message.result.error?.message) {
         const error = doc.createElement("p"); error.textContent = message.result.error.message; panel.append(error);
       }
