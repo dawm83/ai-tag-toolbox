@@ -1029,6 +1029,20 @@ test('Tags-only messages expose copyable Tags without candidate images', async t
   assert.equal(copied, '1girl');
 });
 
+test('conversation timeline explains the routed task, a blocked tool and the answer phase', t => {
+  const app = boot({ initialMessages: [{ id: 'routed', role: 'assistant', text: 'blue hair', status: 'done', activity: [
+    { type: 'task.routed', intent: 'search_tags' },
+    { type: 'tool.blocked', name: 'generation.execute', error: { message: '本轮只查标签' } },
+    { type: 'task.answering', intent: 'search_tags' }
+  ] }] });
+  t.after(() => app.dom.window.close());
+  app.view.route('ai'); app.view.showAi('talk');
+  const content = app.window.document.querySelector('.draw-activity').textContent;
+  assert.match(content, /搜索 Tag/);
+  assert.match(content, /已跳过.*generation\.execute.*本轮只查标签/);
+  assert.match(content, /整理答复/);
+});
+
 test('disconnected drawing controls stay off and automatic iteration is hidden', async t => {
   const app = boot({ comfyCapabilities: { enabled: true, connected: false, workflowReady: true, render: false, error: 'offline' } });
   t.after(() => app.dom.window.close());

@@ -2899,6 +2899,11 @@
       return `${prompt}${negative ? `\n\n【负面提示词】\n${negative}` : ""}`;
     }
     function activityLabel(item) {
+      if (item.type === "task.routed") return "本轮任务：" + ({ search_tags: "搜索 Tag", analyze_image: "分析图片", compile_tags: "生成 Tag", answer: "直接回答", translate: "翻译", create_image: "生成图片", recreate_image: "复刻图片", auto: "结合上下文判断" }[item.intent] || item.intent);
+      if (item.type === "task.answering") return item.status === "failed" ? "任务未能完成，正在说明原因" : "工具结果已取得，正在整理答复";
+      if (item.type === "task.waiting") return "任务已暂停，等待补充信息或点评";
+      if (item.type === "tool.blocked") return `已跳过 ${item.name || "工具"}：${item.error?.message || "不属于本轮任务"}`;
+      if (item.type === "tool.failed") return `${item.name || "工具"} 失败：${item.error?.message || "调用失败"}`;
       const name = item.name === "comfy.render" ? "ComfyUI"
         : item.name === "vision.processOne" ? "识图"
           : item.name === "tags.search" ? "Tag 查询" : item.name;

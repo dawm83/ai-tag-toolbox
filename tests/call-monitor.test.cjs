@@ -44,12 +44,12 @@ test('real assistant connects primary rounds and fixed-subagent output under one
         : { text: '完成', usage: { total_tokens: 4 } };
     } }
   });
-  const result = await app.run({ text: '画蓝发人物', requestId: 'trace-root' });
+  const result = await app.run({ text: '翻译蓝发', requestId: 'trace-root' });
   assert.equal(result.ok, true, JSON.stringify(result.error));
   const rows = app.listCallRecords();
   const primary = rows.find(row => row.kind === 'primary');
   assert.equal(primary.exchanges.length, 2);
-  assert.equal(primary.exchanges[0].request.body.messages.at(-1).content, '画蓝发人物');
+  assert.equal(primary.exchanges[0].request.body.messages.at(-1).content, '翻译蓝发');
   assert(primary.exchanges[1].request.body.messages.some(row => row.role === 'tool'));
   assert(primary.exchanges[0].request.body.tools.some(item => item.function.name === 'translation_translate'));
   const child = rows.find(row => row.kind === 'subagent:translation');

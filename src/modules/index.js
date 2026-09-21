@@ -31,6 +31,8 @@ module.exports = {
   ...require('./primary-tools'),
   ...require('./settings'),
   ...require('./ai-client'),
-  ...require('./primary-agent')
+  ...require('./primary-agent'),
+  ...require('./task-router'),
+  ...require('./task-policy')
 };
 

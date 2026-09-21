@@ -6,6 +6,7 @@ const { createUsageLimiter } = require('./usage-limiter');
 const { errorShape, resultOk, resultError } = require('./error-manager');
 const { assertValid } = require('./schema');
 const { createCallMonitor } = require('./call-monitor');
+const { createTaskPolicy } = require('./task-policy');
 
 const TOOL_NAMES = Object.freeze(['tags.search', 'characters.search', 'conversation.listImages', 'vision.processOne', 'translation.translate', 'agent.generateTags', 'comfy.status', 'comfy.validateWorkflow', 'comfy.render', 'generation.execute', 'generation.resume']);
 const NATIVE_NAMES = new Map(TOOL_NAMES.map(name => [name.replace('.', '_'), name]));
@@ -227,16 +228,19 @@ function createAgentRuntime(options = {}) {
   async function runPrimary(request = {}) {
     return execute('primary', request, getSettings()?.limits?.primaryTimeoutMs || options.timeoutMs || 120000, async context => {
       if (typeof client?.complete !== 'function') throw reject('PRIMARY_UNAVAILABLE', '主 AI 服务不可用');
+      const policy = object(request.task) ? createTaskPolicy(request.task) : null;
+      const taskResult = () => policy ? { task: policy.snapshot() } : {};
       const prompt = typeof options.getPrimaryPrompt === 'function' ? text(await options.getPrimaryPrompt(request)) : text(options.primaryPrompt, '你是 AI 绘画 Tag 工具箱的主 AI，使用固定工具完成用户任务。');
       if (!prompt) throw reject('PROMPT_INVALID', '主 AI 提示词为空');
       const history = (Array.isArray(request.messages) ? request.messages : []).map(historyMessage).filter(Boolean).filter(item => item.role === 'tool' || item.content || item.tool_calls?.length);
       if (!history.length && typeof request.input?.text === 'string') history.push({ role: 'user', content: request.input.text });
       const messages = [{ role: 'system', content: prompt }, ...history]; const transcript = []; const toolCalls = []; const artifacts = []; const usedIds = new Set(); let generationResult = null; let round = 0;
       context.captureInput({ messages, config: request.config || {} });
-      const partial = () => ({ ...(generationResult ? clone(generationResult) : {}), text: '', reasoning: '', toolCalls: toolCalls.slice(), events: context.events.slice(), artifacts: artifacts.map(clone), imageIds: [...new Set(artifacts.map(item => item.imageId).filter(Boolean))], transcript: transcript.map(clone) });
+      const partial = () => ({ ...(generationResult ? clone(generationResult) : {}), ...taskResult(), text: '', reasoning: '', toolCalls: toolCalls.slice(), events: context.events.slice(), artifacts: artifacts.map(clone), imageIds: [...new Set(artifacts.map(item => item.imageId).filter(Boolean))], transcript: transcript.map(clone) });
       const retryAttempts = new Map();
       const retryTraces = new Map();
       context.partial = partial();
+      if (policy) emit(context, 'task.routed', { intent: request.task.intent, imageIds: request.task.imageIds || [] });
       // 流式增量不逐片写入任务事件：缓冲后节流合并，避免刷满 256 条上限。
       const deltaBuffer = { text: '', reasoning: '', emittedAt: 0 };
       const flushDelta = () => {
@@ -247,9 +251,11 @@ function createAgentRuntime(options = {}) {
       while (true) {
         limiter.consume(context.rootRequestId, 'round'); round += 1; emit(context, 'round.start', { round });
         const settings = getSettings() || {};
-        const primarySchemas = schemas();
-        const allowedPrimaryNames = new Set(primarySchemas.map(item => canonicalName(item?.function?.name || '')));
-        const primaryConfig = { ...publicConfig(settings.primaryApi), ...publicConfig(request.config), signal: context.signal, tools: primarySchemas, tool_choice: 'auto', onDelta: (delta, reasoning = '') => { deltaBuffer.text += typeof delta === 'string' ? delta : ''; deltaBuffer.reasoning += typeof reasoning === 'string' ? reasoning : ''; const accumulated = deltaBuffer.text.length + deltaBuffer.reasoning.length; if (accumulated >= 8 && Date.now() - deltaBuffer.emittedAt >= 200) flushDelta(); if (!context.signal.aborted) { try { request.onDelta?.(delta, reasoning); } catch {} } }, onEvent: event => { if (typeof event?.type === 'string' && event.type && !isNoiseEvent(event)) emit(context, event.type, event || {}); } /* 只接受带类型名的有意义事件；无类型名的流式分片（正文/推理/工具参数碎片）一律不产生任务事件，真正的调用由 tool.start/tool.complete 记录。 */ };
+        const registeredSchemas = schemas();
+        const primarySchemas = policy ? policy.filterTools(registeredSchemas) : registeredSchemas;
+        const allowedPrimaryNames = new Set(registeredSchemas.map(item => canonicalName(item?.function?.name || '')));
+        if (policy) messages[0] = { role: 'system', content: prompt + '\n\n' + policy.prompt() };
+        const primaryConfig = { ...publicConfig(settings.primaryApi), ...publicConfig(request.config), signal: context.signal, tools: primarySchemas, tool_choice: primarySchemas.length ? 'auto' : 'none', onDelta: (delta, reasoning = '') => { deltaBuffer.text += typeof delta === 'string' ? delta : ''; deltaBuffer.reasoning += typeof reasoning === 'string' ? reasoning : ''; const accumulated = deltaBuffer.text.length + deltaBuffer.reasoning.length; if (accumulated >= 8 && Date.now() - deltaBuffer.emittedAt >= 200) flushDelta(); if (!context.signal.aborted) { try { request.onDelta?.(delta, reasoning); } catch {} } }, onEvent: event => { if (typeof event?.type === 'string' && event.type && !isNoiseEvent(event)) emit(context, event.type, event || {}); } /* 只接受带类型名的有意义事件；无类型名的流式分片（正文/推理/工具参数碎片）一律不产生任务事件，真正的调用由 tool.start/tool.complete 记录。 */ };
         context.captureInput({ messages, config: primaryConfig });
         const response = await race(() => client.complete(messages, primaryConfig), context.signal);
         unwrap(response); limiter.add(context.rootRequestId, response?.usage, 'primary'); const calls = responseCalls(response).map(call => normalizeCall(call, usedIds, allowedPrimaryNames));
@@ -259,40 +265,48 @@ function createAgentRuntime(options = {}) {
           const finalMessage = attachResponseReasoning({ role: 'assistant', content: responseText }, response);
           messages.push(finalMessage); transcript.push(clone(finalMessage));
           flushDelta(); emit(context, 'round.complete', { round });
-          const data = { ...(generationResult ? clone(generationResult) : {}), text: responseText, reasoning: responseReasoning(response), toolCalls, events: context.events.slice(), artifacts, imageIds: [...new Set(artifacts.map(item => item.imageId).filter(Boolean))], transcript };
+          const data = { ...(generationResult ? clone(generationResult) : {}), ...taskResult(), text: responseText, reasoning: responseReasoning(response), toolCalls, events: context.events.slice(), artifacts, imageIds: [...new Set(artifacts.map(item => item.imageId).filter(Boolean))], transcript };
           context.partial = data; return data;
         }
         const assistantMessage = attachResponseReasoning({ role: 'assistant', content: responseText || null, tool_calls: calls.map(call => call.native) }, response);
         messages.push(assistantMessage); transcript.push(clone(assistantMessage)); context.partial = partial();
+        let paused = false;
+        let terminalError = null;
         for (const call of calls) {
+          const blocked = paused ? { code: 'TASK_WAITING_FOR_INPUT', message: '当前任务需要用户补充信息，已跳过后续调用', retryable: false }
+            : terminalError ? { code: 'REQUEST_STOPPED', message: '本轮请求已停止，后续调用未执行', retryable: false }
+              : policy && !policy.allows(call.name) ? policy.policyError(call.name) : null;
+          const args = !blocked && policy ? policy.prepareCall(call.name, call.args) : call.args;
           const key = retryKey(call.name, call.args);
           const attempt = (retryAttempts.get(key) || 0) + 1;
           const previousTrace = retryTraces.get(key);
-          const outcome = await callTool(call.name, call.args, { parentRequestId: context.requestId, signal: context.signal, sessionId: context.sessionId, messageId: context.messageId, onEvent: event => { try { request.onEvent?.(event); } catch {} } });
-          const trace = { id: call.id, name: call.name, arguments: call.args, requestId: outcome.requestId, ok: outcome.ok, result: outcome.data, error: outcome.error, attempt, ...(previousTrace ? { retryOf: previousTrace.id } : {}) }; toolCalls.push(trace);
+          const outcome = blocked ? resultError(blocked, context.requestId) : await callTool(call.name, args, { parentRequestId: context.requestId, signal: context.signal, sessionId: context.sessionId, messageId: context.messageId, onEvent: event => { try { request.onEvent?.(event); } catch {} } });
+          const trace = { id: call.id, name: call.name, arguments: args, requestId: outcome.requestId, ok: outcome.ok, result: outcome.data, error: outcome.error, attempt, ...(blocked ? { blocked: true } : {}), ...(previousTrace ? { retryOf: previousTrace.id } : {}) }; toolCalls.push(trace);
           if (call.name === 'generation.execute' || call.name === 'generation.resume') generationResult = outcome.ok && object(outcome.data) ? clone(outcome.data) : generationResult;
           if (Array.isArray(outcome.data?.artifacts)) for (const artifact of outcome.data.artifacts) if (!artifacts.some(item => item.imageId === artifact.imageId)) artifacts.push(clone(artifact));
           try { request.onToolCall?.([trace]); } catch {}
-          const toolMessage = { role: 'tool', tool_call_id: call.id, content: JSON.stringify(outcome.ok ? outcome.data : outcome.error) };
+          const toolMessage = { role: 'tool', tool_call_id: call.id, content: JSON.stringify(outcome.ok ? outcome.data : { ok: false, error: outcome.error }) };
           messages.push(toolMessage); transcript.push(clone(toolMessage)); context.partial = partial();
           if (!outcome.ok) {
             retryAttempts.set(key, attempt);
             retryTraces.set(key, trace);
             const canRetry = attempt <= retryLimit(getSettings());
-            emit(context, 'tool.failed', { name: call.name, error: outcome.error, attempt, retrying: canRetry });
-            if (!canRetry) throw outcome.error;
+            emit(context, blocked ? 'tool.blocked' : 'tool.failed', { name: call.name, error: outcome.error, attempt });
+            if (!paused && !terminalError && (!canRetry || context.signal.aborted || ['CANCELLED', 'TOOL_CALL_LIMIT', 'TOOL_ROUND_LIMIT', 'COMFY_CALL_LIMIT'].includes(outcome.error?.code))) terminalError = outcome.error;
+            context.partial = partial();
             continue;
           }
           retryAttempts.delete(key);
           retryTraces.delete(key);
+          if (policy?.completionFor(call.name, outcome.data)) emit(context, policy.isWaiting() ? 'task.waiting' : 'task.answering', { intent: request.task.intent, status: outcome.data?.status });
           if ((call.name === 'generation.execute' || call.name === 'generation.resume') && generationResult?.status === 'needs_input') {
-            flushDelta(); emit(context, 'round.complete', { round });
-            const data = { ...clone(generationResult), text: '', reasoning: '', toolCalls, events: context.events.slice(), artifacts, imageIds: [...new Set(artifacts.map(item => item.imageId).filter(Boolean))], transcript };
-            context.partial = data;
-            return data;
+            paused = true;
           }
         }
         flushDelta(); emit(context, 'round.complete', { round });
+        context.partial = partial();
+        if (terminalError) throw terminalError;
+        if (paused) return context.partial;
       }
     });
   }

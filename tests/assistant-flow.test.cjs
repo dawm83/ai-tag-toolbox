@@ -133,7 +133,8 @@ async function testHighLevelGenerationPersistsCandidatesAndSelection() {
     },
     primaryApi: { base: 'https://example.test/v1', model: 'primary-model' },
     primaryGateway: { complete: async (_messages, config) => {
-      assert.equal(config.tools.length, 8);
+      assert.equal(config.tools.some(row => row.function.name === 'vision_processOne'), false);
+      assert.equal(config.tools.some(row => row.function.name === 'generation_execute'), primaryRound === 0);
       if (primaryRound++ === 0) return { toolCalls: [{ id: 'generate', name: 'generation_execute', arguments: { requirements: '蓝发女孩', mode: 'create', strategy: 'auto' } }] };
       return { text: '已完成并选择最佳候选。' };
     } },

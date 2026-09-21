@@ -17,6 +17,7 @@ const { createPrimaryAgent, publicRequestConfig } = require('./primary-agent');
 const { errorShape, resultError } = require('./error-manager');
 const { createCallMonitor } = require('./call-monitor');
 const { createGenerationOrchestrator } = require('./generation-orchestrator');
+const { routeTask } = require('./task-router');
 
 const SESSION_FORMAT = 'ai-tag-sessions';
 const SESSION_VERSION = 1;
@@ -292,7 +293,7 @@ function createAssistant(options = {}) {
       schedulePersist(); observe(input.onEvent, clone(event)); observe(input.onToolEvent, clone(event));
     };
     try {
-      const result = await runtime.runPrimary({ requestId, sessionId: session.id, messageId: live.id, messages: [...previous, current], config: publicRequestConfig(config), signal: controller.signal,
+      const result = await runtime.runPrimary({ requestId, sessionId: session.id, messageId: live.id, task: routeTask({ text: body, imageIds }), messages: [...previous, current], config: publicRequestConfig(config), signal: controller.signal,
         onDelta: (delta, reasoning = '') => { if (!writable(job)) return; if (typeof delta === 'string') live.text += delta; if (typeof reasoning === 'string') live.reasoning += reasoning; schedulePersist(); observe(input.onDelta, live.text, live.reasoning, clone(live)); },
         onEvent,
         onToolCall: traces => { if (!writable(job)) return; for (const trace of array(traces)) { const index = live.toolCalls.findIndex(row => row.id === trace.id); if (index < 0) live.toolCalls.push(clone(trace)); else live.toolCalls[index] = clone(trace); } schedulePersist(); }
