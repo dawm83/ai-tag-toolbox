@@ -1,0 +1,27 @@
+{
+  "version": "1.4.334",
+  "desktopDirectory": "C:/Users/admin/Desktop/AI绘画Tag工具箱V1.4.334",
+  "buildSourceCommit": "1664b4954f4e8ee0a591c97a9161122eaf2e6ad7",
+  "filesVerified": 4197,
+  "archiveSha256": "6adb6fbb04d462b4d2b6ed5d1281a9ab740e2b0615ee2bd99bf4c2965fabf420",
+  "checks": {
+    "command": "npm run check",
+    "testsPassed": 636,
+    "testsFailed": 0,
+    "slowUiSmokeRun": false
+  },
+  "sourceCopiesVerified": [
+    "app",
+    "resources/app",
+    "resources/app.asar"
+  ],
+  "runtimeDependencies": 3444,
+  "modelFiles": 22,
+  "versionedExecutable": true,
+  "verifiedAt": "2026-09-21T09:10:51.413Z",
+  "liveAiOrComfyVerified": false,
+  "slowUiTestRun": false,
+  "manualAcceptance": "Pending",
+  "published": false,
+  "pushed": false
+}
