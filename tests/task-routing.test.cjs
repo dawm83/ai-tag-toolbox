@@ -277,3 +277,9 @@ test('using an existing Tags image reference retains inspection mode and never i
   const unselected = policy.prepareCall('generation.execute', {});
   assert.equal(unselected.sourceImageId, undefined);
 });
+
+test('only an explicit reference-tag section becomes referenceTags; ordinary image requests keep it empty', () => {
+  const { routeTask } = require('../src/modules/task-router');
+  assert.equal(routeTask({ text: '参考tag：alice_(series), blue hair' }).referenceTags, 'alice_(series), blue hair');
+  assert.equal(routeTask({ text: '帮我画一个蓝发女孩' }).referenceTags, '');
+});

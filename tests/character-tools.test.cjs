@@ -71,6 +71,8 @@ test('stored primary prompt receives the character contract without modifying th
   assert.match(primary.getPrompt(), /用户原始要求.*原样/);
   assert.match(primary.getPrompt(), /best_available/);
   assert.match(primary.getPrompt(), /text_approximation/);
+  assert.match(primary.getPrompt(), /语言协议/);
+  assert.match(primary.getPrompt(), /当前界面为中文/);
   assert(primary.getPrompt().lastIndexOf('generation.execute') > primary.getPrompt().indexOf('comfy.render'));
   assert.equal(prompts.composePrimary(), '我的自定义提示词：请调用 comfy.render');
 });

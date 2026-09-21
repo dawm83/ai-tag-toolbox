@@ -474,6 +474,19 @@ test('manual mode pauses after one round and resumes only with explicit feedback
   assert.equal(revision.input.evaluation.candidateId, 'img-2');
 });
 
+test('manual feedback starts a fresh optimization round with a fresh render budget', async () => {
+  const app = harness({ settings: { generation: { autoRun: false, imagesPerRound: 1, maxAutoRounds: 1, maxRenderAttempts: 2, acceptScore: 99 } }, reviewScores: [70, 95] });
+  const first = await app.orchestrator.execute({ requirements: '蓝发女孩', mode: 'create', strategy: 'quick', autoRun: false }, app.context);
+  assert.equal(first.status, 'awaiting_feedback');
+  assert.equal(first.successfulRounds, 1);
+  const resumed = await app.orchestrator.resume({ jobId: first.jobId, action: 'continue', baseCandidateId: 'candidate-1', feedback: '改成侧身构图', maxAutoRounds: 1, autoRun: false }, app.context);
+  assert.equal(resumed.status, 'awaiting_feedback');
+  assert.equal(resumed.successfulRounds, 2);
+  assert.equal(resumed.rounds.length, 2);
+  assert.equal(app.renders.length, 2);
+  assert.notEqual(app.renders[1].positiveTags.join(','), app.renders[0].positiveTags.join(','));
+});
+
 test('final selection preempts an active render and discards its late artifact', async () => {
   let secondStarted;
   let resolveSecond;

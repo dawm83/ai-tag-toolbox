@@ -190,7 +190,7 @@ async function testManualContinuationBypassesPrimaryAndReleasesConversation() {
   assistant.importSessions({ format: 'ai-tag-sessions', version: 1, currentId: 's1', sessions: [{ id: 's1', title: 'manual', messages: [{ id: 'a1', role: 'assistant', text: '', status: 'done', result: { status: 'awaiting_feedback', jobId: 'job-manual', candidates: [candidate] } }] }] }, true);
   const result = await assistant.continueGeneration('a1', 'candidate-1', '增强低视角');
   assert.equal(result.ok, true, JSON.stringify(result.error));
-  assert.deepEqual(calls[0], { jobId: 'job-manual', action: 'continue', baseCandidateId: 'candidate-1', feedback: '增强低视角' });
+  assert.deepEqual(calls[0], { jobId: 'job-manual', action: 'continue', baseCandidateId: 'candidate-1', feedback: '增强低视角', maxAutoRounds: 1, autoRun: false });
   const messages = assistant.currentSession().messages;
   assert.equal(messages.at(-2).role, 'user');
   assert.equal(messages.at(-2).text, '增强低视角');

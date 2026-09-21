@@ -21,6 +21,7 @@ function createTaskPolicy(task = {}) {
     intent: text(task.intent, 'auto'),
     originalRequest: text(task.originalRequest),
     imageIds: names(task.imageIds),
+    referenceTags: text(task.referenceTags),
     forbidImages: task.forbidImages === true,
     source: text(task.source, 'local_router')
   };
@@ -35,6 +36,7 @@ function createTaskPolicy(task = {}) {
     if (snapshot.intent === 'compile_tags' && name === 'generation.execute') {
       next.requirements = snapshot.originalRequest;
       next.originalRequirements = snapshot.originalRequest;
+      next.referenceTags = snapshot.referenceTags;
       next.outputType = 'tags';
       if (!next.sourceImageId && !next.sourceSlot && snapshot.imageIds.length === 1) next.sourceImageId = snapshot.imageIds[0];
       next.mode = next.sourceImageId || next.sourceSlot ? 'recreate' : 'create';

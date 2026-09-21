@@ -36,7 +36,9 @@ function routeTask(input = {}) {
   else if (recreate && !noImage) intent = 'recreate_image';
   else if (create && !noImage) intent = 'create_image';
   else if (noImage) intent = 'answer';
-  return { intent, originalRequest, imageIds, forbidImages: noImage, source: 'local_router' };
+  const referenceMatch = originalRequest.match(/(?:参考|已有|提供的?)\s*(?:tag|tags|标签|提示词)\s*[:：]\s*([\s\S]+)/i) || originalRequest.match(/(?:reference\s+tags?)\s*[:：]\s*([\s\S]+)/i);
+  const referenceTags = referenceMatch ? referenceMatch[1].trim() : '';
+  return { intent, originalRequest, imageIds, referenceTags, forbidImages: noImage, source: 'local_router' };
 }
 
 module.exports = { routeTask };

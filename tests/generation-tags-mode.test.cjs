@@ -67,6 +67,20 @@ test('a Tags task remains Tags-only after character selection and reload', async
   assert.equal(result.outputType, 'tags');
 });
 
+test('provided reference Tags bypass character lookup and reach Tag compilation intact', async () => {
+  const calls = [];
+  const referenceTags = 'rosmontis_(arknights), grey hair, green eyes, cat ears, kaltsit_(arknights), white hair, green eyes';
+  const generation = createGenerationOrchestrator({
+    resolveCharacter: async () => { calls.push('character'); return { items: [] }; },
+    runSubAgent: async (name, request) => { calls.push({ name, input: request.input }); return { positiveTags: request.input.referenceTagText.split(',').map(item => item.trim()) }; },
+    getSettings: () => ({ comfy: { enabled: false } })
+  });
+  const result = await generation.execute({ requirements: '使用用户给出的角色 Tag', originalRequirements: '使用用户给出的角色 Tag', referenceTags, outputType: 'tags' });
+  assert.equal(result.status, 'completed');
+  assert.deepEqual(calls.map(item => typeof item === 'string' ? item : item.name), ['generateTags']);
+  assert.match(result.prompt, /rosmontis_\(arknights\)/);
+});
+
 test('workflow failures expose compiled Tags to the primary AI', async () => {
   const generation = createGenerationOrchestrator({
     runSubAgent: async () => ({ positiveTags: ['portrait'], negativeTags: ['lowres'] }),

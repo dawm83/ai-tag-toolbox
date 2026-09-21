@@ -388,7 +388,7 @@ function createAssistant(options = {}) {
       schedulePersist(); observe(options.onEvent, clone(event));
     };
     try {
-      const args = resumeOnly ? { jobId } : { jobId, action: 'continue', baseCandidateId: text(candidateId), feedback: note };
+      const args = resumeOnly ? { jobId } : { jobId, action: 'continue', baseCandidateId: text(candidateId), feedback: note, maxAutoRounds: 1, autoRun: false };
       const outcome = await runtime.callTool('generation.resume', args, { requestId, sessionId: session.id, messageId: live.id, signal: controller.signal, onEvent });
       if (!writable(job)) return { ...failure('CANCELLED', '请求已取消', requestId, session.id), data: cancelledPayload(job) };
       const publicPayload = object(outcome.data) ? outcome.data : {};

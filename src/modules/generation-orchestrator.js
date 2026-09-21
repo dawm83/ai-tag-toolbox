@@ -202,6 +202,7 @@ function createGenerationOrchestrator(options = {}) {
       sourceSlot: Number.isInteger(source.sourceSlot) ? source.sourceSlot : null,
       characterQueries: strings(source.characterQueries, 8),
       characterIds: strings(source.characterIds, 8),
+      referenceTags: text(source.referenceTags),
       characterReferences: Array.isArray(source.characterReferences) ? clone(source.characterReferences).slice(0, 8) : [],
       brief: object(source.brief) ? clone(source.brief) : {},
       policy: policyFrom(source.policy),
@@ -445,6 +446,7 @@ function createGenerationOrchestrator(options = {}) {
   }
   async function resolveCharacters(job, context) {
     if (!resolveCharacter) return true;
+    if (job.referenceTags && !job.characterIds.length && !job.characterQueries.length) return true;
     const selected = [];
     const append = item => {
       const id = text(item?.id);
@@ -516,12 +518,16 @@ function createGenerationOrchestrator(options = {}) {
       operation: 'compile',
       requirements: job.requirements,
       description: blueprintText(job.visualBlueprint),
+      ...(job.referenceTags ? { referenceTagText: job.referenceTags } : {}),
       ...(job.sourceImageId ? { imageId: job.sourceImageId } : {}),
       ...(job.characterReferences.length ? { characterReferences: job.characterReferences } : {})
     }, 'prompt_compile');
     job.positiveTags = strings(value?.positiveTags || value?.tags);
     job.negativeTags = strings(value?.negativeTags);
-    if (!job.positiveTags.length) throw failure('OUTPUT_INVALID', '文生图 Tag 子代理未返回正向 Tag');
+      if (!job.positiveTags.length) {
+        if (job.referenceTags) job.positiveTags = strings(job.referenceTags);
+        if (!job.positiveTags.length) throw failure('OUTPUT_INVALID', '文生图 Tag 子代理未返回正向 Tag');
+      }
     emit(job, context, 'prompt.compiled', { positiveTagCount: job.positiveTags.length, negativeTagCount: job.negativeTags.length });
     return true;
   }
@@ -875,6 +881,7 @@ function createGenerationOrchestrator(options = {}) {
       sourceSlot: Number.isInteger(input.sourceSlot) ? input.sourceSlot : null,
       characterQueries: strings(input.characterQueries, 8),
       characterIds: strings(input.characterIds, 8),
+      referenceTags: text(input.referenceTags),
       workflowProfileId: text(input.workflowProfileId),
       policy,
       promptSnapshot: promptSnapshot(getPromptSnapshot()),
@@ -900,6 +907,12 @@ function createGenerationOrchestrator(options = {}) {
       const baseCandidateId = text(input.baseCandidateId);
       if (!feedback || !baseCandidateId) throw failure('INVALID_INPUT', '继续优化需要基础候选和用户反馈');
       job.pendingFeedback = { baseCandidateId, feedback };
+      // A user feedback turn is a new optimization round. Preserve history for
+      // comparison, but reset the active prompt submission guard and budget.
+      job.lastSubmittedPromptKey = '';
+      job.stopReason = '';
+      job.selectedCandidateId = '';
+      job.outcome = '';
     }
     if (input.characterSelection !== undefined) {
       const selection = object(input.characterSelection) ? input.characterSelection : {};
