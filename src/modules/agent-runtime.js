@@ -71,6 +71,15 @@ function publicConfig(value) {
   }
   return output;
 }
+function retryLimit(settings) {
+  const value = Number(settings?.limits?.maxToolRetries);
+  return Number.isFinite(value) ? Math.max(0, Math.min(8, Math.floor(value))) : 2;
+}
+function retryKey(name, args) {
+  let serialized = '';
+  try { serialized = JSON.stringify(args); } catch { serialized = String(args); }
+  return `${name}:${serialized}`;
+}
 function historyMessage(item) {
   if (!object(item) || !['user', 'assistant', 'tool'].includes(item.role)) return null;
   const message = { role: item.role };
@@ -225,6 +234,8 @@ function createAgentRuntime(options = {}) {
       const messages = [{ role: 'system', content: prompt }, ...history]; const transcript = []; const toolCalls = []; const artifacts = []; const usedIds = new Set(); let generationResult = null; let round = 0;
       context.captureInput({ messages, config: request.config || {} });
       const partial = () => ({ ...(generationResult ? clone(generationResult) : {}), text: '', reasoning: '', toolCalls: toolCalls.slice(), events: context.events.slice(), artifacts: artifacts.map(clone), imageIds: [...new Set(artifacts.map(item => item.imageId).filter(Boolean))], transcript: transcript.map(clone) });
+      const retryAttempts = new Map();
+      const retryTraces = new Map();
       context.partial = partial();
       // 流式增量不逐片写入任务事件：缓冲后节流合并，避免刷满 256 条上限。
       const deltaBuffer = { text: '', reasoning: '', emittedAt: 0 };
@@ -254,17 +265,26 @@ function createAgentRuntime(options = {}) {
         const assistantMessage = attachResponseReasoning({ role: 'assistant', content: responseText || null, tool_calls: calls.map(call => call.native) }, response);
         messages.push(assistantMessage); transcript.push(clone(assistantMessage)); context.partial = partial();
         for (const call of calls) {
+          const key = retryKey(call.name, call.args);
+          const attempt = (retryAttempts.get(key) || 0) + 1;
+          const previousTrace = retryTraces.get(key);
           const outcome = await callTool(call.name, call.args, { parentRequestId: context.requestId, signal: context.signal, sessionId: context.sessionId, messageId: context.messageId, onEvent: event => { try { request.onEvent?.(event); } catch {} } });
-          const trace = { id: call.id, name: call.name, arguments: call.args, requestId: outcome.requestId, ok: outcome.ok, result: outcome.data, error: outcome.error }; toolCalls.push(trace);
+          const trace = { id: call.id, name: call.name, arguments: call.args, requestId: outcome.requestId, ok: outcome.ok, result: outcome.data, error: outcome.error, attempt, ...(previousTrace ? { retryOf: previousTrace.id } : {}) }; toolCalls.push(trace);
           if (call.name === 'generation.execute' || call.name === 'generation.resume') generationResult = outcome.ok && object(outcome.data) ? clone(outcome.data) : generationResult;
           if (Array.isArray(outcome.data?.artifacts)) for (const artifact of outcome.data.artifacts) if (!artifacts.some(item => item.imageId === artifact.imageId)) artifacts.push(clone(artifact));
           try { request.onToolCall?.([trace]); } catch {}
           const toolMessage = { role: 'tool', tool_call_id: call.id, content: JSON.stringify(outcome.ok ? outcome.data : outcome.error) };
           messages.push(toolMessage); transcript.push(clone(toolMessage)); context.partial = partial();
           if (!outcome.ok) {
-            emit(context, 'tool.failed', { name: call.name, error: outcome.error });
+            retryAttempts.set(key, attempt);
+            retryTraces.set(key, trace);
+            const canRetry = attempt <= retryLimit(getSettings());
+            emit(context, 'tool.failed', { name: call.name, error: outcome.error, attempt, retrying: canRetry });
+            if (!canRetry) throw outcome.error;
             continue;
           }
+          retryAttempts.delete(key);
+          retryTraces.delete(key);
           if ((call.name === 'generation.execute' || call.name === 'generation.resume') && generationResult?.status === 'needs_input') {
             flushDelta(); emit(context, 'round.complete', { round });
             const data = { ...clone(generationResult), text: '', reasoning: '', toolCalls, events: context.events.slice(), artifacts, imageIds: [...new Set(artifacts.map(item => item.imageId).filter(Boolean))], transcript };

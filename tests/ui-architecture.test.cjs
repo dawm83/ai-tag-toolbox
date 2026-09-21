@@ -67,6 +67,11 @@ test('generation UI consumes dotted state-machine events and keeps stable candid
   assert.match(css, /\.draw-candidate\s*\{[^}]*flex\s*:\s*0 0/);
 });
 
+test('tool trace renders runtime failures from the trace envelope', () => {
+  const app = fs.readFileSync(path.join(root, 'src', 'app-view.js'), 'utf8');
+  assert.match(app, /call\.ok\s*===\s*false\s*\|\|\s*call\.error/);
+});
+
 test('preload exposes the scoped final-selection command', () => {
   const preload = fs.readFileSync(path.join(root, 'preload.js'), 'utf8');
   assert.match(preload, /selectGenerationFinal:\s*assistant\.selectGenerationFinal/);

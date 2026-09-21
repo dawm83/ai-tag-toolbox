@@ -84,3 +84,32 @@ test('returns a failed tool result to the primary model for recovery', async () 
   assert.equal(result.data.toolCalls[0].ok, false);
   assert.equal(result.data.toolCalls[0].error.code, 'TEMP_FAIL');
 });
+
+test('bounds repeated retryable failures and records the retry chain', async () => {
+  let rounds = 0;
+  let calls = 0;
+  const primaryClient = {
+    complete: async () => {
+      rounds += 1;
+      return { toolCalls: [{ id: `retry-${rounds}`, name: 'tags_search', arguments: { query: 'blue hair' } }] };
+    }
+  };
+  const tools = protocolTools(async () => {
+    calls += 1;
+    return { ok: false, error: { code: 'TEMP_FAIL', message: 'temporary', retryable: true } };
+  });
+  const runtime = createAgentRuntime({
+    primaryClient,
+    tools,
+    getSettings: () => ({ limits: { maxToolRetries: 2, maxToolRounds: 8 } })
+  });
+
+  const result = await runtime.runPrimary({ input: { text: 'search' } });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, 'TEMP_FAIL');
+  assert.equal(calls, 3);
+  assert.deepEqual(result.data.toolCalls.map(call => call.attempt), [1, 2, 3]);
+  assert.equal(result.data.toolCalls[1].retryOf, 'retry-1');
+  assert.equal(result.data.toolCalls[2].retryOf, 'retry-2');
+});

@@ -2599,8 +2599,9 @@
             toolsDetails.className = "tooltrace";
             toolsDetails.innerHTML = "<summary>🔧 工具调用（" + message.toolCalls.length + "）</summary><pre></pre>";
             toolsDetails.querySelector("pre").textContent = message.toolCalls.map(call => {
-              const status = call.result?.ok === false ? "失败" : "完成";
-              return `${call.name} · ${status}`;
+              const failed = call.ok === false || call.error || call.result?.ok === false;
+              const status = failed ? "失败" : "完成";
+              return `${call.name} · ${status}${failed && call.error?.message ? `：${call.error.message}` : ""}`;
             }).join("\n");
             row.appendChild(toolsDetails);
           }
