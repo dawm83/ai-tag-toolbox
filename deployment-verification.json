@@ -4,7 +4,7 @@
   "evidenceLocation": "Desktop package root, outside resources/app.asar",
   "desktopDirectory": "C:/Users/admin/Desktop/AI绘画Tag工具箱V1.4.335",
   "sourceBranch": "codex/unified-tag-library",
-  "implementationCommit": "pending",
+  "implementationCommit": "59891dd717a44f98f6fad2fad047a76849454f55",
   "scope": "Tag-only results use one text code block with a copy-all action",
   "checks": {
     "command": "npm run check",
