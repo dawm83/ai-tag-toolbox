@@ -4,7 +4,7 @@
   "evidenceLocation": "Desktop package root, outside resources/app.asar",
   "desktopDirectory": "C:/Users/admin/Desktop/AI绘画Tag工具箱V1.4.335",
   "sourceBranch": "codex/unified-tag-library",
-  "implementationCommit": "69ae069bb9f9bb4e39b645b8811b065b6d3f0e30",
+  "implementationCommit": "a0aabddbc5f1b69bc044eac8af3f8c9c953f80f8",
   "scope": "Respect user-provided character Tags, reset manual optimization rounds, and improve text selection/prompt copy/language behavior",
   "checks": {
     "command": "npm run check",
