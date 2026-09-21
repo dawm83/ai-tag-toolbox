@@ -182,14 +182,14 @@ test('original-character choice keeps confirmed identities and still asks about 
   assert.deepEqual(compile.input.characterReferences.map(item => item.id), ['known']);
 });
 
-test('confirmed character IDs take priority over redundant series queries and carry appearance into compilation', async () => {
+test('confirmed character IDs take priority and compilation receives identity only', async () => {
   const role = { id: 'hinanawi_tenshi', nameZh: '比那名居天子', seriesName: 'touhou', identityTags: ['hinanawi_tenshi', 'touhou'], generalTags: [{ en: 'blue hair' }], specificTags: [{ en: 'tenshi hat' }] };
   const app = harness({ resolveCharacter: async (value, context) => context.mode === 'id' && value === role.id ? role : { items: [{ id: 'hakurei_reimu' }, { id: 'kirisame_marisa' }] } });
   const result = await app.orchestrator.execute({ originalRequirements: '把图1里面的角色换成东方里面的天子', mode: 'recreate', sourceImageId: 'source-1', characterIds: [role.id], characterQueries: ['比那名居天子', 'hinanawi_tenshi', 'touhou'], strategy: 'quick' }, app.context);
   assert.equal(result.status, 'completed');
   assert.equal(result.sourceImageId, 'source-1');
   const compile = app.subagentCalls.find(call => call.name === 'generateTags');
-  assert.deepEqual(compile.input.characterReferences, [{ id: role.id, name: '比那名居天子', series: 'touhou', identityTags: ['hinanawi_tenshi', 'touhou'], generalTags: ['blue hair'], specificTags: ['tenshi hat'] }]);
+  assert.deepEqual(compile.input.characterReferences, [{ id: role.id, name: '比那名居天子', series: 'touhou', identityTags: ['hinanawi_tenshi', 'touhou'], generalTags: [], specificTags: [] }]);
 });
 
 test('invalid confirmed character IDs pause instead of silently generating without the character', async () => {
@@ -204,15 +204,38 @@ test('invalid confirmed character IDs pause instead of silently generating witho
   assert.deepEqual(app.subagentCalls.find(call => call.name === 'generateTags').input.characterReferences.map(role => role.id), ['valid']);
 });
 
-test('a unique name match loads the full character appearance before compiling Tags', async () => {
+test('a unique name match loads identity before compiling Tags', async () => {
   const app = harness({ resolveCharacter: async (value, context) => context.mode === 'id'
     ? { id: value, name: 'Tenshi', identityTags: ['hinanawi tenshi', 'touhou'], generalTags: [{ en: 'blue hair' }], specificTags: [{ en: 'peach hat' }] }
     : { items: [{ id: 'hinanawi_tenshi', name: 'Tenshi', seriesName: 'touhou' }] } });
   const result = await app.orchestrator.execute({ requirements: 'draw Tenshi', characterQueries: ['Tenshi'], strategy: 'quick' }, app.context);
   assert.equal(result.status, 'completed');
   const reference = app.subagentCalls.find(call => call.name === 'generateTags').input.characterReferences[0];
-  assert.deepEqual(reference.generalTags, ['blue hair']);
+  assert.deepEqual(reference.generalTags, []);
+  assert.deepEqual(reference.specificTags, []);
   assert.deepEqual(reference.identityTags, ['hinanawi tenshi', 'touhou']);
+});
+
+test('character library appearance tags never enter Tag compilation input', async () => {
+  const role = {
+    id: 'shimakaze_(kancolle)', nameZh: '岛风', seriesName: '艦隊これくしょん',
+    identityTags: ['shimakaze_(kancolle)', 'kancolle'],
+    generalTags: [{ en: 'red thighhighs' }, { en: 'white thighhighs' }],
+    specificTags: [{ en: 'shimakaze outfit' }]
+  };
+  const app = harness({
+    resolveCharacter: async (value, context) => context.mode === 'id' && value === role.id
+      ? role : { items: [{ id: role.id, nameZh: role.nameZh, seriesName: role.seriesName }] }
+  });
+  const result = await app.orchestrator.execute({
+    requirements: '生成穿紧身衣的岛风', characterQueries: ['岛风'], strategy: 'quick'
+  }, app.context);
+  assert.equal(result.status, 'completed');
+  const compile = app.subagentCalls.find(call => call.name === 'generateTags' && call.input.operation === 'compile');
+  assert.deepEqual(compile.input.characterReferences, [{
+    id: role.id, name: role.nameZh, series: role.seriesName,
+    identityTags: role.identityTags, generalTags: [], specificTags: []
+  }]);
 });
 
 test('character replacement keeps source composition but sends target references to compilation and evaluation', async () => {
@@ -243,11 +266,15 @@ test('character replacement keeps source composition but sends target references
   // the original outfit; they must be distinguishable from the target role.
   assert.deepEqual(blueprint.appearance, ['blonde hair']);
   assert.deepEqual(blueprint.clothing, ['cassock']);
-  assert.deepEqual(compile.input.characterReferences[0].generalTags, ['blue hair', 'red eyes', 'boots']);
+  assert.deepEqual(compile.input.characterReferences[0].generalTags, []);
+  assert.deepEqual(compile.input.characterReferences[0].specificTags, []);
   const review = calls.find(call => call.name === 'evaluateImages');
-  assert.deepEqual(review.input.brief.characterReferences, compile.input.characterReferences);
+  assert.deepEqual(review.input.brief.characterReferences, [{
+    id: role.id, name: role.nameZh, series: role.seriesName,
+    identityTags: role.identityTags, generalTags: ['blue hair', 'red eyes', 'boots'], specificTags: []
+  }]);
   assert.equal(review.input.brief.sourceReferenceRole, 'observations_before_requested_changes');
-  assert.equal(review.input.brief.characterReferencePolicy, 'adaptive_by_count_and_visible_crop');
+  assert.equal(review.input.brief.characterReferencePolicy, 'identity_only_for_tags_full_for_evaluation');
 });
 
 test('Tag agent can omit or remove reference appearances for the crop while reviews retain the full reference', async () => {

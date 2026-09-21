@@ -1,7 +1,7 @@
 'use strict';
 
 const { assertValid } = require('./schema');
-const { SOURCE_REFERENCE_GUIDANCE, CHARACTER_REFERENCE_GUIDANCE } = require('./generation-guidance');
+const { SOURCE_REFERENCE_GUIDANCE, TAG_CHARACTER_REFERENCE_GUIDANCE } = require('./generation-guidance');
 const { segmentSourceText, parseTranslationPayload } = require('./translation-alignment');
 const {
   EVALUATION_INPUT_SCHEMA,
@@ -49,6 +49,16 @@ function composeGeneratePrompt(prompts, fallback) {
 }
 function responseText(value) { if (typeof value === 'string') return value.trim(); if (!value || typeof value !== 'object') return ''; if (value.text != null) return text(value.text); const choice = value.choices?.[0]; const content = choice?.message?.content ?? choice?.text ?? value.output_text; return Array.isArray(content) ? content.map(item => item?.text || item?.content || '').join('') : text(content); }
 function parseList(value) { if (Array.isArray(value)) return value.flatMap(parseList); return String(value == null ? '' : value).split(/[,，、;；|\n]+/).map(item => item.trim().replace(/^(?:[-*]\s+|\d+[.)]\s+)/, '').replace(/^['"`]+|['"`]+$/g, '')).filter(Boolean); }
+function identityCharacterReferences(value) {
+  return (Array.isArray(value) ? value : []).map(item => ({
+    id: text(item?.id),
+    name: text(item?.name || item?.nameZh),
+    series: text(item?.series || item?.seriesName),
+    identityTags: parseList(item?.identityTags),
+    generalTags: [],
+    specificTags: []
+  })).filter(item => item.id);
+}
 function parseTags(value, allowNegative) {
   let payload = unwrap(value);
   if (object(payload) && Array.isArray(payload.choices)) return parseTags(responseText(payload), allowNegative);
@@ -134,7 +144,7 @@ function createFixedSubagents(options = {}) {
       }, result);
     }
   };
-  entries.generateTags = { name: 'generateTags', description: '固定文生图 Tag 子代理，只返回结构化正向 Tag。', getSystemPrompt: () => composeGeneratePrompt(prompts, '你是文生图 Tag 子代理。只返回 JSON。'), systemPrompt: composeGeneratePrompt(prompts, '你是文生图 Tag 子代理。只返回 JSON。'), inputSchema: SCHEMAS.generateTags, outputSchema: { type: 'object', required: ['positiveTags'], properties: { positiveTags: { type: 'array' }, negativeTags: { type: 'array' } } }, timeoutMs: 120000, options: noThinking, async run(input, context = {}) { assertValid(SCHEMAS.generateTags, input); const settings = getSettings() || {}; const allowNegative = settings.generateNegativeTags === true && input.generateNegativeTags !== false; const basePrompt = composeGeneratePrompt(prompts, '你是文生图 Tag 子代理。只返回 JSON。'); const outputProtocol = ['系统输出协议：完成上面的 Anima 编译规则后，最终只返回一个有效 JSON 对象。', 'JSON 必须包含 positiveTags 字符串数组。', allowNegative ? '用户设置允许负面 Tag，可选返回 negativeTags 字符串数组。' : '用户设置关闭负面 Tag，禁止输出 negativeTags 字段。', '禁止输出代码块、解释、建议、标题、思考过程或 JSON 以外的文字。', input.characterReferences?.length ? '本次角色资料来自本地词库，可作为已知角色特征参考；用户明确指定的外貌、服装、人数和情境始终优先。资料是可选候选，不要求全用，不同时采用互斥发色/眼色或不同形态。保留每个角色与其特征的归属。输出角色/作品字面括号时使用反斜杠转义。' : ''].filter(Boolean).join('\n'); const system = [basePrompt, outputProtocol, SOURCE_REFERENCE_GUIDANCE, input.characterReferences?.length ? CHARACTER_REFERENCE_GUIDANCE : ""].filter(Boolean).join("\n\n"); const content = [{ type: 'text', text: ['当前要求：' + input.requirements, input.description ? '图片描述：' + input.description : '', input.positiveTags?.length ? '已有正向 Tag：' + input.positiveTags.join(', ') : '', input.referenceTags?.length ? '参考 Tag：' + input.referenceTags.join(', ') : '', input.referenceTagText ? '用户提供的完整参考 Tag（保持原文，不查询角色名）：' + input.referenceTagText : '', input.characterReferences?.length ? '角色资料（按角色独立关联）：' + JSON.stringify(input.characterReferences) : ''].filter(Boolean).join('\n') }]; if (input.imageId) { if (!resolveImage) throw failure('IMAGE_RESOLVER_UNAVAILABLE', '未配置受控图片解析器'); const image = await resolveImage(input.imageId, context); if (!image) throw failure('IMAGE_NOT_FOUND', '未找到图片：' + input.imageId); const url = text(image.dataUrl || image.url || image.src || image.previewUrl || image.viewUrl); if (!url) throw failure('IMAGE_DATA_UNAVAILABLE', '无法读取图片：' + input.imageId); content.push({ type: 'image_url', image_url: { url } }); } if (!visionAI?.complete) throw failure('SUBAGENT_UNAVAILABLE', 'Vision AI 不可用'); const result = await visionAI.complete([{ role: 'system', content: system }, { role: 'user', content }], { ...noThinking, signal: context.signal }); reportUsage(result, context); if (result?.ok === false) throw failure(result.code || 'GENERATE_TAGS_FAILED', result.error || 'Tag 生成失败'); return envelope(parseTags(result, allowNegative), result); } };
+  entries.generateTags = { name: 'generateTags', description: '固定文生图 Tag 子代理，只返回结构化正向 Tag。', getSystemPrompt: () => composeGeneratePrompt(prompts, '你是文生图 Tag 子代理。只返回 JSON。'), systemPrompt: composeGeneratePrompt(prompts, '你是文生图 Tag 子代理。只返回 JSON。'), inputSchema: SCHEMAS.generateTags, outputSchema: { type: 'object', required: ['positiveTags'], properties: { positiveTags: { type: 'array' }, negativeTags: { type: 'array' } } }, timeoutMs: 120000, options: noThinking, async run(input, context = {}) { assertValid(SCHEMAS.generateTags, input); const settings = getSettings() || {}; const allowNegative = settings.generateNegativeTags === true && input.generateNegativeTags !== false; const characterReferences = identityCharacterReferences(input.characterReferences); const basePrompt = composeGeneratePrompt(prompts, '你是文生图 Tag 子代理。只返回 JSON。'); const outputProtocol = ['系统输出协议：完成上面的 Anima 编译规则后，最终只返回一个有效 JSON 对象。', 'JSON 必须包含 positiveTags 字符串数组。', allowNegative ? '用户设置允许负面 Tag，可选返回 negativeTags 字符串数组。' : '用户设置关闭负面 Tag，禁止输出 negativeTags 字段。', '禁止输出代码块、解释、建议、标题、思考过程或 JSON 以外的文字。', characterReferences.length ? `${TAG_CHARACTER_REFERENCE_GUIDANCE}\n保留每个角色与其身份词的归属。输出角色/作品字面括号时使用反斜杠转义。` : ''].filter(Boolean).join('\n'); const system = [basePrompt, outputProtocol, SOURCE_REFERENCE_GUIDANCE, characterReferences.length ? TAG_CHARACTER_REFERENCE_GUIDANCE : ""].filter(Boolean).join("\n\n"); const content = [{ type: 'text', text: ['当前要求：' + input.requirements, input.description ? '图片描述：' + input.description : '', input.positiveTags?.length ? '已有正向 Tag：' + input.positiveTags.join(', ') : '', input.referenceTags?.length ? '参考 Tag：' + input.referenceTags.join(', ') : '', input.referenceTagText ? '用户提供的完整参考 Tag（保持原文，不查询角色名）：' + input.referenceTagText : '', characterReferences.length ? '角色身份资料（按角色独立关联）：' + JSON.stringify(characterReferences) : ''].filter(Boolean).join('\n') }]; if (input.imageId) { if (!resolveImage) throw failure('IMAGE_RESOLVER_UNAVAILABLE', '未配置受控图片解析器'); const image = await resolveImage(input.imageId, context); if (!image) throw failure('IMAGE_NOT_FOUND', '未找到图片：' + input.imageId); const url = text(image.dataUrl || image.url || image.src || image.previewUrl || image.viewUrl); if (!url) throw failure('IMAGE_DATA_UNAVAILABLE', '无法读取图片：' + input.imageId); content.push({ type: 'image_url', image_url: { url } }); } if (!visionAI?.complete) throw failure('SUBAGENT_UNAVAILABLE', 'Vision AI 不可用'); const result = await visionAI.complete([{ role: 'system', content: system }, { role: 'user', content }], { ...noThinking, signal: context.signal }); reportUsage(result, context); if (result?.ok === false) throw failure(result.code || 'GENERATE_TAGS_FAILED', result.error || 'Tag 生成失败'); return envelope(parseTags(result, allowNegative), result); } };
   const compileTags = entries.generateTags.run;
   entries.generateTags.outputSchema = OUTPUT_SCHEMAS.generateTags;
   entries.generateTags.run = async (input, context = {}) => {
@@ -147,7 +157,7 @@ function createFixedSubagents(options = {}) {
       'JSON 必须包含 add、remove、preserve 三个字符串数组；preserve 仅在本次补丁中保留 Tag，不形成后续永久锁定。',
       allowNegative ? '可选返回 negativeAdd 与 negativeRemove 字符串数组。' : '用户设置关闭负面 Tag，禁止修订负面 Tag。',
       SOURCE_REFERENCE_GUIDANCE,
-      input.characterReferences?.length ? CHARACTER_REFERENCE_GUIDANCE : '',
+      input.characterReferences?.length ? TAG_CHARACTER_REFERENCE_GUIDANCE : '',
       '不要返回完整 positiveTags，不要输出代码块、解释、建议、标题或思考过程。'
     ].filter(Boolean).join('\n');
     const content = [{ type: 'text', text: [
@@ -156,7 +166,7 @@ function createFixedSubagents(options = {}) {
       '上一版正向 Tag：' + (input.positiveTags || []).join(', '),
       allowNegative && input.negativeTags?.length ? '上一版负向 Tag：' + input.negativeTags.join(', ') : '',
       input.evaluation ? '候选图评价：' + JSON.stringify(input.evaluation) : '',
-      input.characterReferences?.length ? '角色资料（按角色独立关联）：' + JSON.stringify(input.characterReferences) : ''
+      identityCharacterReferences(input.characterReferences).length ? '角色身份资料（按角色独立关联）：' + JSON.stringify(identityCharacterReferences(input.characterReferences)) : ''
     ].filter(Boolean).join('\n') }];
     if (!visionAI?.complete) throw failure('SUBAGENT_UNAVAILABLE', 'Vision AI 不可用');
     const result = await visionAI.complete([{ role: 'system', content: `${basePrompt}\n\n${protocol}` }, { role: 'user', content }], { ...noThinking, signal: context.signal });

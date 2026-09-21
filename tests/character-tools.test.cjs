@@ -51,8 +51,8 @@ test('role IDs resolve into attributed references before the generation subagent
   assert.equal(result.ok, true, JSON.stringify(result));
   const text = messages[1].content[0].text;
   assert.match(text, /"id":"alice"/);
-  assert.match(text, /story academy uniform/);
-  assert.match(text, /blue hair/);
+  assert.doesNotMatch(text, /story academy uniform/);
+  assert.doesNotMatch(text, /blue hair/);
   assert.match(messages[0].content, /用户.*优先/);
   assert.equal((await tools.call('agent.generateTags', { requirements: 'x', characterIds: ['missing'] })).error.code, 'CHARACTER_NOT_FOUND');
   assert.equal((await tools.call('agent.generateTags', { requirements: 'x', characterReferences: [] })).error.code, 'INVALID_INPUT');

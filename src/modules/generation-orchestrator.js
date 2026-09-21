@@ -57,6 +57,16 @@ function strings(value, limit = 256) {
 function characterKey(value) {
   return text(value).normalize('NFKC').toLowerCase().replace(/_/g, ' ').replace(/\s+/g, ' ');
 }
+function identityCharacterReferences(value) {
+  return (Array.isArray(value) ? value : []).map(item => ({
+    id: text(item?.id),
+    name: text(item?.name || item?.nameZh),
+    series: text(item?.series || item?.seriesName),
+    identityTags: strings(item?.identityTags),
+    generalTags: [],
+    specificTags: []
+  })).filter(item => item.id);
+}
 function failure(code, message) { return Object.assign(new Error(message), { code }); }
 function errorValue(error) {
   if (error?.error && typeof error.error === 'object') return errorValue(error.error);
@@ -503,7 +513,7 @@ function createGenerationOrchestrator(options = {}) {
       characterIds: job.characterIds.slice(),
       ...(job.characterReferences.length ? {
         characterReferences: clone(job.characterReferences),
-        characterReferencePolicy: 'adaptive_by_count_and_visible_crop'
+        characterReferencePolicy: 'identity_only_for_tags_full_for_evaluation'
       } : {}),
       ...(job.mode === 'recreate' ? { sourceReferenceRole: 'observations_before_requested_changes' } : {}),
       visualBlueprint: clone(job.visualBlueprint || {})
@@ -514,13 +524,14 @@ function createGenerationOrchestrator(options = {}) {
   async function compile(job, context) {
     if (job.positiveTags.length) return true;
     transition(job, 'compiling');
+    const characterReferences = identityCharacterReferences(job.characterReferences);
     const value = await callAgent(job, context, 'generateTags', {
       operation: 'compile',
       requirements: job.requirements,
       description: blueprintText(job.visualBlueprint),
       ...(job.referenceTags ? { referenceTagText: job.referenceTags } : {}),
       ...(job.sourceImageId ? { imageId: job.sourceImageId } : {}),
-      ...(job.characterReferences.length ? { characterReferences: job.characterReferences } : {})
+      ...(characterReferences.length ? { characterReferences } : {})
     }, 'prompt_compile');
     job.positiveTags = strings(value?.positiveTags || value?.tags);
     job.negativeTags = strings(value?.negativeTags);
@@ -580,6 +591,7 @@ function createGenerationOrchestrator(options = {}) {
     if (!force && evaluation.verdict === 'accept') return { ok: false, reason: 'no_revision_needed' };
     transition(job, 'revising');
     const previousPromptKey = promptFingerprint(job.positiveTags, job.negativeTags);
+    const characterReferences = identityCharacterReferences(job.characterReferences);
     try {
       let patch = await callAgent(job, context, 'generateTags', {
         operation: 'revise',
@@ -588,7 +600,7 @@ function createGenerationOrchestrator(options = {}) {
         positiveTags: job.positiveTags,
         negativeTags: job.negativeTags,
         evaluation: clone(evaluation),
-        ...(job.characterReferences.length ? { characterReferences: job.characterReferences } : {})
+        ...(characterReferences.length ? { characterReferences } : {})
       }, 'prompt_revision');
       const patchOptions = { negativeEnabled: getSettings()?.generateNegativeTags === true, allowedPositiveNegations: ['no humans'] };
       let next = applyPromptPatch(job, patch, patchOptions);
@@ -600,7 +612,7 @@ function createGenerationOrchestrator(options = {}) {
           positiveTags: job.positiveTags,
           negativeTags: job.negativeTags,
           evaluation: { ...clone(evaluation), patchValidation: { rejected: next.rejected, warnings: next.warnings } },
-          ...(job.characterReferences.length ? { characterReferences: job.characterReferences } : {})
+          ...(characterReferences.length ? { characterReferences } : {})
         }, 'prompt_patch_repair', false);
         next = applyPromptPatch(job, patch, patchOptions);
       }

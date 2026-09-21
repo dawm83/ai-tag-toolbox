@@ -17,4 +17,10 @@ const CHARACTER_REFERENCE_GUIDANCE = [
   '评价建议若与用户要求或目标角色资料冲突，先核对并忽略错误建议；不得用原图人物的外貌重新解释目标角色，也不得仅为了更像原图而撤销用户要求的替换。此前评价是意见，不是角色事实来源。'
 ].join('\n');
 
-module.exports = { SOURCE_REFERENCE_GUIDANCE, CHARACTER_REFERENCE_GUIDANCE };
+const TAG_CHARACTER_REFERENCE_GUIDANCE = [
+  '【Tag 编译角色资料边界】',
+  '本次 characterReferences 只用于确认角色身份、作品归属和身份 Tag；generalTags 与 specificTags 为空或被忽略。',
+  '角色库默认服装、袜子、发色、眼色和配件不是本次绘图要求，不得自动补入正向 Tag。用户明确指定的外貌、服装、人数和情境始终优先。'
+].join('\n');
+
+module.exports = { SOURCE_REFERENCE_GUIDANCE, CHARACTER_REFERENCE_GUIDANCE, TAG_CHARACTER_REFERENCE_GUIDANCE };

@@ -63,6 +63,16 @@ function publicTag(row, attachedData = {}, budget = { remaining: 16000 }) {
   return item;
 }
 const boundedWords = rows => (Array.isArray(rows) ? rows : []).filter(word => typeof word === 'string' && word.length > 0 && word.length <= 1000).slice(0, 256);
+function identityCharacterReference(role) {
+  return {
+    id: role.id,
+    name: role.nameZh || role.name,
+    series: role.seriesName,
+    identityTags: boundedWords(role.identityTags),
+    generalTags: [],
+    specificTags: []
+  };
+}
 function publicCharacter(role) {
   const result = { id: role.id, identityTags: boundedWords(role.identityTags), generalTags: [], specificTags: [] };
   for (const key of ['identityTagId', 'name', 'nameZh', 'seriesId', 'seriesName', 'trigger']) if (typeof role[key] === 'string') result[key] = role[key];
@@ -182,7 +192,7 @@ function createPrimaryTools(options = {}) {
         const characterReferences = [...new Set(args.characterIds)].map(id => {
           const role = options.characters.get(id, { includeAdult });
           if (!role) throw failure('CHARACTER_NOT_FOUND', '角色不存在或当前不可用：' + id);
-          return { id: role.id, name: role.nameZh || role.name, series: role.seriesName, identityTags: role.identityTags, generalTags: role.generalTags.map(t => t.en), specificTags: role.specificTags.map(t => t.en) };
+          return identityCharacterReference(role);
         });
         return subagent('generateTags', { ...args, characterReferences }, context);
       }
