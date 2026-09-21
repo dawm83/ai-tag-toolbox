@@ -2524,7 +2524,7 @@
             : null;
           const drawPrompt = drawReply
             ? candidateRows.length
-              ? (message.result?.finalPrompt || ((message.result?.finalCandidateId || message.result?.selectedCandidateId) ? message.result?.prompt : ""))
+              ? (message.result?.finalPrompt || candidatesPrompt(candidateRows, message.result?.finalCandidateId || message.result?.selectedCandidateId) || message.result?.prompt)
               : message.result?.prompt || parsedDraw?.prompt
             : "";
           const bodyText = drawReply && (candidateRows.length || drawPrompt) ? "" : message.text || "";
@@ -2570,14 +2570,20 @@
             });
             if (gallery.childElementCount) row.appendChild(gallery);
           }
-          if (messageHasRender(message) && message.role === "assistant" && drawPrompt) {
+          if (messageHasRender(message) && message.role === "assistant" && (drawPrompt || candidateRows.length)) {
             const final = doc.createElement("pre");
             final.className = "genout";
             const negative = candidateRows.length
               ? message.result?.finalNegative || message.result?.negative || ""
               : message.result?.negative || parsedDraw?.negative || "";
-            final.textContent = `【最终提示词】\n${drawPrompt}${negative ? `\n\n【负面提示词】\n${negative}` : ""}`;
-            row.appendChild(final);
+            const resolvedPrompt = drawPrompt || candidatesPrompt(candidateRows, message.result?.finalCandidateId || message.result?.selectedCandidateId) || candidateRows.map(candidate => str(candidate?.prompt)).filter(Boolean).join("\n");
+            const finalText = `【最终提示词】\n${resolvedPrompt}${negative ? `\n\n【负面提示词】\n${negative}` : ""}`;
+            const copyFinal = doc.createElement("button"); copyFinal.type = "button"; copyFinal.className = "draw-final-copy btn btn-secondary"; copyFinal.textContent = "📋 复制最终提示词";
+            copyFinal.onclick = async () => { if (await copy(finalText)) notify("已复制最终提示词"); };
+            const wrapper = doc.createElement("section"); wrapper.className = "draw-final-prompt"; wrapper.append(copyFinal, final); row.append(wrapper);
+            if (candidateRows.length) {
+              const legacyFinal = final.cloneNode(true); legacyFinal.className = "genout draw-final-legacy"; legacyFinal.textContent = resolvedPrompt + (negative ? `\n\n【负面提示词】\n${negative}` : ""); row.appendChild(legacyFinal);
+            }
           }
           if (Array.isArray(message.toolCalls) && message.toolCalls.length) {
             const toolsDetails = doc.createElement("details");
@@ -2883,6 +2889,10 @@
       const negative = str(candidate?.negative);
       return `${prompt}${negative ? `\n\n【负面提示词】\n${negative}` : ""}`;
     }
+    function candidatesPrompt(candidates, selectedId = "") {
+      const selected = (Array.isArray(candidates) ? candidates : []).find(candidate => candidate?.id === selectedId) || (Array.isArray(candidates) ? candidates : []).find(candidate => candidate?.selected || candidate?.evaluation?.recommended) || candidates?.[0];
+      return str(selected?.prompt);
+    }
     function activityLabel(item) {
       if (item.type === "task.routed") return "本轮任务：" + ({ search_tags: "搜索 Tag", analyze_image: "分析图片", compile_tags: "生成 Tag", answer: "直接回答", translate: "翻译", create_image: "生成图片", recreate_image: "复刻图片", auto: "结合上下文判断" }[item.intent] || item.intent);
       if (item.type === "task.answering") return item.status === "failed" ? "任务未能完成，正在说明原因" : "工具结果已取得，正在整理答复";
@@ -2987,6 +2997,13 @@
       const selectedId = str(message.result?.finalCandidateId || message.result?.selectedCandidateId);
       const host = doc.createElement("div");
       host.className = "draw-candidates";
+      const finalCandidate = candidates.find(candidate => candidate?.id === selectedId) || candidates.find(candidate => candidate?.selected || candidate?.evaluation?.recommended) || candidates[0];
+      if (finalCandidate?.prompt) {
+        const final = doc.createElement("pre");
+        final.className = "genout draw-final-candidate";
+        final.textContent = finalCandidate.prompt + (finalCandidate.negative ? `\n\n【负面提示词】\n${finalCandidate.negative}` : "");
+        host.appendChild(final);
+      }
       const outcome = str(message.result?.outcome);
       const recreationMode = str(message.result?.recreationMode);
       const aspectRatioMode = str(message.result?.aspectRatioMode);

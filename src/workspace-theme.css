@@ -19,6 +19,8 @@ body {
   --message-action-hover:var(--well); --code-bg:var(--well);
   font-size:13px; letter-spacing:0;
 }
+::selection { background: #a9b9ff; color: #17245d; }
+body.dark ::selection { background: #5a6fd0; color: #fff; }
 body.dark {
   --bg:#14171c; --card:#1c2027; --well:#252b35; --ai-bg:var(--bg);
   --border:#2c333e; --border2:#3c4654; --control-border:#59677b; --text:#e8ebf1; --muted:#a0aaba;

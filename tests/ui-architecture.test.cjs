@@ -72,6 +72,17 @@ test('tool trace renders runtime failures from the trace envelope', () => {
   assert.match(app, /call\.ok\s*===\s*false\s*\|\|\s*call\.error/);
 });
 
+test('text selection and final prompt controls remain usable in the conversation UI', () => {
+  const app = fs.readFileSync(path.join(root, 'src', 'app-view.js'), 'utf8');
+  const css = fs.readFileSync(path.join(root, 'src', 'app.css'), 'utf8');
+  const theme = fs.readFileSync(path.join(root, 'src', 'workspace-theme.css'), 'utf8');
+  assert.match(app, /draw-final-copy/);
+  assert.match(app, /draw-final-candidate/);
+  assert.match(css, /\.talkin textarea[^}]*cursor:text/);
+  assert.match(css, /\.genout[^}]*user-select:text/);
+  assert.match(theme, /::selection\s*\{[^}]*background/);
+});
+
 test('preload exposes the scoped final-selection command', () => {
   const preload = fs.readFileSync(path.join(root, 'preload.js'), 'utf8');
   assert.match(preload, /selectGenerationFinal:\s*assistant\.selectGenerationFinal/);
