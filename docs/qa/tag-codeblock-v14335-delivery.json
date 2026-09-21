@@ -1,0 +1,19 @@
+{
+  "version": "1.4.335",
+  "desktopDirectory": "C:/Users/admin/Desktop/AI绘画Tag工具箱V1.4.335",
+  "buildSourceCommit": "ebb5818c8a427e2db508c775a1e3a5fa5351324c",
+  "filesVerified": 4202,
+  "archiveSha256": "d7f87b253930367197f9e33a246bf9769e2162a0853212047541ab08400fc273",
+  "checks": {
+    "command": "npm run check",
+    "testsPassed": 636,
+    "testsFailed": 0,
+    "slowUiSmokeRun": false
+  },
+  "versionedExecutable": "C:\\Users\\admin\\Desktop\\AI绘画Tag工具箱V1.4.335\\AI绘画Tag工具箱V1.4.335.exe",
+  "verifiedAt": "2026-09-21T10:37:40.160Z",
+  "manualAcceptance": "Pending",
+  "liveProviderVerified": false,
+  "published": false,
+  "pushed": false
+}
