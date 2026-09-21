@@ -1,5 +1,7 @@
 # Agent 绘图闭环与任务可见性 Implementation Plan
 
+> 后续用户已调整优先级。当前实施和进度请读 [意图路由与最短流程计划](2026-09-21-intent-routing.md)。本文件保留原始设计；Task 1 的顺序多调用和失败回传、Task 2 的次数限制/失败文字已提交，但完整失败分类和并行执行仍未实现。下文未勾选项不代表已交付。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 在保持现有会话、图片仓库和生成状态机兼容的前提下，建立可恢复、可验证、可解释的 Agent 绘图闭环。
