@@ -1,39 +1,24 @@
 {
-  "version": "1.4.332",
+  "version": "1.4.334",
   "buildEvidenceFile": "build-info.json",
   "evidenceLocation": "Desktop package root, outside resources/app.asar",
-  "desktopDirectory": "C:/Users/admin/Desktop/AI绘画Tag工具箱V1.4.332",
+  "desktopDirectory": "C:/Users/admin/Desktop/AI绘画Tag工具箱V1.4.334",
   "sourceBranch": "codex/unified-tag-library",
-  "baseCommit": "f2cdd3ec6e8fc8cbb07316fbae6e8e9588e909a2",
-  "scope": "Classify all 2144 WD general records into existing taxonomy with stable IDs, references, user overrides and verified base upgrade records",
+  "implementationCommit": "ac099be",
+  "scope": "Intent routing, scoped primary tools, original user requests, answer phase and paired tool receipts",
   "checks": {
     "command": "npm run check",
-    "testsPassed": 617,
+    "testsPassed": 636,
     "testsFailed": 0,
-    "realElectronWindow": "Pending manual acceptance per project instructions",
-    "domRegression": "617 tests, including complete model taxonomy coverage, exact prompt/reference preservation, old corpus upgrade, custom taxonomy override preservation and adult filtering",
+    "realElectronWindow": "Pending user acceptance; slow launch tests skipped per AGENTS.md",
     "realAiOrComfyGeneration": false,
-    "iconCoverage": "27 built-in categories and All mapped to existing local SVG symbols; sprite parsed successfully",
-    "desktopIntegrity": "Full file inventory, sizes and SHA-256 must match the complete staging package before delivery",
-    "generatedAssets": "node scripts/build-unified-tags.mjs --check",
-    "taxonomy": {
-      "classified": 2144,
-      "remaining": 0,
-      "categories": 21,
-      "subcategories": 101,
-      "adultPromotions": 112,
-      "tagCount": 53707
-    },
-    "userDataSimulation": "Current user document was read and upgraded in memory only; original file bytes unchanged"
+    "desktopIntegrity": "Verify all maintained sources against both mirrors and app.asar; preserve runtime dependencies, model files and versioned executable"
   },
   "knownLimits": [
-    "Actual Windows rendering and desktop interaction require manual acceptance; no real-user files were migrated in this task.",
-    "Launcher compatibility without CORS flags still requires a real ComfyUI manual test.",
-    "The original default fetch also reached the isolated Electron fixture; CORS is not proven as the sole cause of the original failure.",
-    "Unknown prompt submission outcomes require checking the ComfyUI queue before starting another job.",
-    "646 character-specific terms and some character/skin names still need verified Chinese translations.",
-    "Old versions cannot read or synchronize edits from tag-library-v2.json.",
-    "Some existing Chinese translations remain ambiguous; this change assigns taxonomy by the original tag meaning without renaming those translations."
+    "Unknown, mixed and contextual requests use the existing primary agent decision path.",
+    "Image payload checks and rollback, local tag based first recreation, and improved evaluation loops are pending later stages.",
+    "Tags generation reuses the existing tags-only generation workflow in this phase.",
+    "Existing ComfyUI disconnect preference behavior remains pending a later change."
   ],
   "published": false,
   "pushed": false
