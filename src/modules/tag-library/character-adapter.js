@@ -20,13 +20,16 @@ function createCharacterAdapter({ library, characterSource } = {}) {
       fallback: Boolean(row.fallback), ...(typeof row.sourceKey === 'string' ? { sourceKey: row.sourceKey } : {}), ...(Number.isFinite(row.order) ? { order: row.order } : {}) });
   }
   const metadata = object(characterSource.manifest) ? clone(characterSource.manifest) : {};
-  let index = null; const recordCache = new Map(), pageCache = new Map();
+  let index = null; const recordCache = new Map(), pageCache = new Map(), seriesCache = new Map();
+  let seriesRevision = 0;
   const unsubscribe = library.subscribe(change => {
-    if (change.changedCharacterIds.length) {
+    if (change.changedCharacterIds.length || change.changedTagIds?.length || change.structureChanged) {
       for (const id of change.changedCharacterIds) recordCache.delete(id);
       index = null;
+      seriesRevision += 1;
+      seriesCache.clear();
     }
-    if (change.changedCharacterIds.length || change.structureChanged) pageCache.clear();
+    if (change.changedCharacterIds.length || change.changedTagIds?.length || change.structureChanged) pageCache.clear();
   });
   function unresolved(characterId, tagId, field) {
     throw Object.assign(new Error(`角色引用未解析：${characterId} / ${field}`), { code: 'UNRESOLVED_REFERENCE', fields: [`character.${characterId}.${field}`], characterId, tagId });
@@ -84,16 +87,23 @@ function createCharacterAdapter({ library, characterSource } = {}) {
     return { items: rows.slice(offset, offset + limit).map(entry => summary(entry.row, settings)), total: rows.length, offset, limit, hasMore: offset + limit < rows.length, revision: library.revision() };
   }
   function series(settings = {}) {
-    const query = normalize(settings.query), rows = new Map();
+    const query = normalize(settings.query), includeAdult = Boolean(settings.includeAdult), limit = Math.min(500, Math.max(1, Number(settings.limit) || 100));
+    const key = JSON.stringify([seriesRevision, query, includeAdult, settings.seriesId || '', limit]);
+    const cached = seriesCache.get(key);
+    if (cached) return cached.map(row => ({ ...row }));
+    const rows = new Map();
     for (const row of indexed()) {
-      if (!visible(row.identity, settings) || (query && !row.identity.searchable)) continue;
+      if (!visible(row.identity, { ...settings, includeAdult }) || (query && !row.identity.searchable)) continue;
       for (const tag of row.series) {
-        if (!visible(tag, settings) || (query && (!tag.searchable || ![tag.content, tag.displayName, ...tag.aliases].some(value => normalize(value).includes(query))))) continue;
+        if (!visible(tag, { ...settings, includeAdult }) || (query && (!tag.searchable || ![tag.content, tag.displayName, ...tag.aliases].some(value => normalize(value).includes(query))))) continue;
         const item = rows.get(tag.id) || { id: tag.id, name: tag.displayName, content: tag.content, count: 0 };
         item.count++; rows.set(tag.id, item);
       }
     }
-    return [...rows.values()].sort((a, b) => b.count - a.count || a.id.localeCompare(b.id)).slice(0, Math.min(500, Math.max(1, Number(settings.limit) || 100)));
+    const result = [...rows.values()].sort((a, b) => b.count - a.count || a.id.localeCompare(b.id)).slice(0, limit);
+    if (library.status().ready) seriesCache.set(key, result);
+    if (seriesCache.size > 32) seriesCache.delete(seriesCache.keys().next().value);
+    return result.map(row => ({ ...row }));
   }
   async function edit(id, input, options) {
     if (!object(input)) return fail('INVALID_FIELD', '角色编辑字段必须为对象');

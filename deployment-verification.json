@@ -1,14 +1,14 @@
 {
-  "version": "1.4.339",
+  "version": "1.4.342",
   "buildEvidenceFile": "build-info.json",
   "evidenceLocation": "Desktop package root, outside resources/app.asar",
-  "desktopDirectory": "C:/Users/admin/Desktop/AI绘画Tag工具箱V1.4.339",
+  "desktopDirectory": "C:/Users/admin/Desktop/AI绘画Tag工具箱V1.4.342",
   "sourceBranch": "codex/drawing-feedback",
   "sourceCommitEvidence": "build-info.json.sourceCommit",
-  "scope": "Route natural-language feedback back to the original generation job, preserve untouched prompt content, and require explicit targets for multiple candidates",
+  "scope": "Local-only performance and redundancy reduction while preserving generation continuation and prompt behavior",
   "checks": {
     "command": "npm run check",
-    "testsPassed": 660,
+    "testsPassed": 671,
     "testsFailed": 0,
     "realElectronWindow": "Pending user acceptance; slow launch tests skipped per AGENTS.md",
     "realAiOrComfyGeneration": false,
