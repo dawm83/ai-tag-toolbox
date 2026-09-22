@@ -367,7 +367,7 @@
     }
     function renderHealth() {
       const node = host.querySelector('[data-favorite-health]'); if (!node) return;
-      const snapshot = safeCall('snapshot') || {}; const messages = [];
+      const snapshot = safeCall('health') || {}; const messages = [];
       if (snapshot.loadError) messages.push(`${label('favorites.loadError', '收藏数据加载失败，已阻止覆盖')}：${string(snapshot.loadError.message)}`);
       const report = snapshot.migrationReport;
       if (report?.counts && report.total) messages.push(`已保留档案 ${report.counts.archive} · 保留说明 ${report.counts.retained} · 需处理 ${report.counts.actionable}`);
@@ -383,7 +383,7 @@
       const content = el('section', 'favorite-series'); content.dataset.favoriteSeries = series.id;
       content.style.setProperty('--favorite-accent', string(series.color, 'var(--pri)')); content.setAttribute('aria-label', series.name);
       const selected = allSelectedIds(); const columns = columnsFor(series.id);
-      columns.filter(section => !hiddenSections().has(section.id)).forEach(section => content.append(renderColumn(series, section, selected, false)));
+      columns.filter(section => !hiddenSections().has(section.id)).forEach((section, index) => content.append(renderColumn(series, section, selected, index >= INITIAL_COLUMNS)));
       if (columns.length && !content.childElementCount) content.append(el('p', 'favorites-empty', label('favorites.allColumnsHidden', '标签栏已隐藏，点击上方眼睛按钮恢复显示')));
       if (!columns.length) content.append(el('p', 'favorites-empty', label('favorites.emptySection', '此收藏页暂无标签栏')));
       shelf.append(content); setupColumnLoading();

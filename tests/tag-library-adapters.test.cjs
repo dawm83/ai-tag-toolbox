@@ -148,6 +148,16 @@ test('not-ready adapters expose empty synchronous views and preserve readiness e
   release(); await h.ready; assert.equal(tags.isLoaded(), true); assert.ok(tags.get('blue_hair'));
 });
 
+test('favorite health exposes only the lightweight readiness and migration summary', async () => {
+  const h = await setup(); await favorite(h.favorites);
+  const health = h.favorites.health();
+  assert.deepEqual(Object.keys(health).sort(), ['loadError', 'migrationReport', 'ready', 'revision', 'writable']);
+  assert.equal(health.ready, true); assert.equal(health.writable, true); assert.equal(health.revision, h.library.revision());
+  assert.equal(health.loadError, null); assert.equal(health.migrationReport.total, 0);
+  assert.deepEqual(Object.keys(health.migrationReport).sort(), ['counts', 'total']);
+  assert.equal(Object.hasOwn(health, 'document'), false); assert.equal(Object.hasOwn(health.migrationReport, 'items'), false);
+});
+
 test('legacy taxonomy names resolve to current IDs and missing names fail without writes', async () => {
   const h = await setup();
   const changed = await h.tags.edit('blue_hair', { subcategory: '形状' });

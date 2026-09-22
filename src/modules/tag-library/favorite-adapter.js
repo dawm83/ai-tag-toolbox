@@ -153,12 +153,28 @@ function createFavoriteAdapter({ library } = {}) {
     const checked = checkedEntries(ids); if (!checked.ok) return checked;
     return run({ type: 'markCopied', tagIds: [...new Set(checked.data.map(row => row.tagId))] }, options);
   }
+  function health() {
+    const state = library.status() || {};
+    let migrationReport = null;
+    try {
+      const report = library.getMigrationReport({ offset: 0, limit: 1 });
+      if (report) migrationReport = { counts: { ...(report.counts || {}) }, total: Number(report.total) || 0 };
+    } catch { /* health must remain a cheap best-effort summary */ }
+    return {
+      ready: state.ready === true,
+      writable: state.writable === true,
+      revision: library.revision(),
+      loadError: state.error ? { ...state.error } : null,
+      migrationReport
+    };
+  }
   const favoriteMemberCount = row => !row?.rawText?.trim() ? null : row.kind === 'tag' ? 1 : row.kind === 'bundle' ? (() => {
     const segmented = segmentSourceText(row.rawText); return segmented.granularity === 'tag' ? segmented.sourceUnits.length : null;
   })() : null;
   return Object.freeze({
     dispose: unsubscribe,
     ready: () => library.ready(), status: () => library.status(), series, sections, getEntry, list, search, saveEntry, saveSeries, saveSection,
+    health,
     snapshot: () => ({ document: { format: 'ai-tag-favorites', version: 1, revision: library.revision(), series: series(), sections: sections(), entries: rows() },
       revision: library.revision(), status: library.status(), loadError: library.status().error, migrationReport: library.getMigrationReport() }),
     applyBatch, duplicateEntries, setSeriesColors,
