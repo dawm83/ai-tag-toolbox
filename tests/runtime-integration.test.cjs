@@ -133,9 +133,8 @@ test('generateTags compile returns full Tags and revise returns a bounded identi
   } });
   assert.deepEqual(revised.data, { add: ['from side'], remove: ['front view'], preserve: ['blue hair'], negativeAdd: ['bad anatomy'], negativeRemove: [] });
   assert.match(messagesSeen[1][0].content, /add.*remove.*preserve/s);
-  assert.match(messagesSeen[1][0].content, /Tag 编译角色资料边界.*身份 Tag/s);
-  assert.match(messagesSeen[1][0].content, /角色库默认服装.*不得自动补入正向 Tag/s);
-  assert.doesNotMatch(messagesSeen[1][0].content, /角色资料.*参考.*人数.*景别.*可见/s);
+  assert.match(messagesSeen[1][1].content[0].text, /本轮修改：侧身/);
+  assert.doesNotMatch(messagesSeen[1][1].content[0].text, /target|boots|score|characterReferences/);
   assert.match(messagesSeen[1][1].content[0].text, /上一版正向 Tag.*blue hair/s);
 });
 

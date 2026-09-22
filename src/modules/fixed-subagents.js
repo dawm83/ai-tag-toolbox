@@ -1,7 +1,7 @@
 'use strict';
 
 const { assertValid } = require('./schema');
-const { SOURCE_REFERENCE_GUIDANCE, TAG_CHARACTER_REFERENCE_GUIDANCE } = require('./generation-guidance');
+
 const { segmentSourceText, parseTranslationPayload } = require('./translation-alignment');
 const {
   EVALUATION_INPUT_SCHEMA,
@@ -14,7 +14,7 @@ const characterReferenceSchema = { type: 'object', additionalProperties: false, 
 const SCHEMAS = Object.freeze({
   vision: { type: 'object', additionalProperties: false, required: ['imageId', 'mode'], properties: { imageId: { type: 'string', minLength: 1 }, mode: { type: 'string', enum: ['metadata', 'local', 'ai'] }, model: { type: 'string' }, instruction: { type: 'string' }, includeLocalTags: { type: 'boolean' }, hasBuiltinTags: { type: 'boolean' } } },
   translation: { type: 'object', additionalProperties: false, required: ['text'], properties: { text: { type: 'string', minLength: 1, maxLength: 16000 }, direction: { type: 'string', enum: ['auto', 'zh-en', 'en-zh'] }, includeAdult: { type: 'boolean' }, source: { type: 'string', enum: ['ai', 'local'] }, includeAlignment: { type: 'boolean' } } },
-  generateTags: { type: 'object', additionalProperties: false, required: ['requirements'], properties: { operation: { type: 'string', enum: ['compile', 'revise'] }, requirements: { type: 'string', minLength: 1, maxLength: 16000 }, description: { type: 'string', maxLength: 16000 }, imageId: { type: 'string', minLength: 1 }, positiveTags: { type: 'array', maxItems: 256, items: { type: 'string' } }, negativeTags: { type: 'array', items: { type: 'string' } }, referenceTags: { type: 'array', maxItems: 256, items: { type: 'string' } }, referenceTagText: { type: 'string', maxLength: 16000 }, characterIds: { type: 'array', maxItems: 8, items: { type: 'string', minLength: 1 } }, characterReferences: { type: 'array', maxItems: 8, items: characterReferenceSchema }, evaluation: { type: 'object' }, generateNegativeTags: { type: 'boolean' } } },
+  generateTags: { type: 'object', additionalProperties: false, required: ['requirements'], properties: { operation: { type: 'string', enum: ['compile', 'revise'] }, requirements: { type: 'string', minLength: 1, maxLength: 16000 }, description: { type: 'string', maxLength: 16000 }, imageId: { type: 'string', minLength: 1 }, positiveTags: { type: 'array', maxItems: 256, items: { type: 'string' } }, negativeTags: { type: 'array', items: { type: 'string' } }, referenceTags: { type: 'array', maxItems: 256, items: { type: 'string' } }, referenceTagText: { type: 'string', maxLength: 16000 }, characterIds: { type: 'array', maxItems: 8, items: { type: 'string', minLength: 1 } }, characterReferences: { type: 'array', maxItems: 8, items: characterReferenceSchema }, evaluation: { type: 'object' }, changes: { type: 'array', maxItems: 12, items: { type: 'string', maxLength: 1000 } }, generateNegativeTags: { type: 'boolean' } } },
   evaluateImages: EVALUATION_INPUT_SCHEMA
 });
 const OUTPUT_SCHEMAS = Object.freeze({
@@ -144,36 +144,59 @@ function createFixedSubagents(options = {}) {
       }, result);
     }
   };
-  entries.generateTags = { name: 'generateTags', description: '固定文生图 Tag 子代理，只返回结构化正向 Tag。', getSystemPrompt: () => composeGeneratePrompt(prompts, '你是文生图 Tag 子代理。只返回 JSON。'), systemPrompt: composeGeneratePrompt(prompts, '你是文生图 Tag 子代理。只返回 JSON。'), inputSchema: SCHEMAS.generateTags, outputSchema: { type: 'object', required: ['positiveTags'], properties: { positiveTags: { type: 'array' }, negativeTags: { type: 'array' } } }, timeoutMs: 120000, options: noThinking, async run(input, context = {}) { assertValid(SCHEMAS.generateTags, input); const settings = getSettings() || {}; const allowNegative = settings.generateNegativeTags === true && input.generateNegativeTags !== false; const characterReferences = identityCharacterReferences(input.characterReferences); const basePrompt = composeGeneratePrompt(prompts, '你是文生图 Tag 子代理。只返回 JSON。'); const outputProtocol = ['系统输出协议：完成上面的 Anima 编译规则后，最终只返回一个有效 JSON 对象。', 'JSON 必须包含 positiveTags 字符串数组。', allowNegative ? '用户设置允许负面 Tag，可选返回 negativeTags 字符串数组。' : '用户设置关闭负面 Tag，禁止输出 negativeTags 字段。', '禁止输出代码块、解释、建议、标题、思考过程或 JSON 以外的文字。', characterReferences.length ? `${TAG_CHARACTER_REFERENCE_GUIDANCE}\n保留每个角色与其身份词的归属。输出角色/作品字面括号时使用反斜杠转义。` : ''].filter(Boolean).join('\n'); const system = [basePrompt, outputProtocol, SOURCE_REFERENCE_GUIDANCE, characterReferences.length ? TAG_CHARACTER_REFERENCE_GUIDANCE : ""].filter(Boolean).join("\n\n"); const content = [{ type: 'text', text: ['当前要求：' + input.requirements, input.description ? '图片描述：' + input.description : '', input.positiveTags?.length ? '已有正向 Tag：' + input.positiveTags.join(', ') : '', input.referenceTags?.length ? '参考 Tag：' + input.referenceTags.join(', ') : '', input.referenceTagText ? '用户提供的完整参考 Tag（保持原文，不查询角色名）：' + input.referenceTagText : '', characterReferences.length ? '角色身份资料（按角色独立关联）：' + JSON.stringify(characterReferences) : ''].filter(Boolean).join('\n') }]; if (input.imageId) { if (!resolveImage) throw failure('IMAGE_RESOLVER_UNAVAILABLE', '未配置受控图片解析器'); const image = await resolveImage(input.imageId, context); if (!image) throw failure('IMAGE_NOT_FOUND', '未找到图片：' + input.imageId); const url = text(image.dataUrl || image.url || image.src || image.previewUrl || image.viewUrl); if (!url) throw failure('IMAGE_DATA_UNAVAILABLE', '无法读取图片：' + input.imageId); content.push({ type: 'image_url', image_url: { url } }); } if (!visionAI?.complete) throw failure('SUBAGENT_UNAVAILABLE', 'Vision AI 不可用'); const result = await visionAI.complete([{ role: 'system', content: system }, { role: 'user', content }], { ...noThinking, signal: context.signal }); reportUsage(result, context); if (result?.ok === false) throw failure(result.code || 'GENERATE_TAGS_FAILED', result.error || 'Tag 生成失败'); return envelope(parseTags(result, allowNegative), result); } };
-  const compileTags = entries.generateTags.run;
-  entries.generateTags.outputSchema = OUTPUT_SCHEMAS.generateTags;
-  entries.generateTags.run = async (input, context = {}) => {
-    if (input.operation !== 'revise') return compileTags(input, context);
-    assertValid(SCHEMAS.generateTags, input);
-    const allowNegative = getSettings()?.generateNegativeTags === true && input.generateNegativeTags !== false;
-    const basePrompt = composeGeneratePrompt(prompts, '你是文生图 Tag 子代理。只返回 JSON。');
-    const protocol = [
-      '系统修订协议：根据候选图评价修订上一版 Tag，只返回一个有效 JSON 对象。',
-      'JSON 必须包含 add、remove、preserve 三个字符串数组；preserve 仅在本次补丁中保留 Tag，不形成后续永久锁定。',
-      '有 userFeedback 时，只修改本轮明确要求的部分，以上一版 Tag 为基线；未提及的角色身份、外貌、服装、背景、风格默认保留。feedbackHistory 是此前已确认的修改，最新反馈仅覆盖冲突部分。editScope=pose 时，add/remove 及负向补丁只能涉及姿势词，禁止调整角色或场景。',
-      allowNegative ? '可选返回 negativeAdd 与 negativeRemove 字符串数组。' : '用户设置关闭负面 Tag，禁止修订负面 Tag。',
-      SOURCE_REFERENCE_GUIDANCE,
-      input.characterReferences?.length ? TAG_CHARACTER_REFERENCE_GUIDANCE : '',
-      '不要返回完整 positiveTags，不要输出代码块、解释、建议、标题或思考过程。'
-    ].filter(Boolean).join('\n');
-    const content = [{ type: 'text', text: [
-      '当前要求：' + input.requirements,
-      input.description ? '视觉蓝图：' + input.description : '',
-      '上一版正向 Tag：' + (input.positiveTags || []).join(', '),
-      allowNegative && input.negativeTags?.length ? '上一版负向 Tag：' + input.negativeTags.join(', ') : '',
-      input.evaluation ? '候选图评价：' + JSON.stringify(input.evaluation) : '',
-      identityCharacterReferences(input.characterReferences).length ? '角色身份资料（按角色独立关联）：' + JSON.stringify(identityCharacterReferences(input.characterReferences)) : ''
-    ].filter(Boolean).join('\n') }];
-    if (!visionAI?.complete) throw failure('SUBAGENT_UNAVAILABLE', 'Vision AI 不可用');
-    const result = await visionAI.complete([{ role: 'system', content: `${basePrompt}\n\n${protocol}` }, { role: 'user', content }], { ...noThinking, signal: context.signal });
-    reportUsage(result, context);
-    if (result?.ok === false) throw failure(result.code || 'GENERATE_TAGS_FAILED', result.error || 'Tag 修订失败');
-    return envelope(parseTagPatch(result, allowNegative), result);
+  entries.generateTags = {
+    name: 'generateTags', description: '将本轮任务编译为 Tag，或针对上一版 Tag 返回修改补丁。',
+    getSystemPrompt: () => composeGeneratePrompt(prompts, '你是文生图 Tag 子代理。只返回 JSON。'),
+    inputSchema: SCHEMAS.generateTags, outputSchema: OUTPUT_SCHEMAS.generateTags, timeoutMs: 120000, options: noThinking,
+    async run(input, context = {}) {
+      assertValid(SCHEMAS.generateTags, input);
+      const revising = input.operation === 'revise';
+      if (revising && !input.positiveTags?.length) throw failure('INVALID_INPUT', '修改任务需要上一版正向 Tag');
+      const allowNegative = getSettings()?.generateNegativeTags === true && input.generateNegativeTags !== false;
+      const basePrompt = composeGeneratePrompt(prompts, '你是文生图 Tag 子代理。只返回 JSON。');
+      const protocol = revising ? [
+        '系统修订协议：只处理本轮修改要求，以上一版 Tag 为基线；未提及的角色、外貌、服装、场景、风格保持原样。',
+        '只返回 JSON，包含 add、remove、preserve 三个字符串数组；preserve 仅作用于本轮。不要返回完整 positiveTags。',
+        allowNegative ? '可选返回 negativeAdd、negativeRemove。' : '不修订负面 Tag。'
+      ] : [
+        '系统输出协议：将当前任务要求编译为 Tag。只返回 JSON，包含 positiveTags 字符串数组。',
+        allowNegative ? '可选返回 negativeTags 字符串数组。' : '不输出 negativeTags。'
+      ];
+      protocol.push('用户要求优先。不要添加未要求的人物、服装、风格或改变构图；输出字面括号时按绘图语法转义。不要输出解释、代码块或思考过程。');
+      const evaluation = input.evaluation || {};
+      const requestedChanges = input.changes || (evaluation.userFeedback ? [evaluation.userFeedback] : [
+        ...(evaluation.hardErrors || []).map(row => row.suggestedChange),
+        ...(evaluation.issues || []).map(row => row.suggestedChange), ...(evaluation.suggestedChanges || [])
+      ]);
+      const changes = [...new Set(requestedChanges.map(value => text(value)).filter(Boolean))].slice(0,12);
+      const repair = (evaluation.patchValidation?.rejected || []).slice(0,3).map(row => text(row.message)).filter(Boolean);
+      // Compatibility fields from saved jobs are distilled here, never forwarded as dossiers.
+      const identities = !revising ? identityCharacterReferences(input.characterReferences).map(row => (row.name || row.id) + '：' + row.identityTags.join(', ')) : [];
+      const content = [{ type: 'text', text: [
+        '任务类型：' + (revising ? '修改' : '文生图'),
+        '当前要求：' + input.requirements,
+        identities.length ? '已确认身份：' + identities.join('；') : '',
+        !revising && input.referenceTagText ? '用户明确提供的 Tag：' + input.referenceTagText : '',
+        !revising && input.referenceTags?.length ? '用户明确提供的 Tag：' + input.referenceTags.join(', ') : '',
+        input.positiveTags?.length ? (revising ? '上一版正向 Tag：' : '已有正向 Tag：') + input.positiveTags.join(', ') : '',
+        revising && allowNegative && input.negativeTags?.length ? '上一版负向 Tag：' + input.negativeTags.join(', ') : '',
+        revising && changes.length ? '本轮修改：' + changes.join('；') : '',
+        repair.length ? '补丁需修正：' + repair.join('；') : ''
+      ].filter(Boolean).join('\n') }];
+      if (input.imageId) {
+        if (!resolveImage) throw failure('IMAGE_RESOLVER_UNAVAILABLE', '未配置受控图片解析器');
+        const image = await resolveImage(input.imageId, context);
+        if (!image) throw failure('IMAGE_NOT_FOUND', '未找到图片：' + input.imageId);
+        const url = text(image.dataUrl || image.url || image.src || image.previewUrl || image.viewUrl);
+        if (!url) throw failure('IMAGE_DATA_UNAVAILABLE', '无法读取图片：' + input.imageId);
+        content.push({ type: 'image_url', image_url: { url } });
+      }
+      if (!visionAI?.complete) throw failure('SUBAGENT_UNAVAILABLE', 'Tag AI 不可用');
+      const result = await visionAI.complete([{ role: 'system', content: [basePrompt, protocol.join('\n')].join('\n\n') }, { role: 'user', content }], { ...noThinking, signal: context.signal });
+      reportUsage(result, context);
+      if (result?.ok === false) throw failure(result.code || 'GENERATE_TAGS_FAILED', result.error || 'Tag 生成失败');
+      return envelope(revising ? parseTagPatch(result, allowNegative) : parseTags(result, allowNegative), result);
+    }
   };
   entries.evaluateImages = createCandidateEvaluator({ visionAI, prompts, resolveImage, returnEnvelope: true });
   return Object.freeze({ ...entries, names: () => SUBAGENT_NAMES.slice(), resolve: name => entries[name] || null, list: () => SUBAGENT_NAMES.map(name => entries[name]) });

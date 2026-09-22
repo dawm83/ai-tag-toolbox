@@ -50,7 +50,7 @@ test('role IDs resolve into attributed references before the generation subagent
   const result = await tools.call('agent.generateTags', { requirements: '爱丽丝穿白裙', characterIds: ['alice'] });
   assert.equal(result.ok, true, JSON.stringify(result));
   const text = messages[1].content[0].text;
-  assert.match(text, /"id":"alice"/);
+  assert.match(text, /已确认身份：.*alice/);
   assert.doesNotMatch(text, /story academy uniform/);
   assert.doesNotMatch(text, /blue hair/);
   assert.match(messages[0].content, /用户.*优先/);
