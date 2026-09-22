@@ -818,11 +818,36 @@ test('manual candidate feedback continues only the selected image', async () => 
   const feedback = app.window.document.querySelector('.draw-candidate-feedback');
   const button = app.window.document.querySelector('.draw-candidate-continue');
   assert.ok(feedback);
+  assert.equal(feedback.closest('.draw-candidate-feedback-shell') !== null, true);
+  assert.match(app.window.document.querySelector('.draw-candidate-feedback-title').textContent, /修改意见/);
+  assert.equal(feedback.closest('.draw-candidate-tags'), null);
   assert.equal(button.hidden, false);
   feedback.value = '保留人物，增强低视角';
   button.click();
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.deepEqual(app.continuationCalls[0], { messageId: 'a1', candidateId: 'candidate-1', feedback: '保留人物，增强低视角' });
+  app.dom.window.close();
+});
+
+test('candidate feedback remains separate from Tags and identifies its target', () => {
+  const candidate = { id: 'candidate-1', iteration: 1, roundId: 'round-1', roundIndex: 1, imageId: 'img-1', prompt: '1girl', negative: '', evaluation: { status: 'pending' } };
+  const app = boot({ initialMessages: [{ id: 'a1', role: 'assistant', text: '', status: 'done', result: { status: 'awaiting_feedback', jobId: 'job-1', candidates: [candidate] } }] });
+  app.view.route('ai'); app.view.showAi('talk'); app.view.renderTalk();
+  const shell = app.window.document.querySelector('.draw-candidate-feedback-shell');
+  assert(shell);
+  assert.match(shell.textContent, /第 1 次渲染/);
+  assert.match(shell.querySelector('textarea').placeholder, /输入本轮修改/);
+  assert.equal(shell.querySelector('textarea').getAttribute('aria-label'), '对第 1 次渲染的修改意见');
+  assert.equal(shell.previousElementSibling.classList.contains('draw-candidate-tags'), true);
+  app.dom.window.close();
+});
+
+test('decision-required candidates show an explicit AI decision status', () => {
+  const candidate = { id: 'candidate-1', iteration: 1, roundId: 'round-1', roundIndex: 1, imageId: 'img-1', prompt: '1girl', negative: '', evaluation: { status: 'pending' } };
+  const app = boot({ initialMessages: [{ id: 'a1', role: 'assistant', text: '', status: 'done', result: { status: 'awaiting_feedback', decisionRequired: true, jobId: 'job-1', candidates: [candidate] } }] });
+  app.view.route('ai'); app.view.showAi('talk'); app.view.renderTalk();
+  assert.match(app.window.document.querySelector('.draw-candidate-decision').textContent, /主 AI 正在判断|主 AI 判断/);
+  assert.equal(app.window.document.querySelector('.draw-candidate-feedback-shell').hidden, true);
   app.dom.window.close();
 });
 
@@ -849,13 +874,10 @@ test('completed candidate continue button resumes the original job directly', as
   const feedback = app.window.document.querySelector('.draw-candidate-feedback');
   assert.equal(feedback.hidden, false);
   app.window.document.querySelector('.draw-candidate-continue').click();
-  assert.equal(app.continuationCalls.length, 0, 'a completed task needs actual user feedback');
-  feedback.value = '姿势改成 standing';
-  app.window.document.querySelector('.draw-candidate-continue').click();
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.equal(app.continuationCalls[0].messageId, 'a1');
   assert.equal(app.continuationCalls[0].candidateId, 'candidate-1');
-  assert.match(app.continuationCalls[0].feedback, /standing/);
+  assert.match(app.continuationCalls[0].feedback, /主 AI|primary/i);
   app.dom.window.close();
 });
 

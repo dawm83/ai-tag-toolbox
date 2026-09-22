@@ -613,7 +613,13 @@ body.aiview #catList,body.aiview #addTagBtn{display:none}
 .draw-candidate-tag-section+.draw-candidate-tag-section{margin-top:6px;border-top:1px solid var(--border)}
 .draw-candidate-tag-head{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11px}
 .draw-candidate-tag-copy{min-height:24px;padding:2px 8px;border-radius:6px;font-size:10.5px}
-.draw-candidate-feedback{display:block;width:100%;min-height:54px;margin-top:8px;padding:7px 8px;resize:vertical;border:1px solid var(--border2);border-radius:7px;background:var(--bg);color:var(--text);font-size:11.5px;line-height:1.45}
+.draw-candidate-feedback-shell{margin-top:10px;padding:9px;border:1px solid var(--pri);border-radius:8px;background:var(--pri-bg)}
+.draw-candidate-decision{margin-top:9px;padding:8px 9px;border:1px solid var(--pri);border-radius:8px;background:var(--pri-bg);color:var(--pri-h);font-size:11.5px;font-weight:700}
+.draw-candidate-feedback-shell[hidden]{display:none}
+.draw-candidate-feedback-title{display:flex;align-items:center;justify-content:space-between;gap:8px;color:var(--text);font-size:11.5px}
+.draw-candidate-feedback-target{padding:2px 6px;border-radius:999px;background:var(--card);color:var(--pri-h);font-size:10px;font-weight:700}
+.draw-candidate-feedback-hint{display:block;margin-top:3px;color:var(--muted);font-size:10.5px}
+.draw-candidate-feedback{display:block;width:100%;min-height:54px;margin-top:7px;padding:7px 8px;resize:vertical;border:1px solid var(--input-border);border-radius:7px;background:var(--card);color:var(--text);font-size:11.5px;line-height:1.45}
 .draw-candidate-feedback[hidden]{display:none}
 .draw-candidate-actions{display:flex;align-items:center;gap:6px;margin-top:9px;flex-wrap:wrap}
 .draw-candidate-actions .cico{width:auto;min-width:38px;height:26px;border-radius:8px;padding:0 6px;font-size:10.5px;font-weight:700}

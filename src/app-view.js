@@ -3161,12 +3161,33 @@
         card.appendChild(tags);
         const canContinue = ["awaiting_feedback", "completed"].includes(message.result?.status) && Boolean(message.result?.jobId);
         const running = message.status === "streaming" || ["preparing", "compiling", "rendering", "evaluating", "revising", "selecting", "finishing"].includes(message.result?.status);
+        if (message.result?.decisionRequired === true) {
+          const decision = doc.createElement("div");
+          decision.className = "draw-candidate-decision";
+          decision.textContent = localized("ui.ai.primaryDecisionPending", "主 AI 正在判断下一步");
+          card.appendChild(decision);
+        }
+        const feedbackShell = doc.createElement("section");
+        feedbackShell.className = "draw-candidate-feedback-shell";
+        feedbackShell.hidden = running || !canContinue || message.result?.decisionRequired === true;
+        const feedbackTitle = doc.createElement("div");
+        feedbackTitle.className = "draw-candidate-feedback-title";
+        const feedbackLabel = doc.createElement("strong");
+        feedbackLabel.textContent = localized("ui.ai.candidateFeedbackTitle", "对这张图的修改意见");
+        const feedbackTarget = doc.createElement("span");
+        feedbackTarget.className = "draw-candidate-feedback-target";
+        feedbackTarget.textContent = `第 ${Number(candidate.iteration) || 1} 次渲染`;
+        feedbackTitle.append(feedbackLabel, feedbackTarget);
+        const feedbackHint = doc.createElement("small");
+        feedbackHint.className = "draw-candidate-feedback-hint";
+        feedbackHint.textContent = localized("ui.ai.candidateFeedbackHint", "可留空使用主 AI 的对照建议");
         const feedback = doc.createElement("textarea");
         feedback.className = "draw-candidate-feedback";
         feedback.rows = 2;
-        feedback.placeholder = localized("ui.ai.candidateFeedback", "输入对这张图的修改意见");
-        feedback.hidden = running || !canContinue;
-        card.appendChild(feedback);
+        feedback.placeholder = localized("ui.ai.candidateFeedback", "输入本轮修改意见");
+        feedback.setAttribute("aria-label", `对第 ${Number(candidate.iteration) || 1} 次渲染的修改意见`);
+        feedbackShell.append(feedbackTitle, feedbackHint, feedback);
+        card.appendChild(feedbackShell);
         const actions = doc.createElement("div");
         actions.className = "draw-candidate-actions";
         const choose = doc.createElement("button");
@@ -3181,13 +3202,12 @@
         const continueButton = doc.createElement("button");
         continueButton.type = "button";
         continueButton.className = "cico btn btn-secondary draw-candidate-continue";
-        continueButton.textContent = localized("ui.ai.candidateContinue", "继续优化");
+        continueButton.textContent = localized("ui.ai.candidateContinue", "按这张图继续优化");
         continueButton.title = "基于这张候选图继续原任务";
         continueButton.hidden = running || !canContinue;
         continueButton.onclick = async () => {
           if (continueButton.disabled || assistant?.snapshot?.().busy) return;
-          const value = str(feedback.value);
-          if (!value) return notify("请先输入修改意见");
+          const value = str(feedback.value) || localized("ui.ai.candidateFeedbackDefault", "请根据主 AI 的对照结果继续优化，未提及内容保持不变");
           const label = $("#talkSendBtn")?.textContent || "发送";
           continueButton.disabled = true;
           setTalkBusy(true, label); put("#talkStatus", "正在按点评继续优化…");
