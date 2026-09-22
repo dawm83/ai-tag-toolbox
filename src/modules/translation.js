@@ -92,14 +92,44 @@ function catalogFrom(tags, options = {}) {
   return [];
 }
 
+// A translation lookup used to scan the complete catalogue for every input
+// fragment.  The bundled library contains tens of thousands of rows, so a
+// multi-tag translation could repeat that scan hundreds of times.  Keep a
+// lightweight, per-catalogue index instead.  The catalogue arrays are already
+// cached by createTranslation; a WeakMap also lets one-off callers reuse the
+// index without retaining discarded arrays.
+const catalogIndexes = new WeakMap();
+function catalogIndex(catalog, options = {}) {
+  if (!Array.isArray(catalog)) return new Map();
+  const cacheKey = (options.includeAdult ?? options.adult ?? options.nsfw) === true ? 'adult' : 'default';
+  let bucket = catalogIndexes.get(catalog);
+  if (!bucket) { bucket = new Map(); catalogIndexes.set(catalog, bucket); }
+  let index = bucket.get(cacheKey);
+  if (index) return index;
+  index = new Map();
+  for (const tag of catalog) {
+    if (!visible(tag, options)) continue;
+    const forms = [englishOf(tag), ...aliasesOf(tag), ...chineseNames(tag)];
+    for (const form of forms) {
+      const key = normalizeTag(form);
+      // Preserve the old deterministic first-match behaviour when malformed
+      // or legacy data contains duplicate aliases.
+      if (key && !index.has(key)) index.set(key, tag);
+    }
+  }
+  bucket.set(cacheKey, index);
+  return index;
+}
+
 function exactMatches(value, options = {}) {
   const catalog = options.catalog || [];
+  const index = options.index || catalogIndex(catalog, options);
   const output = [];
   const used = new Set();
   for (const part of tagParts(value)) {
     const key = normalizeTag(part);
     if (!key) continue;
-    const found = catalog.find(tag => visible(tag, options) && [englishOf(tag), ...aliasesOf(tag), ...chineseNames(tag)].some(form => normalizeTag(form) === key));
+    const found = index.get(key);
     const id = normalizeTag(englishOf(found));
     if (found && id && !used.has(id)) {
       used.add(id);
@@ -263,7 +293,7 @@ function createTranslation(options = {}) {
   function rawReferences(value, extra = {}) { return refs(value, extra).map(item => item.tag || item); }
   function findTag(value, catalog) {
     const key = normalizeTag(value);
-    return key ? (catalog || []).find(tag => [englishOf(tag), ...aliasesOf(tag), ...chineseNames(tag)].some(form => normalizeTag(form) === key)) || null : null;
+    return key ? catalogIndex(catalog || [], effectiveOptions()).get(key) || null : null;
   }
   function mapped(value, requested, extra = {}) {
     const input = text(value);
