@@ -933,7 +933,7 @@ function createGenerationOrchestrator(options = {}) {
     if (!originalRequirements) throw failure('INVALID_INPUT', '生成任务缺少 originalRequirements');
     let mode = ['create', 'recreate'].includes(input.mode) ? input.mode : 'auto';
     if (mode === 'auto') mode = input.sourceImageId || Number.isInteger(input.sourceSlot) ? 'recreate' : 'create';
-    const policy = policyFrom({ strategy: input.strategy, autoSelect: input.autoSelect, autoRun: input.autoRun, imagesPerRound: input.imagesPerRound, maxAutoRounds: input.maxAutoRounds }, getSettings());
+    const policy = policyFrom(input.agentControlled ? {} : { strategy: input.strategy, autoSelect: input.autoSelect, autoRun: input.autoRun, imagesPerRound: input.imagesPerRound, maxAutoRounds: input.maxAutoRounds }, getSettings());
     const now = Date.now();
     const job = normalizeJob({
       jobId: `job_${randomUUID()}`,
@@ -971,6 +971,7 @@ function createGenerationOrchestrator(options = {}) {
     if (TERMINAL_STATES.has(job.status) && !(job.status === 'completed' && input.action === 'continue')) return result(job);
     if (job.stopReason === 'COMFY_SUBMISSION_UNKNOWN') return result(job);
     if (active.has(job.jobId)) throw failure('JOB_BUSY', '生成任务仍在执行中');
+    if (job.agentControlled && ['awaiting_feedback', 'completed'].includes(job.status) && input.positiveTags === undefined) throw failure('PROMPT_REQUIRED', '修改任务需先准备新的 Tag，再继续原任务');
     if (job.agentControlled && input.positiveTags !== undefined) {
       const positiveTags = strings(input.positiveTags), negativeTags = strings(input.negativeTags ?? job.negativeTags);
       if (!positiveTags.length) throw failure('PROMPT_REQUIRED', '请提供非空的正向 Tag');

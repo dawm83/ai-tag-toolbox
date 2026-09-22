@@ -28,6 +28,8 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { createHash } = require('node:crypto');
+const LEGACY_PRIMARY_HASH = '0b410d35d852d785ead6f75326e50262c4f02b1f043277b3ba210dad76ca6023';
 
 const PROMPT_ITEM_KEYS = Object.freeze(['primary', 'generateTags', 'artistQuality', 'vision', 'candidateEvaluation', 'translation']);
 const PROMPT_FILES = Object.freeze({
@@ -169,6 +171,7 @@ function createPrompts(options = {}) {
         items[key] = useDefaults || key === 'candidateEvaluation' ? (defaults[key] || '') : '';
       } else {
         items[key] = text(sourceItems[key]);
+        if (key === 'primary' && defaults.primary && createHash('sha256').update(items[key].replace(/\r\n/g, '\n').trim()).digest('hex') === LEGACY_PRIMARY_HASH) items[key] = defaults.primary;
       }
     }
     return { id: text(item.id) || 'prompt-set-imported', name: text(item.name, '导入的提示词组'), items };

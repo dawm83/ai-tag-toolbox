@@ -59,9 +59,9 @@ test('primary request composes only matched extensions; generateTags composes ar
   assert.equal(prompts.composeEvaluation(), 'EXPERIMENT EVALUATION');
 });
 
-test('default primary prompt delegates drawing to the high-level generation workflow', () => {
+test('default primary prompt receives the current tool contract', () => {
   const prompts = modules.createPrompts({ dir: assetDir, storage: modules.createStorage({ prefix: 'primary-generation-prompt-' + Date.now() }) });
-  const primary = prompts.get('primary');
+  const primary = require('../src/modules/primary-agent').createPrimaryAgent({ prompts, charactersEnabled: true }).getPrompt();
   assert.match(primary, /generation\.execute/);
   assert.match(primary, /不确定.*Tag.*tags\.search/s);
   assert.match(primary, /best_available/);

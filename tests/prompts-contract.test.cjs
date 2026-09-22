@@ -6,6 +6,21 @@ const modules = require('../src/modules');
 const assetDir = path.resolve('assets/提示词素材');
 const fresh = () => modules.createPrompts({ dir: assetDir, storage: modules.createStorage({ prefix: 'prompt-contract-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7) }) });
 
+test('upgrading an exact obsolete built-in primary prompt preserves custom prompts and other entries', () => {
+  const old = require('node:fs').readFileSync(path.join(__dirname, 'fixtures/primary-prompt-v1342.txt'), 'utf8').trim();
+  const storage = modules.createStorage();
+  storage.set('rewrite_prompt_state', { version: 3, activeSetId: 'old', extensions: [], sets: [
+    { id: 'old', name: '旧默认', items: { primary: old, generateTags: 'CUSTOM_COMPILER' } },
+    { id: 'custom', name: '定制', items: { primary: old + '\n我的自定义要求' } }
+  ] });
+  const prompts = modules.createPrompts({ dir: assetDir, storage });
+  assert.equal(prompts.get('primary'), prompts.getDefault('primary'));
+  assert.notEqual(prompts.get('primary'), old);
+  assert.equal(prompts.get('generateTags'), 'CUSTOM_COMPILER');
+  prompts.setActive('custom');
+  assert.equal(prompts.get('primary'), old + '\n我的自定义要求');
+});
+
 test('main prompt sets: fixed 6-item structure, batch switch, per-item editing', () => {
   const prompts = fresh();
   assert.deepEqual(prompts.keys(), ['primary', 'generateTags', 'artistQuality', 'vision', 'candidateEvaluation', 'translation']);

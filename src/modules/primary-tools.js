@@ -217,7 +217,7 @@ function createPrimaryTools(options = {}) {
         if (context.afterRender || image.source === 'comfy') throw failure('INITIAL_HINT_ONLY', '本地识图只在参考图初始阶段使用；本轮请直接看图或询问视觉子代理');
       }
       const data = compactVisionResult({ ...unwrap(await subagent('vision', context.caller === 'primary' ? { ...args, includeLocalTags: false } : args, context)), imageId: args.imageId, mode: args.mode });
-      if (initial && data.tags.length) {
+      if (initial) {
         data.evidenceRole = 'initial_hint'; data.reliability = 'weak';
         initialHints.set(cacheKey, clone(data));
         while (initialHints.size > 64) initialHints.delete(initialHints.keys().next().value);

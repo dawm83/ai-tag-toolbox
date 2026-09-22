@@ -14,7 +14,7 @@ function fixture(t, model, gateway) {
     return gateway ? gateway(messages, config, requests.length) : { text: '已查看' };
   } } });
   t.after(() => app.destroy());
-  return { app, storage, image, requests };
+  return { app, storage, images, image, requests };
 }
 const pictures = messages => messages.flatMap(m => Array.isArray(m.content) ? m.content.filter(p => p.type === 'image_url') : []);
 
@@ -50,6 +50,28 @@ test('ordinary provider failure is not retried as a text-only image success', as
   const f = fixture(t, 'fixture-vision', () => { throw new Error('HTTP 503 unavailable'); });
   assert.equal((await f.app.run({ text: '分析图片', imageIds: [f.image.id] })).ok, false);
   assert.equal(f.requests.length, 1);
+});
+
+test('image_url unsupported content errors fall back without disguising ordinary HTTP failures', async t => {
+  const f = fixture(t, 'custom-model', (_m, _c, n) => n === 1
+    ? { ok: false, error: { message: 'Invalid content type. image_url is only supported by certain models.' } }
+    : { text: '改用视觉辅助' });
+  const result = await f.app.run({ text: '分析图片', imageIds: [f.image.id] });
+  assert.equal(result.ok, true);
+  assert.equal(f.requests.length, 2);
+  assert.equal(pictures(f.requests[1]).length, 0);
+});
+
+test('several view requests in one tool round retain both source and comparison images', async t => {
+  const f = fixture(t, 'fixture-vision', (_m, _c, n) => n === 3 ? { toolCalls: [
+    { id: 'view-source', name: 'conversation_viewImages', arguments: { imageIds: [f.image.id] } },
+    { id: 'view-candidate', name: 'conversation_viewImages', arguments: { imageIds: [second.id] } }
+  ] } : { text: '已查看' });
+  const second = f.images.add({ filename: 'candidate.png', mime: 'image/png', dataUrl: 'data:image/png;base64,BAUG' });
+  await f.app.run({ text: '这是原图', imageIds: [f.image.id] });
+  await f.app.run({ text: '这是候选', imageIds: [second.id] });
+  assert.equal((await f.app.run('对比两张图片')).ok, true);
+  assert.deepEqual(pictures(f.requests.at(-1)).map(p => p.image_url.url), ['data:image/png;base64,AQID', 'data:image/png;base64,BAUG']);
 });
 
 test('revisiting an authorized image through the view tool supplies pixels only to the next model request', async t => {

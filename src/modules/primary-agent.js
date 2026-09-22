@@ -1,7 +1,7 @@
 'use strict';
 const { createPrimaryVision } = require('./primary-vision');
 
-const DEFAULT_PRIMARY_PROMPT = '你是 AI 绘画 Tag 工具箱的主 AI。绘图或复刻调用 generation.execute；程序负责 Tag、ComfyUI、评价与迭代。图片只能通过消息提供的真实 imageId 或会话图片工具读取。';
+const DEFAULT_PRIMARY_PROMPT = '你是 AI 绘画 Tag 工具箱的主 AI，依据用户目标和实际证据选择必要工具。';
 const PUBLIC_CONFIG_KEYS = Object.freeze(['base', 'model', 'key', 'temperature', 'timeoutMs', 'maxTokens', 'stream']);
 const RUNTIME_CONFIG_KEYS = Object.freeze(['signal', 'tools', 'tool_choice', 'onDelta', 'onEvent']);
 function object(value) { return value !== null && typeof value === 'object' && !Array.isArray(value); }
@@ -41,18 +41,22 @@ function createPrimaryAgent(options = {}) {
   const visualComplete = createPrimaryVision({ resolveImage: options.resolveImage, client });
   function getPrompt(request = {}) {
     const prompt = typeof prompts?.composePrimary === 'function' ? prompts.composePrimary(userText(request)) : prompts?.getEffective?.('primary') || prompts?.get?.('primary') || DEFAULT_PRIMARY_PROMPT;
-    const generationContract = '【系统强制调度协议｜优先于上方可编辑内容】绘图、出图和图片复刻只调用 generation.execute；暂停任务只调用 generation.resume。绘图任务禁止提前调用 vision.processOne，禁止根据识图结果改写源图事实；把用户原始要求原样放入 originalRequirements，只附加真实 sourceImageId 和已确认 characterIds。若生成工具返回 needs_input 且 needsInput.kind=character，等待用户在角色选择卡片中确认；程序用原 jobId 恢复。不要调用或要求调用 agent.generateTags、comfy.validateWorkflow、comfy.render，这些是程序内部工具。程序负责识图、Tag 编译、ComfyUI、候选评价、修订和选择。交付时服从 outcome 与 recreationMode：best_available 必须说明是达到上限后的最佳候选，text_approximation 必须说明原图未进入工作流、仅为文本近似复刻，禁止声称完全一致或保持不变；user_selected_with_issues 必须说明用户已选择且仍有已知问题。不要输出逐步进度，直接根据高层工具结果与用户对话。';
-    const characterContract = options.charactersEnabled
-      ? '角色调度补充：只有用户要求绘制已有作品中的具体角色时，才先调用 tags.search；命中角色时读取 attachedData，其中包含姓名、作品身份 Tag 和外貌 Tag；有多个候选时再调用 characters.search；仍不明确时将角色原名放入 generation.execute 的 characterQueries，程序会展示选择卡片。原创人物、OC、自设名称、普通人物或外貌描述无需查询或确认角色，直接将原始要求交给 generation.execute，不为这些人物填写 characterQueries 或 characterIds。混合画面只为明确指定的已有作品角色填写角色字段。用户在角色确认时明确表示是原创或跳过此人物时，用原 jobId 调用 generation.resume，characterSelection 原样填写 needsInput.query，并传 original=true，不传 characterId；也可点击卡片中的“这是原创人物，继续”。任何不确定的 Tag 先调用 tags.search。作品名不要放入 characterQueries。绘图时把已确认的 characterIds 与用户要求一并传给 generation.execute，程序会交给文生图 Tag 子代理筛选，主 AI 不自行筛选角色外貌。'
-      : '';
-    const favoritesContract = options.favoritesEnabled
-      ? '收藏查询补充：tags.search 的 items 按稳定 id 去重，kind 区分 tag 与 bundle，favoriteLocations 汇总收藏位置。content 是完整原文；contentOmitted=true 时内容未返回，不得从名称或部分文本拼造完整 Prompt。收藏查询只读取，不会修改收藏或自动加入底部组合。'
-      : '';
-    const drawingEnabled = options.getSettings?.()?.comfy?.enabled === true;
-    const outputContract = '【输出类型协议｜优先于上方绘图默认规则】生成或修改绘图 Tag、提示词也调用 generation.execute，传 outputType="tags"；该任务共用角色解析与参考图识别，但生成 Tag 后直接完成，不检查 ComfyUI、不绘图、不评图。只有用户要求图片且当前允许绘图时才传 outputType="images"。用户明确只要 Tag 时始终传 tags。仅 Tag 的参考图分析不代表实际执行了图片复刻。needs_input 或 failed 结果中的 positiveTags、negativeTags 仍可交付，必须说明图片尚未完成，不要反复调用生成工具尝试连接。' + (drawingEnabled ? '当前允许绘图；自动迭代只决定是否继续优化图片。' : '当前绘图已关闭：生成任务只交付 Tag，不调用 comfy.status、不要求配置工作流，不恢复旧绘图任务；不得自行开启绘图。');
-    const languageContract = '【语言协议】默认使用当前界面语言回答用户。当前界面为中文时，主 AI、工具结果整理、任务说明、失败解释和思考摘要全部使用简体中文；保留 Tag、角色名、作品名、代码、工具名和用户原文中的英文。只有用户明确要求其他语言时才切换。';
-    const feedbackContract = '【续轮协议｜优先于新任务调度】用户纠正上一轮图片或 Tag 时，原始任务目标继续有效；使用已有 jobId 调用 generation.resume(action=continue, feedback=本轮用户原话)，图片任务指定实际 baseCandidateId，Tag 任务可不指定。completed 表示上一轮已交付，仍可修订。保留原图引用和当前提示词，未提及部分默认保留；不能只用最新一句话新建 generation.execute。多候选且目标不明时询问用户。只有用户明确开始新任务或从头重做时才新建；明确要求重新识图时才重新识图。';
-    return [prompt, generationContract, characterContract, favoritesContract, outputContract, languageContract, feedbackContract].filter(Boolean).join('\n\n');
+    const guidance = [
+      '【当前工具协议｜旧提示词中的固定流水线规则已由本协议替代】',
+      '你负责理解目标、直接观察和综合判断，自主选择最少的必要模块；不需要按固定顺序调用所有工具。',
+      '有实际图片输入时先自己观察。vision.processOne(mode=ai) 用于第二意见、具体细节或主模型不能看图时的视觉辅助；提出简短具体的问题。各来源都可能出错，交叉核对冲突，不盲从自己或子代理的第一次判断。',
+      '复刻先读 metadata，已有可用 Tag 可作为首轮基线；缺失时 local 只做一次初始提示。它错误率较高，不把概率当事实；以后修改轮次不再次本地识图。通常先直接用初始 Tag 首跑，不额外补风格和画面事实；明显错误可根据实际图片纠正。',
+      '需要文生图 Tag 时调用 agent.generateTags(operation=compile)，只传关键要求和可选 imageId。修改用 operation=revise，传上一版完整 positiveTags/negativeTags、当前要求与简短 changes；不要附完整蓝图、角色档案、历史评价。工具返回合并后的 Tag。',
+      'generation.execute 使用你准备好的 positiveTags 出一轮图。把用户原始要求原样保存在 originalRequirements。结果回传后直接看原图与候选，必要时用 generation.review 获取辅助评价。大差异可重新组织明确画面描述再编译，小差异定向修改。',
+      '后续出图沿用 generation.resume 的原 jobId，传基础候选和修改后的完整 Tag；保留未提及的内容。选择结果调用 generation.select。autoRun=false 或 remainingRounds=0 时交付本轮结果等待用户；次数是上限，不要求跑满。不要调用底层 comfy.render。',
+      '只要 Tag 时 outputType=tags；不触发 ComfyUI。needs_input 时按照返回的缺项继续原任务，不新建任务回避暂停。角色选择允许 characterSelection.original=true。',
+      'best_available 表示已有候选中选择的结果，不等于视觉验收通过；无评分表示未调用评价模块，不能编造分数。text_approximation 表示原图仅用于分析比较，未输入绘图工作流。交付说明实际偏差。',
+      '【语言协议】当前界面为中文时默认用简体中文，保留英文 Tag、专名和用户原文。'
+    ];
+    if (options.charactersEnabled) guidance.push('已有作品角色需要确认时使用 tags.search 的 attachedData 或 characters.search，按需带 characterIds。原创人物不强制查询。角色库外观只是参考，不自动补服装和配件；不确定的 Tag 可用 tags.search 查询。');
+    if (options.favoritesEnabled) guidance.push('收藏查询：items 的 kind 区分 tag/bundle，favoriteLocations 表示收藏位置。contentOmitted=true 时不能把部分文本当完整提示词。');
+    if (options.getSettings?.()?.comfy?.enabled !== true) guidance.push('当前绘图不可用，只交付 Tag；不得自行开启绘图。');
+    return [prompt, guidance.join('\n')].filter(Boolean).join('\n\n');
   }
   async function complete(messages, request = {}) {
     const config = { ...publicRequestConfig(options.getSettings?.()?.primaryApi), ...publicRequestConfig(request) };

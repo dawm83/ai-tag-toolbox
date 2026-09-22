@@ -702,3 +702,11 @@ test('agent-controlled generation requires a ready prompt and evaluation is expl
   assert.equal(app.subagentCalls[0].name, 'evaluateImages');
   assert.equal(app.renders.length, 1);
 });
+
+test('agent callers cannot override the configured render budget or resume without prepared Tags', async () => {
+  const app = harness({ settings: { generation: { autoRun: false, maxAutoRounds: 1 } } });
+  const first = await app.orchestrator.execute({ requirements: 'portrait', agentControlled: true, positiveTags: ['standing'], autoRun: true, maxAutoRounds: 10 }, app.context);
+  await assert.rejects(app.orchestrator.resume({ jobId: first.jobId, action: 'continue', baseCandidateId: 'candidate-1', feedback: 'change pose' }, app.context), e => e.code === 'PROMPT_REQUIRED');
+  await assert.rejects(app.orchestrator.resume({ jobId: first.jobId, action: 'continue', positiveTags: ['sitting'] }, app.context), e => e.code === 'GENERATION_BUDGET_EXHAUSTED');
+  assert.equal(app.renders.length, 1);
+});
