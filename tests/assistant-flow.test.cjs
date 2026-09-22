@@ -132,10 +132,11 @@ async function testHighLevelGenerationPersistsCandidatesAndSelection() {
       generation: { strategy: 'auto', autoSelect: true, maxSuccessfulRenders: 3, maxRenderAttempts: 5, acceptScore: 90, minImprovement: 3, jobTimeoutMs: 120000 }
     },
     primaryApi: { base: 'https://example.test/v1', model: 'primary-model' },
-    primaryGateway: { complete: async (_messages, config) => {
-      assert.equal(config.tools.some(row => row.function.name === 'vision_processOne'), false);
+    primaryGateway: { complete: async (messages, config) => {
+      assert.equal(config.tools.some(row => row.function.name === 'vision_processOne'), primaryRound < 2);
       assert.equal(config.tools.some(row => row.function.name === 'generation_execute'), primaryRound === 0);
-      if (primaryRound++ === 0) return { toolCalls: [{ id: 'generate', name: 'generation_execute', arguments: { requirements: '蓝发女孩', mode: 'create', strategy: 'auto' } }] };
+      if (primaryRound++ === 0) return { toolCalls: [{ id: 'generate', name: 'generation_execute', arguments: { requirements: '蓝发女孩', mode: 'create', strategy: 'auto', positiveTags: ['1girl', 'blue hair'] } }] };
+      if (primaryRound === 2) { const job = JSON.parse(messages.findLast(row => row.role === 'tool').content); return { toolCalls: [{ id: 'select', name: 'generation_select', arguments: { jobId: job.jobId, candidateId: 'candidate-1' } }] }; }
       return { text: '已完成并选择最佳候选。' };
     } },
     visionGateway: { complete: async messages => {
@@ -162,9 +163,9 @@ async function testHighLevelGenerationPersistsCandidatesAndSelection() {
   assert.equal(renderCount, 1);
   assert.equal(result.candidates.length, 1);
   assert.equal(result.selectedImageId, 'generated-1');
-  assert.equal(result.stopReason, 'prompt_unchanged');
+  assert.equal(result.stopReason, 'user_selected');
   assert.deepEqual(result.positiveTags, ['1girl', 'blue hair']);
-  assert.equal(result.usage.toolRounds, 2);
+  assert.equal(result.usage.toolRounds, 3);
   assert.equal(result.usage.comfyCalls, 1);
   const message = assistant.currentSession().messages.at(-1);
   assert.equal(message.result.candidates.length, 1);

@@ -160,7 +160,7 @@ function createAssistant(options = {}) {
   const primary = createPrimaryAgent({ client: ai, prompts, resolveImage, getSettings: executionSettings, charactersEnabled: Boolean(options.characters), favoritesEnabled: Boolean(options.favorites) });
   const subagents = createFixedSubagents({ vision: visionService, translation: options.translation, ai, visionAI: visionClient, prompts, resolveImage, getSettings: settings.snapshot });
   runtime = createAgentRuntime({ primaryClient: primary, subagents, tools: () => primaryTools, getSettings: executionSettings, getPrimaryPrompt: primary.getPrompt, monitor: callMonitor });
-  primaryTools = createPrimaryTools({ tags, favorites: options.favorites, characters: options.characters, images, imageRepository, runtime, comfy, comfyProfiles, generation: () => generation, getSettings: executionSettings });
+  primaryTools = createPrimaryTools({ storage, tags, favorites: options.favorites, characters: options.characters, images, imageRepository, runtime, comfy, comfyProfiles, generation: () => generation, getSettings: executionSettings });
   const internalTool = async (name, args, context) => {
     const outcome = await runtime.callTool(name, args, { parentRequestId: context.requestId, signal: context.signal, sessionId: context.sessionId, messageId: context.messageId, onEvent: context.onEvent });
     if (outcome?.ok === false) throw Object.assign(new Error(outcome.error?.message || '内部工具调用失败'), { code: outcome.error?.code || 'TOOL_FAILED', retryable: outcome.error?.retryable === true });
@@ -277,7 +277,9 @@ function createAssistant(options = {}) {
     const imageIds = ids(input.imageIds);
     if (!body && !imageIds.length) return failure('EMPTY_INPUT', '请输入内容或添加图片', input.requestId, session.id);
     if (input.signal?.aborted) return failure('CANCELLED', '请求已取消', input.requestId, session.id);
-    const target = feedbackTarget(session, { text: body, imageIds });
+    const target = input.feedbackJobId
+      ? { job: generation.get(input.feedbackJobId), candidateId: input.baseCandidateId }
+      : feedbackTarget(session, { text: body, imageIds });
     if (target?.ambiguous) {
       const note = '有多张候选图，请在要修改的候选图下填写这条修改意见，再点击“继续优化”。';
       append('user', body, {}, session.id);
@@ -287,7 +289,12 @@ function createAssistant(options = {}) {
       await flushPersist();
       return { ok: true, text: note, data, sessionId: session.id };
     }
-    if (target) return continueGeneration(target.messageId, target.candidateId, body, { ...input, onEvent: event => { observe(input.onEvent, event); observe(input.onToolEvent, event); } }, session.id);
+    if (target && !target.job?.agentControlled) return continueGeneration(target.messageId, target.candidateId, body, { ...input, onEvent: event => { observe(input.onEvent, event); observe(input.onToolEvent, event); } }, session.id);
+    let feedbackContext = null;
+    if (target?.job?.agentControlled) {
+      try { feedbackContext = generation.beginFeedback(target.job.jobId, target.candidateId, body, { sessionId: session.id }); }
+      catch (error) { return failure(error.code, error.message); }
+    }
     const requestId = text(input.requestId, id('primary'));
     const userId = id('message');
     const references = [];
@@ -307,7 +314,7 @@ function createAssistant(options = {}) {
     active = job; state.busy = true; state.status = 'running'; state.jobId = requestId; state.lastError = '';
     const callerAbort = () => cancel(requestId);
     input.signal?.addEventListener?.('abort', callerAbort, { once: true });
-    const current = { role: 'user', imageIds, content: [body || '请查看附图。', references.length ? `Attached imageIds: ${references.map(row => row.imageId).join(', ')}` : ''].filter(Boolean).join('\n\n') };
+    const current = { role: 'user', imageIds: feedbackContext?.viewImageIds || imageIds, content: [body || '请查看附图。', references.length ? `Attached imageIds: ${references.map(row => row.imageId).join(', ')}` : '', feedbackContext ? '当前修改任务（保留原目标与未提及内容）：' + JSON.stringify(feedbackContext) : ''].filter(Boolean).join('\n\n') };
     observe(input.onStart, { user: clone(user), assistant: clone(live), requestId, sessionId: session.id });
     const onEvent = event => {
       if (!writable(job)) return;
@@ -326,7 +333,9 @@ function createAssistant(options = {}) {
       schedulePersist(); observe(input.onEvent, clone(event)); observe(input.onToolEvent, clone(event));
     };
     try {
-      const result = await runtime.runPrimary({ requestId, sessionId: session.id, messageId: live.id, task: routeTask({ text: body, imageIds }), messages: [...previous, current], config: publicRequestConfig(config), signal: controller.signal,
+      const task = routeTask({ text: body, imageIds });
+      if (feedbackContext) { task.intent = 'auto'; task.feedbackJobId = feedbackContext.jobId; task.baseCandidateId = feedbackContext.baseCandidateId; task.forbidImages ||= feedbackContext.outputType === 'tags'; }
+      const result = await runtime.runPrimary({ requestId, sessionId: session.id, messageId: live.id, task, generationContext: feedbackContext ? generation.publicResult(feedbackContext.jobId) : null, messages: [...previous, current], config: publicRequestConfig(config), signal: controller.signal,
         onDelta: (delta, reasoning = '') => { if (!writable(job)) return; if (typeof delta === 'string') live.text += delta; if (typeof reasoning === 'string') live.reasoning += reasoning; schedulePersist(); observe(input.onDelta, live.text, live.reasoning, clone(live)); },
         onEvent,
         onToolCall: traces => { if (!writable(job)) return; for (const trace of array(traces)) { const index = live.toolCalls.findIndex(row => row.id === trace.id); if (index < 0) live.toolCalls.push(clone(trace)); else live.toolCalls[index] = clone(trace); } schedulePersist(); }
@@ -402,6 +411,9 @@ function createAssistant(options = {}) {
     const tagsOnly = found?.message?.result?.outputType === 'tags';
     if (!found || !jobId || (!resumeOnly && ((!tagsOnly && !text(candidateId)) || !note))) return failure('INVALID_INPUT', '继续优化需要候选图和修改意见');
     if (found.session.id !== state.currentId) return failure('SESSION_UNAVAILABLE', '当前会话不可用');
+    if (!resumeOnly && generation.get(jobId)?.agentControlled) {
+      return runPrimaryWithRuntime({ ...options, sessionId, text: note, feedbackJobId: jobId, baseCandidateId: candidateId });
+    }
     if (resumeOnly) {
       const current = generation.get(jobId);
       if (current?.status !== 'needs_input' || !['connection', 'workflow'].includes(current.needsInput?.kind) || current.stopReason === 'COMFY_SUBMISSION_UNKNOWN') return failure('INPUT_EXPIRED', '当前任务无法直接恢复，请按任务提示处理');

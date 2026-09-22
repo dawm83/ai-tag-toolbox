@@ -8,7 +8,7 @@ const { assertValid } = require('./schema');
 const { createCallMonitor } = require('./call-monitor');
 const { createTaskPolicy } = require('./task-policy');
 
-const TOOL_NAMES = Object.freeze(['tags.search', 'characters.search', 'conversation.listImages', 'conversation.viewImages', 'vision.processOne', 'translation.translate', 'agent.generateTags', 'comfy.status', 'comfy.validateWorkflow', 'comfy.render', 'generation.execute', 'generation.resume']);
+const TOOL_NAMES = Object.freeze(['tags.search', 'characters.search', 'conversation.listImages', 'conversation.viewImages', 'vision.processOne', 'translation.translate', 'agent.generateTags', 'comfy.status', 'comfy.validateWorkflow', 'comfy.render', 'generation.execute', 'generation.resume', 'generation.review', 'generation.select']);
 const NATIVE_NAMES = new Map(TOOL_NAMES.map(name => [name.replace('.', '_'), name]));
 function text(value, fallback = '') { const output = value == null ? '' : String(value).trim(); return output || fallback; }
 function object(value) { return value !== null && typeof value === 'object' && !Array.isArray(value); }
@@ -211,7 +211,7 @@ function createAgentRuntime(options = {}) {
       const registry = getTools();
       // 进度事件（如 ComfyUI 排队轮询）按队列值去重，避免每 1.2 秒刷一条任务事件。
       let lastProgressValue = null;
-      const childContext = { ...context, onEvent: event => {
+      const childContext = { ...context, caller: request.caller, afterRender: request.afterRender, onEvent: event => {
         const eventType = event?.type || 'progress';
         if (eventType === 'progress') {
           if (event?.queue !== undefined && event.queue === lastProgressValue) return;
@@ -235,7 +235,7 @@ function createAgentRuntime(options = {}) {
       if (!prompt) throw reject('PROMPT_INVALID', '主 AI 提示词为空');
       const history = (Array.isArray(request.messages) ? request.messages : []).map(historyMessage).filter(Boolean).filter(item => item.role === 'tool' || item.content || item.tool_calls?.length);
       if (!history.length && typeof request.input?.text === 'string') history.push({ role: 'user', content: request.input.text });
-      const messages = [{ role: 'system', content: prompt }, ...history]; const transcript = []; const toolCalls = []; const artifacts = []; const usedIds = new Set(); let generationResult = null; let round = 0;
+      const messages = [{ role: 'system', content: prompt }, ...history]; const transcript = []; const toolCalls = []; const artifacts = []; const usedIds = new Set(); let generationResult = object(request.generationContext) ? clone(request.generationContext) : null; let round = 0;
       context.captureInput({ messages, config: request.config || {} });
       const partial = () => ({ ...(generationResult ? clone(generationResult) : {}), ...taskResult(), text: '', reasoning: '', toolCalls: toolCalls.slice(), events: context.events.slice(), artifacts: artifacts.map(clone), imageIds: [...new Set(artifacts.map(item => item.imageId).filter(Boolean))], transcript: transcript.map(clone) });
       const retryAttempts = new Map();
@@ -281,9 +281,9 @@ function createAgentRuntime(options = {}) {
           const key = retryKey(call.name, call.args);
           const attempt = (retryAttempts.get(key) || 0) + 1;
           const previousTrace = retryTraces.get(key);
-          const outcome = blocked ? resultError(blocked, context.requestId) : await callTool(call.name, args, { parentRequestId: context.requestId, signal: context.signal, sessionId: context.sessionId, messageId: context.messageId, onEvent: event => { try { request.onEvent?.(event); } catch {} } });
+          const outcome = blocked ? resultError(blocked, context.requestId) : await callTool(call.name, args, { caller: 'primary', afterRender: Boolean(generationResult?.candidates?.length || request.task?.feedbackJobId), parentRequestId: context.requestId, signal: context.signal, sessionId: context.sessionId, messageId: context.messageId, onEvent: event => { try { request.onEvent?.(event); } catch {} } });
           const trace = { id: call.id, name: call.name, arguments: args, requestId: outcome.requestId, ok: outcome.ok, result: outcome.data, error: outcome.error, attempt, ...(blocked ? { blocked: true } : {}), ...(previousTrace ? { retryOf: previousTrace.id } : {}) }; toolCalls.push(trace);
-          if (call.name === 'generation.execute' || call.name === 'generation.resume') generationResult = outcome.ok && object(outcome.data) ? clone(outcome.data) : generationResult;
+          if (call.name.startsWith('generation.')) generationResult = outcome.ok && object(outcome.data) ? clone(outcome.data) : generationResult;
           if (Array.isArray(outcome.data?.artifacts)) for (const artifact of outcome.data.artifacts) if (!artifacts.some(item => item.imageId === artifact.imageId)) artifacts.push(clone(artifact));
           try { request.onToolCall?.([trace]); } catch {}
           const toolMessage = { role: 'tool', tool_call_id: call.id, content: JSON.stringify(outcome.ok ? outcome.data : { ok: false, error: outcome.error }) };

@@ -14,7 +14,7 @@ for (const savedDrawing of [false, true]) test(`drawing is unavailable before pr
     comfy: { status: async () => { networkCalls++; throw new Error('ComfyUI is offline'); }, render: async () => { networkCalls++; throw new Error('Unexpected render'); } },
     primaryGateway: { complete: async messages => {
       if (messages.at(-1).role === 'tool') { toolReply = JSON.parse(messages.at(-1).content); return { text: 'Tag 已生成。' }; }
-      return { toolCalls: [{ name: 'generation_execute', arguments: { requirements: '蓝发女孩', outputType: 'images' } }] };
+      return { toolCalls: [{ name: 'generation_execute', arguments: { requirements: '蓝发女孩', outputType: 'images', positiveTags: ['1girl', 'blue hair'] } }] };
     } },
     visionGateway: { complete: async () => ({ text: '{"positiveTags":["1girl","blue hair"],"negativeTags":[]}' }) }
   });

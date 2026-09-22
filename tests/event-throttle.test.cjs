@@ -88,7 +88,7 @@ test('render progress polling events are deduped and excluded from message task 
     settings: { comfy: { enabled: true, base: 'http://127.0.0.1:8188', workflow: {}, width: 768, height: 768, steps: 20, cfg: 7, negativeTags: [] } },
     primaryGateway: {
       complete: async () => {
-        if (gatewayFirst) { gatewayFirst = false; return { ok: true, toolCalls: [{ id: 'c1', type: 'function', function: { name: 'generation_execute', arguments: '{"requirements":"1girl","mode":"create","strategy":"quick"}' } }] }; }
+        if (gatewayFirst) { gatewayFirst = false; return { ok: true, toolCalls: [{ id: 'c1', type: 'function', function: { name: 'generation_execute', arguments: '{"requirements":"1girl","positiveTags":["1girl"],"mode":"create","strategy":"quick"}' } }] }; }
         return { ok: true, text: '完成' };
       }
     },

@@ -38,7 +38,7 @@ function fixture(options = {}) {
       '7': { class_type: 'CLIPTextEncode', inputs: { text: '', clip: ['4', 1] } },
       '8': { class_type: 'VAEDecode', inputs: { samples: ['3', 0], vae: ['4', 2] } }
     } }, generation: { autoRun: false } },
-    primaryGateway: { complete: async messages => messages.at(-1).role === 'tool' ? { text: 'done' } : { toolCalls: [{ name: 'generation_execute', arguments: { requirements: 'portrait', outputType: 'images' } }] } },
+    primaryGateway: { complete: async messages => messages.at(-1).role === 'tool' ? { text: 'done' } : { toolCalls: [{ name: 'generation_execute', arguments: { requirements: 'portrait', outputType: 'images', positiveTags: ['portrait'] } }] } },
     visionGateway: { complete: async () => ({ text: '{"positiveTags":["portrait"],"negativeTags":[]}' }) }
   };
   let assistant = modules.createAssistant(assistantOptions);

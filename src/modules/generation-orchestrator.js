@@ -377,7 +377,8 @@ function createGenerationOrchestrator(options = {}) {
         score: reviewed(candidate) ? score(candidate) : null,
         verdict: text(candidate.evaluation?.verdict),
         hardErrorCount: hardErrorCount(candidate),
-        summary: text(candidate.evaluation?.summary).slice(0, 240)
+        summary: text(candidate.evaluation?.summary).slice(0, 240),
+        issues: residualIssues(candidate).map(compactIssue)
       })),
       residualIssues: (job.residualIssues || []).slice(0, 6).map(compactIssue),
       needsInput: job.needsInput ? clone(job.needsInput) : null,
@@ -1069,6 +1070,21 @@ function createGenerationOrchestrator(options = {}) {
   function get(jobId) {
     return uiSnapshot(jobId);
   }
+  function beginFeedback(jobId, candidateId, feedback, context = {}) {
+    const job = jobs.get(text(jobId));
+    if (!job || !job.agentControlled) throw failure('JOB_NOT_FOUND', '没有找到模型管理的任务');
+    if (job.sessionId !== text(context.sessionId)) throw failure('SESSION_UNAVAILABLE', '任务不属于当前会话');
+    if (active.has(jobId) || job.pendingRender) throw failure('JOB_BUSY', '请先恢复当前绘图请求');
+    const base = activeCandidate(job, candidateId);
+    if (job.outputType !== 'tags' && !base) throw failure('CANDIDATE_NOT_FOUND', '请明确要修改的候选');
+    job.agentRoundLimit = job.successfulRounds + 1;
+    job.policy.maxRenderAttempts = job.renderAttempts + 1;
+    job.policy.autoRun = false;
+    persist(job);
+    return { jobId, baseCandidateId: base?.id || '', originalRequirements: job.originalRequirements, sourceImageId: job.sourceImageId,
+      positiveTags: base?.positiveTags || job.positiveTags, negativeTags: base?.negativeTags || job.negativeTags, feedback: text(feedback),
+      viewImageIds: [job.sourceImageId, base?.imageId].filter(Boolean), outputType: job.outputType };
+  }
   function list() {
     return [...jobs.values()].sort((a, b) => b.updatedAt - a.updatedAt).map(result);
   }
@@ -1110,7 +1126,7 @@ function createGenerationOrchestrator(options = {}) {
     return result(job);
   }
 
-  return Object.freeze({ execute, resume, review, cancel, get, list, uiSnapshot, publicResult, selectCandidate, selectAndFinish });
+  return Object.freeze({ execute, resume, review, beginFeedback, cancel, get, list, uiSnapshot, publicResult, selectCandidate, selectAndFinish });
 }
 
 module.exports = {

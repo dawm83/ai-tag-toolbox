@@ -50,7 +50,7 @@ test('native tools run a real translation child without cancelling the primary a
     assert(config.tools.every(item => /^[A-Za-z0-9_-]+$/.test(item.function.name)));
     assert(config.tools.some(item => item.function.name === 'characters_search'));
     assert(config.tools.some(item => item.function.name === 'generation_execute'));
-    assert(!config.tools.some(item => ['agent_generateTags', 'comfy_validateWorkflow', 'comfy_render'].includes(item.function.name)));
+    assert(!config.tools.some(item => ['comfy_validateWorkflow', 'comfy_render'].includes(item.function.name)));
     if (!count++) return { text: '', usage: { total_tokens: 3 }, toolCalls: [{ id: 'provider-call-1', type: 'function', function: { name: 'translation_translate', arguments: '{"text":"蓝发","direction":"zh-en","source":"local"}' } }] };
     return { text: '完成', usage: { total_tokens: 4 } };
   } } });

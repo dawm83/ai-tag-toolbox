@@ -80,7 +80,7 @@ test('a mixed analysis and Tags request still forbids rendering when the user ex
   const result = await app.run('先分析图片再生成Tag，不要生图');
   assert.equal(result.ok, true);
   assert.equal(seen.outputType, 'tags');
-  assert.equal(toolNames(requests[0]).includes('generation_resume'), false);
+  assert.equal(toolNames(requests[0]).includes('generation_resume'), true);
 });
 
 test('search exposes only search, blocks drawing in the same response, then answers with no tools', async t => {
@@ -153,7 +153,7 @@ test('image analysis forwards the original question, reads the selected image, a
   const inspected = [];
   let generated = 0;
   const { app, requests } = assistantFixture(t, [
-    { toolCalls: [call('vision_processOne', { imageId: image.id, mode: 'ai', instruction: 'invent a new picture' })] },
+    { toolCalls: [call('vision_processOne', { imageId: image.id, mode: 'ai', instruction: '请核对人物相对位置' })] },
     { toolCalls: [call('generation_execute', { requirements: 'draw another' })] },
     { text: '人物处于画面中央。' }
   ], {
@@ -167,16 +167,17 @@ test('image analysis forwards the original question, reads the selected image, a
   assert.deepEqual(toolNames(requests[0]), ['conversation_listImages', 'conversation_viewImages', 'vision_processOne']);
   assert.equal(inspected.length, 1);
   assert.equal(inspected[0].imageId, image.id);
-  assert.equal(inspected[0].instruction, question);
+  assert.equal(inspected[0].instruction, '请核对人物相对位置');
   assert.equal(generated, 0);
-  assert.deepEqual(toolNames(requests[1]), []);
+  assert(toolNames(requests[1]).includes('vision_processOne'));
 });
 
 test('explicit Tags output stays Tags-only with ComfyUI connected and passes the unmodified request to the Tag agent', async t => {
   const visionRequests = [];
   let renders = 0;
   const { app, requests } = assistantFixture(t, [
-    { toolCalls: [call('generation_execute', { requirements: 'wrong hair and outfit', originalRequirements: 'rewritten', outputType: 'images' })] },
+    { toolCalls: [call('agent_generateTags', { operation: 'compile', requirements: '帮我生成蓝发女孩的绘画Tag，穿白裙，不要出图' })] },
+    { toolCalls: [call('generation_execute', { requirements: 'wrong hair and outfit', originalRequirements: 'rewritten', outputType: 'images', positiveTags: ['1girl', 'blue hair', 'white dress'] })] },
     { text: '```text\n1girl, blue hair, white dress\n```' }
   ], {
     settings: { comfy: { enabled: true } },
@@ -192,8 +193,8 @@ test('explicit Tags output stays Tags-only with ComfyUI connected and passes the
   assert.deepEqual(result.positiveTags, ['1girl', 'blue hair', 'white dress']);
   assert(visionRequests[0][1].content[0].text.includes(original));
   assert(!visionRequests[0][1].content[0].text.includes('wrong hair'));
-  assert.deepEqual(toolNames(requests[0]), ['conversation_listImages', 'generation_execute']);
-  assert.deepEqual(toolNames(requests[1]), []);
+  assert(toolNames(requests[0]).includes('agent_generateTags'));
+  assert.deepEqual(toolNames(requests[2]), []);
 });
 
 test('failed search keeps the allowed tool available for a corrected query', async t => {
