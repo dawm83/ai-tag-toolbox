@@ -62,9 +62,11 @@ const evaluationPrompt = prompts.composeEvaluation();
 ## 请求组成
 
 - 主 AI：当前组 `primary` + 匹配成功的扩展提示词 + 会话上下文 + 用户输入 + 固定工具定义。
-- 文生图 Tag 子代理：当前组 `generateTags` + 当前组 `artistQuality` + 需求 + 可选图片/已有 Tag/参考 Tag。
+- 文生图 Tag 子代理：当前组 `generateTags` + 当前组 `artistQuality`；动态输入只有本轮关键要求、可选图片，修改时增加上一版完整 Tag 和简短 changes。旧任务字段在边界转换，不转发整份视觉蓝图、角色档案或评价 JSON。
 - 识图子代理：当前组 `vision` + 参考 Tag + 图片。
 - 候选图评估子代理：当前组 `candidateEvaluation` + 用户要求 + 候选图；复刻模式还包含参考图。
+
+V1.4.343 的新任务通过主 AI 原生工具循环调度。generation.execute 使用准备好的 Tag 出一轮，generation.resume 沿原任务继续；generation.review 是可选视觉辅助，generation.select 记录主 AI 的选择。主 AI 的参考图在 API 边界按会话权限解析，实际像素不进入会话存储；conversation.viewImages 可重看原图或候选。完全匹配旧内置 primary 文本的保存项按指纹升级，用户改写的内容保留。
 - 翻译子代理：当前组 `translation` + 待翻译文本。AI 翻译页启用 `includeAlignment` 时，程序在当前提示词后追加对照协议，并提供完整原文、方向与稳定 `sourceUnits`；要求返回完整译文及关联 ID 的 `targetSegments`。该协议也适用于用户已保存的旧提示词组，对照无效时保留普通译文。
 
 ## 包格式

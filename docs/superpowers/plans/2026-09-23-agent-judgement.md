@@ -28,11 +28,11 @@ Route: code-quality-workflow / ST-A0 / snapshot 2026-08-18；无设计目录候�
 
 ## 执行清单
 
-- [ ] 1. 真实视觉输入：修改 assistant.js / primary-agent.js / agent-runtime.js；新增 primary-vision.js 和测试。验证附图以 image_url 到达模型、没有字节落入会话、跨会话拒绝、纯文本模型降级、候选可重看。先运行新增测试观察失败，再最小实现；npm run check 后提交。
-- [ ] 2. 子代理输入：fixed-subagents.js 仅构造关键任务消息；增加 changes，旧 description/evaluation 仅按规则提取简短建议，丢弃旧蓝图和角色库外观。生成返回完整 Tag，修改返回 add/remove 补丁；验证实际网关 messages 无多余上下文且补丁真实生效；检查后提交。
-- [ ] 3. 主 AI 工具选择：primary-tools.js / task-policy.js / generation-orchestrator.js 增加模型管理的单轮路径及评价/选择工具；保留旧任务内部接口。先验证两轮出图之间确实回到主 AI、评图与识图不被暗调、source/session/budget/cancel 检查仍有效，再实现并提交。
-- [ ] 4. 原任务反馈与提示词：assistant.js 将新任务反馈及候选卡操作带回主 AI，指定原 job 和候选；primary-agent.js / task-policy.js 清除相互覆盖的固定流水线指令；更新工具说明及主提示词素材。验证 text-only 主 AI 的视觉辅助、本地一次提示、修改不重新识图、完整 Tag 基线不丢字段。检查后提交。
-- [ ] 5. 最终检查与交付：完整 npm run check、最终 diff、版本标识；按现有 package-unified-tags.cjs 复用桌面 1.4.342 运行库。离线核对源码/asar/依赖/模型/可执行文件，替换桌面为唯一 V1.4.343，留待人工测试。
+- [x] 1. 真实视觉输入：修改 assistant.js / primary-agent.js / agent-runtime.js；新增 primary-vision.js 和测试。验证附图以 image_url 到达模型、没有字节落入会话、跨会话拒绝、纯文本模型降级、候选可重看。先运行新增测试观察失败，再最小实现；npm run check 后提交。
+- [x] 2. 子代理输入：fixed-subagents.js 仅构造关键任务消息；增加 changes，旧 description/evaluation 仅按规则提取简短建议，丢弃旧蓝图和角色库外观。生成返回完整 Tag，修改返回 add/remove 补丁；验证实际网关 messages 无多余上下文且补丁真实生效；检查后提交。
+- [x] 3. 主 AI 工具选择：primary-tools.js / task-policy.js / generation-orchestrator.js 增加模型管理的单轮路径及评价/选择工具；保留旧任务内部接口。先验证两轮出图之间确实回到主 AI、评图与识图不被暗调、source/session/budget/cancel 检查仍有效，再实现并提交。
+- [x] 4. 原任务反馈与提示词：assistant.js 将新任务反馈及候选卡操作带回主 AI，指定原 job 和候选；primary-agent.js / task-policy.js 清除相互覆盖的固定流水线指令；更新工具说明及主提示词素材。验证 text-only 主 AI 的视觉辅助、本地一次提示、修改不重新识图、完整 Tag 基线不丢字段。检查后提交。
+- 5. 最终检查与交付（执行记录写入桌面包 build-info.json）：完整 npm run check、最终 diff、版本标识；按现有 package-unified-tags.cjs 复用桌面 1.4.342 运行库。离线核对源码/asar/依赖/模型/可执行文件，替换桌面为唯一 V1.4.343，留待人工测试。
 
 ## 核验用例
 
@@ -52,3 +52,9 @@ assert.equal(updatedJob.jobId, originalJob.jobId);
 ## 验收限制
 
 本地测试证明协议、状态和传递，不能证明第三方模型视觉质量。真实岛风例图、外部模型图片支持、实际 ComfyUI 复刻质量由用户在最终桌面版本测试。
+
+## 实施记录
+
+已按小阶段提交图片通道、子代理输入、单轮任务、自主工具调用、角色/连接恢复、状态展示和提示词升级。独立只读审查发现的多图覆盖、能力降级、角色确认后错误首跑、取消状态四项问题均已有回归用例及修复；最终聚焦审查 57/57 通过，无新增阻断问题。
+
+最终代码检查 693 项通过。Python PATH 指向 Windows 占位程序，范围检查改用 Codex 捆绑 Python。语义工具保留现有内部名称，不引入第三方 Agent 框架。legacy 存档保留兼容路径；新任务使用 agentControlled。桌面组装/副本哈希/依赖/模型/exe 校验结果由打包工具实时写入包根 build-info.json，真实服务质量仍待人工验收。

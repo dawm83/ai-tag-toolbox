@@ -1,24 +1,24 @@
 {
-  "version": "1.4.342",
+  "version": "1.4.343",
   "buildEvidenceFile": "build-info.json",
   "evidenceLocation": "Desktop package root, outside resources/app.asar",
-  "desktopDirectory": "C:/Users/admin/Desktop/AI绘画Tag工具箱V1.4.342",
+  "desktopDirectory": "C:/Users/admin/Desktop/AI绘画Tag工具箱V1.4.343",
   "sourceBranch": "codex/drawing-feedback",
   "sourceCommitEvidence": "build-info.json.sourceCommit",
-  "scope": "Local-only performance and redundancy reduction while preserving generation continuation and prompt behavior",
+  "scope": "Primary multimodal judgement, autonomous single-round generation, minimal Tag subagent context and original-job feedback",
   "checks": {
     "command": "npm run check",
-    "testsPassed": 671,
+    "testsPassed": 693,
     "testsFailed": 0,
     "realElectronWindow": "Pending user acceptance; slow launch tests skipped per AGENTS.md",
     "realAiOrComfyGeneration": false,
     "desktopIntegrity": "Verify all maintained sources against both mirrors and app.asar; preserve runtime dependencies, model files and versioned executable"
   },
   "knownLimits": [
-    "Unknown, mixed and contextual requests use the existing primary agent decision path.",
-    "Image payload checks and rollback, local tag based first recreation, and improved evaluation loops are pending later stages.",
-    "Tags generation reuses the existing tags-only generation workflow in this phase.",
-    "Existing ComfyUI disconnect preference behavior remains pending a later change."
+    "Real provider image support, image understanding and generation quality require user acceptance.",
+    "Legacy saved jobs retain their original resume behavior; new tasks use primary-controlled decisions.",
+    "Configured reference-image workflows may still bind source images; the delivered recreationMode records the actual render path.",
+    "Existing ComfyUI disconnect preference behavior is unchanged."
   ],
   "published": false,
   "pushed": false

@@ -1,7 +1,7 @@
 {
     "name": "ai-tag-toolbox-rewrite",
-    "version": "1.4.342",
-    "description": "AI 绘画 Tag 工具箱 V1.4.342 本地精简与性能测试版",
+    "version": "1.4.343",
+    "description": "AI 绘画 Tag 工具箱 V1.4.343 主AI视觉判断与自主调度测试版",
     "main": "main.js",
     "private": true,
     "type": "commonjs",
