@@ -293,6 +293,7 @@ function createGenerationOrchestrator(options = {}) {
       jobId: job.jobId,
       sessionId: job.sessionId,
       mode: job.mode,
+      agentControlled: job.agentControlled === true,
       outputType: job.outputType,
       requirements: job.originalRequirements,
       originalRequirements: job.originalRequirements,
@@ -345,6 +346,13 @@ function createGenerationOrchestrator(options = {}) {
     return clone({
       jobId: job.jobId,
       status: job.status,
+      agentControlled: job.agentControlled === true,
+      decisionRequired: job.agentControlled === true && job.status === 'awaiting_feedback',
+      autoRun: job.policy.autoRun,
+      remainingRounds: Math.max(0, (job.agentRoundLimit ?? job.policy.maxAutoRounds) - job.successfulRounds),
+      originalRequirements: job.originalRequirements,
+      sourceImageId: job.sourceImageId,
+      ...(job.agentControlled && job.outputType === 'images' ? { viewImageIds: [job.sourceImageId, ...job.candidates.slice(-3).map(row => row.imageId)].filter(Boolean) } : {}),
       outcome: job.outcome || '',
       mode: job.mode,
       outputType: job.outputType,
@@ -516,7 +524,7 @@ function createGenerationOrchestrator(options = {}) {
     if (source !== true) return source;
     const characters = await resolveCharacters(job, context);
     if (characters !== true) return characters;
-    if (job.mode === 'recreate' && !object(job.visualBlueprint)) {
+    if (!job.agentControlled && job.mode === 'recreate' && !object(job.visualBlueprint)) {
       const value = await callAgent(job, context, 'vision', { imageId: job.sourceImageId, mode: 'ai', instruction: '客观记录参考原图的紧凑视觉蓝图，涵盖人物、外貌、姿势、视角、构图、服装、场景、光照和风格。只描述原图可见事实；不要将观察自动标成用户必须保留的硬约束，后续子代理会结合用户要求决定取舍。' }, 'source_inspection');
       job.visualBlueprint = compactBlueprint(value);
       emit(job, context, 'source.inspected', { sourceImageId: job.sourceImageId });
@@ -721,11 +729,12 @@ function createGenerationOrchestrator(options = {}) {
         const value = errorValue(error);
         job.errors.push({ stage: 'render', attempt: job.renderAttempts, ...value, at: Date.now() });
         emit(job, context, 'candidate.failed', { attempt: job.renderAttempts, error: value });
-        if (job.pendingRender || ['COMFY_CONNECTION', 'COMFY_TIMEOUT', 'COMFY_HTTP_ERROR', 'COMFY_DISABLED', 'COMFY_SUBMISSION_UNKNOWN'].includes(value.code)) throw error;
+        if (job.agentControlled || job.pendingRender || ['COMFY_CONNECTION', 'COMFY_TIMEOUT', 'COMFY_HTTP_ERROR', 'COMFY_DISABLED', 'COMFY_SUBMISSION_UNKNOWN'].includes(value.code)) throw error;
         continue;
       }
       const artifacts = normalizeArtifactRows(rendered).slice(0, job.policy.imagesPerRound);
       if (!artifacts.length) {
+        if (job.agentControlled) throw failure('OUTPUT_INVALID', 'ComfyUI 未返回图片');
         const value = errorValue(failure('OUTPUT_INVALID', 'ComfyUI 未返回图片'));
         job.errors.push({ stage: 'render', attempt: job.renderAttempts, ...value, at: Date.now() });
         emit(job, context, 'candidate.failed', { attempt: job.renderAttempts, error: value });
@@ -762,10 +771,10 @@ function createGenerationOrchestrator(options = {}) {
           aspectRatioMode: text(rendered?.aspectRatioMode, job.aspectRatioMode)
         });
         emit(job, context, 'candidate.ready', { candidateId, imageId: artifact.imageId, iteration: job.successfulRenders, roundId, roundIndex, indexInRound: indexInRound + 1 });
-        await evaluateOne(job, activeCandidate(job, candidateId), context);
+        if (!job.agentControlled) await evaluateOne(job, activeCandidate(job, candidateId), context);
       }
       const roundCandidates = candidateIds.map(id => activeCandidate(job, id)).filter(Boolean);
-      const recommendation = await compareCandidates(job, roundCandidates, context, 'round_compare');
+      const recommendation = job.agentControlled ? { candidate: null, comparison: null } : await compareCandidates(job, roundCandidates, context, 'round_compare');
       if (recommendation.candidate) {
         job.candidates = job.candidates.map(candidate => ({ ...candidate, roundRecommended: candidate.id === recommendation.candidate.id }));
       }
@@ -827,6 +836,22 @@ function createGenerationOrchestrator(options = {}) {
       emit(job, context, 'generation.started', { mode: job.mode, outputType: job.outputType, autoRun: job.policy.autoRun, imagesPerRound: job.policy.imagesPerRound, maxAutoRounds: job.policy.maxAutoRounds });
       const prepared = await prepare(job, context);
       if (prepared !== true) return prepared;
+      if (job.agentControlled) {
+        if (!job.positiveTags.length) throw failure('PROMPT_REQUIRED', '请先提供可执行 Tag；可直接使用初始 Tag，或调用 agent.generateTags');
+        syncBriefPrompt(job, job.successfulRounds);
+        if (job.outputType === 'tags') {
+          job.outcome = 'tags_only'; job.stopReason = 'tags_only';
+          transition(job, 'completed');
+        } else {
+          const ready = await checkPreflight(job, context);
+          if (ready !== true) return ready;
+          await renderRound(job, context);
+          job.stopReason = job.policy.autoRun ? 'awaiting_agent' : 'awaiting_feedback';
+          transition(job, 'awaiting_feedback');
+        }
+        emit(job, context, job.outputType === 'tags' ? 'generation.completed' : 'generation.awaiting_feedback', { outputType: job.outputType, decisionRequired: true });
+        return result(job);
+      }
       await compile(job, context);
       if (job.pendingFeedback) {
         const pending = job.pendingFeedback;
@@ -902,6 +927,7 @@ function createGenerationOrchestrator(options = {}) {
     }
   }
   async function execute(input = {}, context = {}) {
+    if (input.agentControlled && !strings(input.positiveTags).length) throw failure('PROMPT_REQUIRED', '请先提供可执行 Tag；可直接使用初始 Tag，或调用 agent.generateTags');
     const originalRequirements = text(input.originalRequirements || input.requirements);
     if (!originalRequirements) throw failure('INVALID_INPUT', '生成任务缺少 originalRequirements');
     let mode = ['create', 'recreate'].includes(input.mode) ? input.mode : 'auto';
@@ -915,6 +941,10 @@ function createGenerationOrchestrator(options = {}) {
       outputType: input.outputType === 'tags' || getSettings()?.comfy?.enabled === false || context.settings?.comfy?.enabled === false ? 'tags' : 'images',
       status: 'preparing',
       originalRequirements,
+      agentControlled: input.agentControlled === true,
+      agentRoundLimit: policy.autoRun ? policy.maxAutoRounds : 1,
+      positiveTags: input.positiveTags,
+      negativeTags: input.negativeTags,
       requirements: originalRequirements,
       sourceImageId: text(input.sourceImageId),
       sourceSlot: Number.isInteger(input.sourceSlot) ? input.sourceSlot : null,
@@ -940,6 +970,19 @@ function createGenerationOrchestrator(options = {}) {
     if (TERMINAL_STATES.has(job.status) && !(job.status === 'completed' && input.action === 'continue')) return result(job);
     if (job.stopReason === 'COMFY_SUBMISSION_UNKNOWN') return result(job);
     if (active.has(job.jobId)) throw failure('JOB_BUSY', '生成任务仍在执行中');
+    if (job.agentControlled && input.positiveTags !== undefined) {
+      const positiveTags = strings(input.positiveTags), negativeTags = strings(input.negativeTags ?? job.negativeTags);
+      if (!positiveTags.length) throw failure('PROMPT_REQUIRED', '请提供非空的正向 Tag');
+      if (input.baseCandidateId && !activeCandidate(job, input.baseCandidateId)) throw failure('CANDIDATE_NOT_FOUND', '没有找到基础候选');
+      if (job.pendingRender) throw failure('RENDER_PENDING', '旧图仍在处理中，请先恢复原请求');
+      if (input.outputType !== 'tags' && job.outputType !== 'tags' && job.successfulRounds >= (job.agentRoundLimit ?? job.policy.maxAutoRounds)) throw failure('GENERATION_BUDGET_EXHAUSTED', '本轮生成次数已用完，请交付已有候选并等待用户反馈');
+      if (promptFingerprint(positiveTags, negativeTags) === promptFingerprint(job.positiveTags, job.negativeTags)) throw failure('PROMPT_UNCHANGED', 'Tag 未改变，不重复出图');
+      job.positiveTags = positiveTags; job.negativeTags = negativeTags;
+      if (input.outputType === 'tags') job.outputType = 'tags';
+      job.selectedCandidateId = ''; job.outcome = ''; job.stopReason = ''; job.residualIssues = [];
+      if (input.feedback) job.feedbackHistory = [...(job.feedbackHistory || []), { feedback: text(input.feedback), at: Date.now() }].slice(-32);
+      return runJob(job, context);
+    }
     const continuing = input.action === 'continue' && ['awaiting_feedback', 'completed'].includes(job.status);
     if (job.status === 'awaiting_feedback' || continuing) {
       if (input.action !== 'continue') throw failure('INVALID_INPUT', '手动任务需要明确的 continue 操作');
@@ -1011,6 +1054,18 @@ function createGenerationOrchestrator(options = {}) {
     if (running && !running.controller.signal.aborted) running.controller.abort(failure('CANCELLED', '生成任务已取消'));
     return true;
   }
+  async function review(input, context = {}) {
+    const job = jobs.get(text(input.jobId));
+    if (!job) throw failure('JOB_NOT_FOUND', '没有找到生成任务');
+    if (job.sessionId !== text(context.sessionId)) throw failure('SESSION_UNAVAILABLE', '当前会话无权读取该任务');
+    if (active.has(job.jobId)) throw failure('JOB_BUSY', '任务仍在执行');
+    const candidate = activeCandidate(job, input.candidateId);
+    if (!candidate) throw failure('CANDIDATE_NOT_FOUND', '没有找到候选图');
+    const run = runContext(job, context), status = job.status;
+    try { await evaluateOne(job, candidate, run); }
+    finally { if (job.status === 'evaluating') transition(job, status); releaseRun(job.jobId); }
+    return result(job);
+  }
   function get(jobId) {
     return uiSnapshot(jobId);
   }
@@ -1055,7 +1110,7 @@ function createGenerationOrchestrator(options = {}) {
     return result(job);
   }
 
-  return Object.freeze({ execute, resume, cancel, get, list, uiSnapshot, publicResult, selectCandidate, selectAndFinish });
+  return Object.freeze({ execute, resume, review, cancel, get, list, uiSnapshot, publicResult, selectCandidate, selectAndFinish });
 }
 
 module.exports = {

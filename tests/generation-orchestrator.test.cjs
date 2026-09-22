@@ -662,3 +662,43 @@ test('generation revisions mirror current prompt and increment brief iteration',
   assert.deepEqual(result.brief.currentPrompt.negativeTags, result.negativeTags);
   assert.equal(result.brief.currentPrompt.iteration, 1);
 });
+
+test('agent-controlled recreation renders supplied baseline once and returns the decision to the primary', async () => {
+  const app = harness();
+  const tags = ['2girls', 'standing', 'garden'];
+  const result = await app.orchestrator.execute({ originalRequirements: '复刻原图', sourceImageId: 'source-1', mode: 'recreate', agentControlled: true, positiveTags: tags }, app.context);
+  assert.equal(result.status, 'awaiting_feedback');
+  assert.equal(result.agentControlled, true);
+  assert.deepEqual(app.renders[0].positiveTags, tags);
+  assert.equal(app.renders.length, 1);
+  assert.equal(app.subagentCalls.length, 0, 'no hidden inspection, compilation, review or revision');
+  const visible = app.orchestrator.publicResult(result.jobId);
+  assert.equal(visible.decisionRequired, true);
+  assert.deepEqual(visible.viewImageIds, ['source-1', 'img-1']);
+});
+
+test('agent-controlled rounds preserve the job, reject duplicate prompts and stop at the task budget', async () => {
+  const app = harness({ settings: { generation: { autoRun: true, maxAutoRounds: 2 } } });
+  const first = await app.orchestrator.execute({ requirements: 'portrait', agentControlled: true, positiveTags: ['standing'] }, app.context);
+  const second = await app.orchestrator.resume({ jobId: first.jobId, action: 'continue', baseCandidateId: 'candidate-1', positiveTags: ['sitting'], feedback: '坐姿' }, app.context);
+  assert.equal(second.jobId, first.jobId);
+  assert.equal(app.renders.length, 2);
+  await assert.rejects(app.orchestrator.resume({ jobId: first.jobId, action: 'continue', positiveTags: ['lying'] }, app.context), e => e.code === 'GENERATION_BUDGET_EXHAUSTED');
+  assert.equal(app.renders.length, 2);
+  const solo = harness();
+  const one = await solo.orchestrator.execute({ requirements: 'portrait', agentControlled: true, positiveTags: ['standing'] }, solo.context);
+  await assert.rejects(solo.orchestrator.resume({ jobId: one.jobId, action: 'continue', positiveTags: ['standing'] }, solo.context), e => e.code === 'PROMPT_UNCHANGED');
+  assert.equal(solo.renders.length, 1);
+});
+
+test('agent-controlled generation requires a ready prompt and evaluation is explicit and session-scoped', async () => {
+  const app = harness({ reviewScores: [96] });
+  await assert.rejects(app.orchestrator.execute({ requirements: 'draw', agentControlled: true }, app.context), e => e.code === 'PROMPT_REQUIRED');
+  const first = await app.orchestrator.execute({ requirements: 'draw', positiveTags: ['standing'], agentControlled: true }, app.context);
+  await assert.rejects(app.orchestrator.review({ jobId: first.jobId, candidateId: 'candidate-1' }, { ...app.context, sessionId: 'other' }), e => e.code === 'SESSION_UNAVAILABLE');
+  const reviewed = await app.orchestrator.review({ jobId: first.jobId, candidateId: 'candidate-1' }, app.context);
+  assert.equal(reviewed.candidates[0].evaluation.score, 96);
+  assert.equal(app.subagentCalls.length, 1);
+  assert.equal(app.subagentCalls[0].name, 'evaluateImages');
+  assert.equal(app.renders.length, 1);
+});
