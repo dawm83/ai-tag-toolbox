@@ -5,10 +5,10 @@
   "desktopDirectory": "C:/Users/admin/Desktop/AI绘画Tag工具箱V1.4.343",
   "sourceBranch": "codex/drawing-feedback",
   "sourceCommitEvidence": "build-info.json.sourceCommit",
-  "scope": "Primary multimodal judgement, autonomous single-round generation, minimal Tag subagent context and original-job feedback",
+  "scope": "Primary multimodal judgement, autonomous single-round generation, minimal Tag subagent context, original-job feedback, and local Tag first recreation",
   "checks": {
     "command": "npm run check",
-    "testsPassed": 693,
+    "testsPassed": 694,
     "testsFailed": 0,
     "realElectronWindow": "Pending user acceptance; slow launch tests skipped per AGENTS.md",
     "realAiOrComfyGeneration": false,
