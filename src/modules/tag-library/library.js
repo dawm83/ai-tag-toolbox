@@ -12,6 +12,34 @@ const { prepareBaseUpdate } = require('./base-update');
 const { projectLibraryBundle, prepareImportCandidate, preparePasteBundle, projectMigrationReport, encodeBundle, encodeDataFile, decodeBundle } = require('./transfer');
 
 const fail = (code, message) => ({ ok: false, error: { code, message } });
+const FAST_MUTATION_TYPES = new Set(['select', 'clearSelection', 'markCopied']);
+
+// Selection and "recently copied" updates only touch two small arrays.  The
+// command validator has already checked the incoming value, and the current
+// document was fully validated when it was loaded or structurally edited.  A
+// small reference check here keeps those frequent UI operations from walking
+// the complete tag, taxonomy and membership graph on every click.
+function validateFastMutation(command, candidate, projection, baseFingerprint, previousRevision) {
+  const document = candidate?.document;
+  if (!document || document.baseFingerprint !== baseFingerprint || document.revision !== previousRevision + 1 ||
+    !Array.isArray(document.selection) || !Array.isArray(document.recentTagIds)) {
+    return fail('INVALID_DOCUMENT', '标签库数据校验失败');
+  }
+  if (command.type === 'select' && command.selected) {
+    const value = command.value;
+    if (value.kind === 'tag') {
+      if (!projection?.tag(value.tagId)) return fail('UNRESOLVED_REFERENCE', '选择的标签不存在');
+    } else if (value.kind === 'character') {
+      const links = projection?.characters?.get(value.characterId);
+      if (!links) return fail('UNRESOLVED_REFERENCE', '选择的角色不存在');
+      for (const field of ['generalTagIds', 'specificTagIds']) {
+        const available = new Set(links[field]);
+        if (value[field].some(id => !available.has(id))) return fail('UNRESOLVED_REFERENCE', '角色选择包含不存在的特征');
+      }
+    }
+  }
+  return { ok: true, data: document };
+}
 function canonical(value) {
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
   if (value && typeof value === 'object') return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`;
@@ -132,7 +160,13 @@ function createTagLibrary({ base, repository, legacyInput, baseUpdates = [], ids
       if (command.type === 'applyImport') importPreview = null;
       operations.set(options.operationId, { fingerprint, result: clone(result) }); return result;
     }
-    const checked = validateDocument(candidate.document);
+    // Selection/recent-copy commands are high-frequency UI mutations. They
+    // only change local arrays and have already passed command/reference
+    // checks in applyLibraryCommand, so avoid re-validating the entire library
+    // graph for every click. Structural edits still use the full validator.
+    const checked = FAST_MUTATION_TYPES.has(command.type)
+      ? validateFastMutation(command, candidate, projection, immutableBase.fingerprint, current.revision)
+      : validateDocument(candidate.document);
     if (!checked.ok) return checked;
     try { await repository.save(clone(checked.data)); }
     catch { lastWriteSucceeded = false; return fail('STORAGE_WRITE_FAILED', '标签库保存失败，草稿尚未提交，可重试'); }
