@@ -5,10 +5,10 @@ const assert = require('node:assert/strict');
 const { createAssistant } = require('../src/modules/assistant');
 const { createStorage } = require('../src/modules/storage');
 
-function fixture(t, outputType = 'images', candidates = 1) {
+function fixture(t, outputType = 'images', candidates = 1, selectedCandidateId = '') {
   const storage = createStorage(), revisions = [], requests = [];
   const rows = Array.from({ length: candidates }, (_, i) => ({ id: `candidate-${i + 1}`, imageId: `image-${i + 1}`, iteration: i + 1, roundIndex: 1, positiveTags: ['identity', 'sitting', 'garden'], negativeTags: [], prompt: 'identity, sitting, garden' }));
-  const job = { jobId: 'original-job', sessionId: 's1', status: 'completed', outputType, mode: 'create', originalRequirements: '画角色在花园', positiveTags: ['identity', 'sitting', 'garden'], negativeTags: [], candidates: outputType === 'tags' ? [] : rows };
+  const job = { jobId: 'original-job', sessionId: 's1', status: 'completed', outputType, mode: 'create', originalRequirements: '画角色在花园', positiveTags: ['identity', 'sitting', 'garden'], negativeTags: [], candidates: outputType === 'tags' ? [] : rows, selectedCandidateId };
   storage.set('generation_jobs', [job]);
   const app = createAssistant({
     storage,
@@ -49,6 +49,17 @@ test('Tags feedback remains Tags-only through the ordinary chat entry', async t 
 
 test('several unselected candidates require a choice and leave the job untouched', async t => {
   const f = fixture(t, 'images', 2);
+  const before = f.storage.get('generation_jobs');
+  const result = await f.app.run('姿势不对，改成站立');
+  assert.equal(result.data.status, 'needs_input');
+  assert.match(result.text, /候选/);
+  assert.equal(f.requests.length, 0);
+  assert.equal(f.revisions.length, 0);
+  assert.deepEqual(f.storage.get('generation_jobs'), before);
+});
+
+test('several candidates still require an explicit choice even when one is preselected', async t => {
+  const f = fixture(t, 'images', 2, 'candidate-1');
   const before = f.storage.get('generation_jobs');
   const result = await f.app.run('姿势不对，改成站立');
   assert.equal(result.data.status, 'needs_input');

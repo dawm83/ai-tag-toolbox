@@ -261,7 +261,7 @@ function createAssistant(options = {}) {
     if (explicit.length === 1) return explicit[0];
     const target = targets[0], candidates = array(target.job.candidates);
     const selected = candidates.find(c => c.id === target.job.selectedCandidateId || c.selected);
-    if (explicit.length > 1 || (candidates.length > 1 && !selected)) return { ...target, ambiguous: true };
+    if (explicit.length > 1 || candidates.length > 1) return { ...target, ambiguous: true };
     return { ...target, candidateId: selected?.id || candidates[0]?.id || '' };
   }
   async function runPrimaryWithRuntime(value, config = {}) {
