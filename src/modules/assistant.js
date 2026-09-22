@@ -157,7 +157,7 @@ function createAssistant(options = {}) {
   }
   const comfy = options.comfy && typeof options.comfy.render === 'function' ? options.comfy : createComfy({ ...(options.comfyOptions || {}), profiles: comfyProfiles });
   const visionService = options.visionService || createVisionService({ images, visionTempStore, localVision: options.localVision || options.vision, visionAI: visionClient, parseMetadata: parsePngMetadata, getPrompt: key => prompts.getEffective?.(key) || prompts.get?.(key) || '' });
-  const primary = createPrimaryAgent({ client: ai, prompts, getSettings: executionSettings, charactersEnabled: Boolean(options.characters), favoritesEnabled: Boolean(options.favorites) });
+  const primary = createPrimaryAgent({ client: ai, prompts, resolveImage, getSettings: executionSettings, charactersEnabled: Boolean(options.characters), favoritesEnabled: Boolean(options.favorites) });
   const subagents = createFixedSubagents({ vision: visionService, translation: options.translation, ai, visionAI: visionClient, prompts, resolveImage, getSettings: settings.snapshot });
   runtime = createAgentRuntime({ primaryClient: primary, subagents, tools: () => primaryTools, getSettings: executionSettings, getPrimaryPrompt: primary.getPrompt, monitor: callMonitor });
   primaryTools = createPrimaryTools({ tags, favorites: options.favorites, characters: options.characters, images, imageRepository, runtime, comfy, comfyProfiles, generation: () => generation, getSettings: executionSettings });
@@ -307,7 +307,7 @@ function createAssistant(options = {}) {
     active = job; state.busy = true; state.status = 'running'; state.jobId = requestId; state.lastError = '';
     const callerAbort = () => cancel(requestId);
     input.signal?.addEventListener?.('abort', callerAbort, { once: true });
-    const current = { role: 'user', content: [body || '请查看附图。', references.length ? `Attached imageIds: ${references.map(row => row.imageId).join(', ')}` : ''].filter(Boolean).join('\n\n') };
+    const current = { role: 'user', imageIds, content: [body || '请查看附图。', references.length ? `Attached imageIds: ${references.map(row => row.imageId).join(', ')}` : ''].filter(Boolean).join('\n\n') };
     observe(input.onStart, { user: clone(user), assistant: clone(live), requestId, sessionId: session.id });
     const onEvent = event => {
       if (!writable(job)) return;

@@ -6,8 +6,8 @@ const { errorShape, resultOk, resultError } = require('./error-manager');
 const { compactVisionResult } = require('./vision-payload');
 const { fitDimensionsToAspectRatio } = require('./images');
 const { hasWritableDimensionBindings } = require('./comfy-workflow');
-const TOOL_NAMES = Object.freeze(['tags.search', 'characters.search', 'conversation.listImages', 'vision.processOne', 'translation.translate', 'agent.generateTags', 'comfy.status', 'comfy.validateWorkflow', 'comfy.render', 'generation.execute', 'generation.resume']);
-const PRIMARY_TOOL_NAMES = Object.freeze(['tags.search', 'characters.search', 'conversation.listImages', 'vision.processOne', 'translation.translate', 'comfy.status', 'generation.execute', 'generation.resume']);
+const TOOL_NAMES = Object.freeze(['tags.search', 'characters.search', 'conversation.listImages', 'conversation.viewImages', 'vision.processOne', 'translation.translate', 'agent.generateTags', 'comfy.status', 'comfy.validateWorkflow', 'comfy.render', 'generation.execute', 'generation.resume']);
+const PRIMARY_TOOL_NAMES = Object.freeze(['tags.search', 'characters.search', 'conversation.listImages', 'conversation.viewImages', 'vision.processOne', 'translation.translate', 'comfy.status', 'generation.execute', 'generation.resume']);
 const NATIVE_NAMES = new Map(TOOL_NAMES.map(name => [name.replace('.', '_'), name]));
 function text(value) { return typeof value === 'string' ? value.trim() : ''; }
 function object(value) { return value !== null && typeof value === 'object' && !Array.isArray(value); }
@@ -37,6 +37,7 @@ const DEFINITIONS = Object.freeze({
   'tags.search': { description: '查询本站标签及释义；Tag 含义、拼写或是否属于本站词库不确定时调用。命中角色名时附带角色出处和外貌 Tag。items 按稳定 id 去重，kind 区分 tag 和 bundle，favoriteLocations 汇总收藏位置；content 是完整原文，contentOmitted=true 表示内容未返回，不得用部分文本代替。', parameters: schema({ query: { type: 'string', maxLength: 1000 }, category: string, includeAdult: { type: 'boolean' }, limit: { type: 'integer', minimum: 1,maximum: 200 } }, ['query']), outputSchema: schema({ items: { type: 'array', maxItems: 200, items: tagSchema } }, ['items']) },
   'characters.search': { description: '查询本地角色资料，返回中英文名、作品、身份词和可选特征；已确认角色向 generation.execute 传 characterIds；仍有歧义时传 characterQueries 让用户选择。', parameters: schema({ query: { type: 'string', maxLength: 1000 }, seriesId: string, precision: { type: 'string', enum: ['exact', 'standard', 'broad'] }, includeAdult: { type: 'boolean' }, limit: { type: 'integer', minimum: 1, maximum: 10 } }, ['query']), outputSchema: schema({ items: { type: 'array', maxItems: 10, items: characterSchema }, total: { type: 'integer', minimum: 0 } }, ['items', 'total']) },
   'conversation.listImages': { description: '读取当前会话的真实 imageId、显示编号和图片元数据。', parameters: schema({ includePending: { type: 'boolean' }, includeDeleted: { type: 'boolean' } }), outputSchema: schema({ items: { type: 'array', items: imageSchema }, pendingIds: { type: 'array', items: string } }, ['items', 'pendingIds']) },
+  'conversation.viewImages': { description: '让有视觉能力的主 AI 直接查看当前会话的图片。用于重看原图或对照候选图，一次最多四张；文字模型应使用识图子代理。', parameters: schema({ imageIds: { type: 'array', minItems: 1, maxItems: 4, items: nonempty } }, ['imageIds']), outputSchema: { type: 'object' } },
   'vision.processOne': { description: '对当前会话中的单个 imageId 进行 metadata/local/ai 识图。', parameters: SCHEMAS.vision, outputSchema: OUTPUT_SCHEMAS?.vision },
   'translation.translate': { description: '固定翻译子代理；source 为 ai 或 local。', parameters: SCHEMAS.translation, outputSchema: OUTPUT_SCHEMAS?.translation },
   'agent.generateTags': { description: '使用 Vision AI，根据要求、已有 Tag、参考 Tag、可选 imageId 和 characters.search 返回的 characterIds 生成英文绘图 Tag。', parameters: generateParameters, outputSchema: OUTPUT_SCHEMAS?.generateTags },
@@ -183,6 +184,12 @@ function createPrimaryTools(options = {}) {
       const value = await repository.listConversation(context.sessionId, { includePending: args.includePending !== false, includeDeleted: args.includeDeleted === true });
       if (!Array.isArray(value?.items)) throw failure('OUTPUT_INVALID', '会话图片返回格式无效');
       return { items: value.items.map(publicImage), pendingIds: Array.isArray(value.pendingIds) ? value.pendingIds.filter(id => typeof id === 'string') : [] };
+    },
+    'conversation.viewImages': async (args, context) => {
+      if (!context.sessionId || !repository?.listConversation) throw failure('SESSION_REQUIRED', '当前会话不可用');
+      const rows = await repository.listConversation(context.sessionId, { includeDeleted: false });
+      if (args.imageIds.some(id => !rows.items?.some(row => row.imageId === id))) throw failure('IMAGE_NOT_FOUND', '图片不在当前会话中');
+      return { viewImageIds: args.imageIds };
     },
     'vision.processOne': async (args, context) => compactVisionResult({ ...unwrap(await subagent('vision', args, context)), imageId: args.imageId, mode: args.mode }),
     'translation.translate': (args, context) => subagent('translation', args, context),

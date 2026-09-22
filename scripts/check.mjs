@@ -140,11 +140,11 @@ const primaryTools = modules.createPrimaryTools({
   getSettings: () => settings
 });
 assert.deepEqual(primaryTools.names(), [
-  'tags.search', 'characters.search', 'conversation.listImages', 'vision.processOne', 'translation.translate',
+  'tags.search', 'characters.search', 'conversation.listImages', 'conversation.viewImages', 'vision.processOne', 'translation.translate',
   'agent.generateTags', 'comfy.status', 'comfy.validateWorkflow', 'comfy.render', 'generation.execute', 'generation.resume'
 ]);
 assert.deepEqual(primaryTools.primaryNames(), [
-  'tags.search', 'characters.search', 'conversation.listImages', 'vision.processOne', 'translation.translate',
+  'tags.search', 'characters.search', 'conversation.listImages', 'conversation.viewImages', 'vision.processOne', 'translation.translate',
   'comfy.status', 'generation.execute', 'generation.resume'
 ]);
 assert.equal(primaryTools.resolve('files.read'), null);

@@ -65,9 +65,10 @@ test('assistant create/recreate workflows iterate, compare, upload source and pr
   const reviewCounts = { create: 0, recreate: 0, cancel: 0 };
   const primaryGateway = { complete: async messages => {
     primaryRequests.push(structuredClone(messages));
-    const last = messages.at(-1);
+    const conversation = messages.filter(message => typeof message.content === 'string');
+    const last = conversation.at(-1);
     if (last?.role === 'tool') return { text: '已完成候选比较并返回实际提示词。', usage: { total_tokens: 11 } };
-    const currentUser = [...messages].reverse().find(message => message.role === 'user')?.content || '';
+    const currentUser = [...conversation].reverse().find(message => message.role === 'user')?.content || '';
     currentIntent = /复刻/.test(currentUser) ? 'recreate' : /取消/.test(currentUser) ? 'cancel' : 'create';
     const source = currentIntent === 'recreate' ? sourceImage.id : undefined;
     return { toolCalls: [{ id: `generation-${currentIntent}-${Date.now()}`, name: 'generation_execute', arguments: { requirements: currentUser, mode: currentIntent === 'recreate' ? 'recreate' : 'create', ...(source ? { sourceImageId: source } : {}), strategy: currentIntent === 'cancel' ? 'quick' : 'auto' } }], usage: { total_tokens: 10 } };

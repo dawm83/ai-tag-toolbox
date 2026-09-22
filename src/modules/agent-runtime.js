@@ -8,7 +8,7 @@ const { assertValid } = require('./schema');
 const { createCallMonitor } = require('./call-monitor');
 const { createTaskPolicy } = require('./task-policy');
 
-const TOOL_NAMES = Object.freeze(['tags.search', 'characters.search', 'conversation.listImages', 'vision.processOne', 'translation.translate', 'agent.generateTags', 'comfy.status', 'comfy.validateWorkflow', 'comfy.render', 'generation.execute', 'generation.resume']);
+const TOOL_NAMES = Object.freeze(['tags.search', 'characters.search', 'conversation.listImages', 'conversation.viewImages', 'vision.processOne', 'translation.translate', 'agent.generateTags', 'comfy.status', 'comfy.validateWorkflow', 'comfy.render', 'generation.execute', 'generation.resume']);
 const NATIVE_NAMES = new Map(TOOL_NAMES.map(name => [name.replace('.', '_'), name]));
 function text(value, fallback = '') { const output = value == null ? '' : String(value).trim(); return output || fallback; }
 function object(value) { return value !== null && typeof value === 'object' && !Array.isArray(value); }
@@ -84,6 +84,7 @@ function retryKey(name, args) {
 function historyMessage(item) {
   if (!object(item) || !['user', 'assistant', 'tool'].includes(item.role)) return null;
   const message = { role: item.role };
+  if (item.role === 'user' && Array.isArray(item.imageIds)) message.imageIds = item.imageIds.filter(id => typeof id === 'string');
   if (item.role === 'tool') {
     if (!text(item.tool_call_id)) return null;
     message.tool_call_id = text(item.tool_call_id);
@@ -257,7 +258,7 @@ function createAgentRuntime(options = {}) {
         if (policy) messages[0] = { role: 'system', content: prompt + '\n\n' + policy.prompt() };
         const primaryConfig = { ...publicConfig(settings.primaryApi), ...publicConfig(request.config), signal: context.signal, tools: primarySchemas, tool_choice: primarySchemas.length ? 'auto' : 'none', onDelta: (delta, reasoning = '') => { deltaBuffer.text += typeof delta === 'string' ? delta : ''; deltaBuffer.reasoning += typeof reasoning === 'string' ? reasoning : ''; const accumulated = deltaBuffer.text.length + deltaBuffer.reasoning.length; if (accumulated >= 8 && Date.now() - deltaBuffer.emittedAt >= 200) flushDelta(); if (!context.signal.aborted) { try { request.onDelta?.(delta, reasoning); } catch {} } }, onEvent: event => { if (typeof event?.type === 'string' && event.type && !isNoiseEvent(event)) emit(context, event.type, event || {}); } /* 只接受带类型名的有意义事件；无类型名的流式分片（正文/推理/工具参数碎片）一律不产生任务事件，真正的调用由 tool.start/tool.complete 记录。 */ };
         context.captureInput({ messages, config: primaryConfig });
-        const response = await race(() => client.complete(messages, primaryConfig), context.signal);
+        const response = await race(() => client.complete(messages, { ...primaryConfig, sessionId: context.sessionId }), context.signal);
         unwrap(response); limiter.add(context.rootRequestId, response?.usage, 'primary'); const calls = responseCalls(response).map(call => normalizeCall(call, usedIds, allowedPrimaryNames));
         const responseText = outputText(response);
         if (!calls.length) {

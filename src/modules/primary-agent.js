@@ -1,4 +1,5 @@
 'use strict';
+const { createPrimaryVision } = require('./primary-vision');
 
 const DEFAULT_PRIMARY_PROMPT = '你是 AI 绘画 Tag 工具箱的主 AI。绘图或复刻调用 generation.execute；程序负责 Tag、ComfyUI、评价与迭代。图片只能通过消息提供的真实 imageId 或会话图片工具读取。';
 const PUBLIC_CONFIG_KEYS = Object.freeze(['base', 'model', 'key', 'temperature', 'timeoutMs', 'maxTokens', 'stream']);
@@ -37,6 +38,7 @@ function userText(request = {}) {
 function createPrimaryAgent(options = {}) {
   const client = options.client;
   const prompts = options.prompts;
+  const visualComplete = createPrimaryVision({ resolveImage: options.resolveImage, client });
   function getPrompt(request = {}) {
     const prompt = typeof prompts?.composePrimary === 'function' ? prompts.composePrimary(userText(request)) : prompts?.getEffective?.('primary') || prompts?.get?.('primary') || DEFAULT_PRIMARY_PROMPT;
     const generationContract = '【系统强制调度协议｜优先于上方可编辑内容】绘图、出图和图片复刻只调用 generation.execute；暂停任务只调用 generation.resume。绘图任务禁止提前调用 vision.processOne，禁止根据识图结果改写源图事实；把用户原始要求原样放入 originalRequirements，只附加真实 sourceImageId 和已确认 characterIds。若生成工具返回 needs_input 且 needsInput.kind=character，等待用户在角色选择卡片中确认；程序用原 jobId 恢复。不要调用或要求调用 agent.generateTags、comfy.validateWorkflow、comfy.render，这些是程序内部工具。程序负责识图、Tag 编译、ComfyUI、候选评价、修订和选择。交付时服从 outcome 与 recreationMode：best_available 必须说明是达到上限后的最佳候选，text_approximation 必须说明原图未进入工作流、仅为文本近似复刻，禁止声称完全一致或保持不变；user_selected_with_issues 必须说明用户已选择且仍有已知问题。不要输出逐步进度，直接根据高层工具结果与用户对话。';
@@ -55,7 +57,7 @@ function createPrimaryAgent(options = {}) {
   async function complete(messages, request = {}) {
     const config = { ...publicRequestConfig(options.getSettings?.()?.primaryApi), ...publicRequestConfig(request) };
     for (const key of RUNTIME_CONFIG_KEYS) if (Object.prototype.hasOwnProperty.call(request, key)) config[key] = request[key];
-    return client.complete(messages, config);
+    return visualComplete(messages, config, request);
   }
   return Object.freeze({ complete, getPrompt });
 }

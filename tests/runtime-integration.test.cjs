@@ -46,7 +46,7 @@ test('native tools run a real translation child without cancelling the primary a
   const requests = []; let count = 0;
   const { runtime, tools } = stack({ translation, primaryClient: { complete: async (messages, config) => {
     requests.push(structuredClone(messages));
-    assert.equal(config.tools.length, 8);
+    assert(config.tools.some(item => item.function.name === 'conversation_viewImages'));
     assert(config.tools.every(item => /^[A-Za-z0-9_-]+$/.test(item.function.name)));
     assert(config.tools.some(item => item.function.name === 'characters_search'));
     assert(config.tools.some(item => item.function.name === 'generation_execute'));

@@ -4,10 +4,10 @@ function text(value, fallback = '') { const output = value == null ? '' : String
 function clone(value) { return value == null ? value : JSON.parse(JSON.stringify(value)); }
 function names(values) { return [...new Set((Array.isArray(values) ? values : []).map(value => text(value)).filter(Boolean))]; }
 
-const PRIMARY_TOOLS = Object.freeze(['tags.search', 'characters.search', 'conversation.listImages', 'vision.processOne', 'translation.translate', 'comfy.status', 'generation.execute', 'generation.resume']);
+const PRIMARY_TOOLS = Object.freeze(['tags.search', 'characters.search', 'conversation.listImages', 'conversation.viewImages', 'vision.processOne', 'translation.translate', 'comfy.status', 'generation.execute', 'generation.resume']);
 const ROUTED = Object.freeze({
   search_tags: { allowed: ['tags.search'], completion: ['tags.search'] },
-  analyze_image: { allowed: ['conversation.listImages', 'vision.processOne'], completion: ['vision.processOne'] },
+  analyze_image: { allowed: ['conversation.listImages', 'conversation.viewImages', 'vision.processOne'], completion: ['vision.processOne'] },
   compile_tags: { allowed: ['conversation.listImages', 'generation.execute'], completion: ['generation.execute'] },
   translate: { allowed: ['translation.translate'], completion: ['translation.translate'] },
   answer: { allowed: [], completion: [] },

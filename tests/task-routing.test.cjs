@@ -164,7 +164,7 @@ test('image analysis forwards the original question, reads the selected image, a
   const question = '帮我分析这张图片，重点看构图，不要生图';
   const result = await app.run({ text: question, imageIds: [image.id] });
   assert.equal(result.ok, true, JSON.stringify(result.error));
-  assert.deepEqual(toolNames(requests[0]), ['conversation_listImages', 'vision_processOne']);
+  assert.deepEqual(toolNames(requests[0]), ['conversation_listImages', 'conversation_viewImages', 'vision_processOne']);
   assert.equal(inspected.length, 1);
   assert.equal(inspected[0].imageId, image.id);
   assert.equal(inspected[0].instruction, question);
