@@ -473,6 +473,8 @@
       "copyTagSection": "Copy",
       "outcomeAccepted": "Acceptance target reached",
       "outcomeBestAvailable": "Best candidate after reaching the limit",
+      "outcomePrimarySelected": "Candidate selected by the primary AI",
+      "noAuxiliaryScore": "No auxiliary score requested",
       "outcomeUserSelected": "User final selection",
       "outcomeUserSelectedWithIssues": "User selected with known issues",
       "recreationReference": "Reference image entered the workflow",

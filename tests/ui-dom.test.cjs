@@ -1124,3 +1124,14 @@ test('paused ComfyUI task resumes directly from its notice without sending anoth
   assert.equal(calls[0][3].resumeOnly, true);
   assert.equal(app.getRunCount(), 0);
 });
+
+test('primary-selected unscored candidates are not displayed as accepted or zero hard errors', t => {
+  const candidate = { id: 'candidate-1', imageId: 'img-1', prompt: 'standing', selected: true, evaluation: { status: 'pending' } };
+  const app = boot({ initialMessages: [{ id: 'a1', role: 'assistant', text: '', status: 'done', result: { status: 'completed', outcome: 'primary_selected', selectedCandidateId: 'candidate-1', candidates: [candidate] } }] });
+  t.after(() => app.dom.window.close());
+  app.view.route('ai'); app.view.showAi('talk');
+  const delivery = app.window.document.querySelector('.generation-delivery');
+  assert.match(delivery.textContent, /主 AI 选择/);
+  assert.match(delivery.textContent, /未进行辅助评分/);
+  assert.doesNotMatch(delivery.textContent, /硬错误 0|达到上限|已达到验收/);
+});

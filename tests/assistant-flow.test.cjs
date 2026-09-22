@@ -163,7 +163,7 @@ async function testHighLevelGenerationPersistsCandidatesAndSelection() {
   assert.equal(renderCount, 1);
   assert.equal(result.candidates.length, 1);
   assert.equal(result.selectedImageId, 'generated-1');
-  assert.equal(result.stopReason, 'user_selected');
+  assert.equal(result.stopReason, 'primary_selected');
   assert.deepEqual(result.positiveTags, ['1girl', 'blue hair']);
   assert.equal(result.usage.toolRounds, 3);
   assert.equal(result.usage.comfyCalls, 1);

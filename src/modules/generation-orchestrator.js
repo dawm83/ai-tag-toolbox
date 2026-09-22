@@ -20,7 +20,7 @@ const JOB_STATES = Object.freeze([
 const RUNNING_STATES = new Set(['preparing', 'compiling', 'rendering', 'evaluating', 'revising', 'selecting', 'finishing']);
 const TERMINAL_STATES = new Set(['completed', 'failed', 'cancelled']);
 const GENERATION_STRATEGIES = Object.freeze(['quick', 'auto', 'fixed3']);
-const GENERATION_OUTCOMES = Object.freeze(['', 'tags_only', 'accepted', 'best_available', 'user_selected', 'user_selected_with_issues', 'cancelled', 'failed']);
+const GENERATION_OUTCOMES = Object.freeze(['', 'tags_only', 'accepted', 'best_available', 'primary_selected', 'user_selected', 'user_selected_with_issues', 'cancelled', 'failed']);
 const DEFAULT_GENERATION_POLICY = Object.freeze({
   autoRun: true,
   imagesPerRound: 1,
@@ -143,6 +143,7 @@ function residualIssues(candidate, limit = 6) {
   return output;
 }
 function classifyOutcome(candidate, source = 'program', acceptScore = 90) {
+  if (source === 'primary') return 'primary_selected';
   if (source === 'user') return hardErrorCount(candidate) > 0 ? 'user_selected_with_issues' : 'user_selected';
   return reviewed(candidate) && hardErrorCount(candidate) === 0 && candidate.evaluation?.verdict === 'accept' && score(candidate) >= acceptScore
     ? 'accepted'
@@ -1120,9 +1121,9 @@ function createGenerationOrchestrator(options = {}) {
     if (!candidate) return null;
     job.candidates = selectCandidateRows(job.candidates, candidate.id, source);
     job.selectedCandidateId = candidate.id;
-    job.selectionReason = source === 'user' ? '用户选择最终候选' : text(source, '程序选择最终候选');
-    job.stopReason = 'user_selected';
-    job.outcome = classifyOutcome(candidate, source === 'user' ? 'user' : 'program', job.policy.acceptScore);
+    job.selectionReason = source === 'user' ? '用户选择最终候选' : source === 'primary' ? '主 AI 选择最终候选' : '程序选择最终候选';
+    job.stopReason = source === 'user' ? 'user_selected' : 'primary_selected';
+    job.outcome = classifyOutcome(candidate, source, job.policy.acceptScore);
     job.residualIssues = residualIssues(candidate);
     job.status = 'finishing';
     const running = active.get(job.jobId);

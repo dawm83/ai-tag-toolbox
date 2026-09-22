@@ -447,6 +447,8 @@
       "copyTagSection": "复制",
       "outcomeAccepted": "已达到验收标准",
       "outcomeBestAvailable": "达到上限后的最佳候选",
+      "outcomePrimarySelected": "主 AI 选择的候选",
+      "noAuxiliaryScore": "未进行辅助评分",
       "outcomeUserSelected": "用户最终选择",
       "outcomeUserSelectedWithIssues": "用户已选择，仍有已知问题",
       "recreationReference": "参考图已进入工作流",

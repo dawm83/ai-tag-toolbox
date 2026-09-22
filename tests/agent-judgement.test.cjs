@@ -52,18 +52,21 @@ test('primary selects metadata, one local hint, baseline render and a minimal re
   assert.equal(f.local.length, 1);
   assert.equal(f.children.length, 1);
   assert.equal(result.selectedCandidateId, 'candidate-2');
+  assert.equal(result.outcome, 'primary_selected');
   assert.equal(f.primary[4].flatMap(m => Array.isArray(m.content) ? m.content : []).filter(p => p.type === 'image_url').length, 2);
   assert.doesNotMatch(f.children[0][1].content[0].text, /blueprint|feedbackHistory|角色身份资料/);
   assert.doesNotMatch(f.app.exportSessions(), /base64|AQID/);
 });
 
 test('the primary tool schema excludes upstream dossiers and rejects side-channel task context', async t => {
-  const f = setup(t, () => ({ text: 'ok' }));
+  const f = setup(t, ({ turn }) => turn === 1 ? call('agent.generateTags', { operation: 'compile', requirements: 'draw', description: 'UNTRUSTED_EXTRA_CONTEXT' }) : { text: '改用最小输入' });
   const schema = f.app.primaryTools.openAiTools().find(row => row.function.name === 'agent_generateTags');
   assert(schema);
   assert.deepEqual(Object.keys(schema.function.parameters.properties).sort(), ['changes','generateNegativeTags','imageId','negativeTags','operation','positiveTags','requirements'].sort());
-  const rejected = await f.app.runtime.runPrimary({ sessionId: f.app.currentSession().id, messages: [{ role: 'user', content: '直接回答' }] });
+  const rejected = await f.app.runtime.runPrimary({ sessionId: f.app.currentSession().id, messages: [{ role: 'user', content: 'draw' }] });
   assert.equal(rejected.ok, true);
+  assert.equal(rejected.data.toolCalls[0].error.code, 'INVALID_INPUT');
+  assert.equal(f.children.length, 0);
 });
 
 test('candidate feedback returns to the primary with the original job and selected Tags, without repeating local recognition', async t => {

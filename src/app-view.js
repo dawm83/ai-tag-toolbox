@@ -2920,7 +2920,7 @@
       if (item.type === "prompt.revised") return "已按评价修订绘图 Tag";
       if (item.type === "source.inspected") return "参考原图已分析";
       if (item.type === "generation.needs_input") return item.needsInput?.message || "生成任务需要补充信息";
-      if (item.type === "generation.awaiting_feedback") return "本轮完成，等待用户点评";
+      if (item.type === "generation.awaiting_feedback") return item.decisionRequired ? "本轮结果已交给主 AI 判断" : "本轮完成，等待用户点评";
       if (item.type === "generation.completed") return item.outputType === "tags" ? "Tag 生成完成" : "候选生成与选择完成";
       if (item.type === "event") return item.name ? `${item.name} 事件` : "任务事件";
       return item.message || name || "任务事件";
@@ -3026,6 +3026,7 @@
         const outcomeLabels = {
           accepted: localized("ui.ai.outcomeAccepted", "已达到验收标准"),
           best_available: localized("ui.ai.outcomeBestAvailable", "达到上限后的最佳候选"),
+          primary_selected: localized("ui.ai.outcomePrimarySelected", "主 AI 选择的候选"),
           user_selected: localized("ui.ai.outcomeUserSelected", "用户最终选择"),
           user_selected_with_issues: localized("ui.ai.outcomeUserSelectedWithIssues", "用户已选择，仍有已知问题")
         };
@@ -3042,7 +3043,8 @@
         addBadge("aspect", aspectLabels[aspectRatioMode]);
         const selectedCandidate = candidates.find(candidate => candidate.id === selectedId || candidate.selected);
         const hardErrorTotal = Array.isArray(selectedCandidate?.evaluation?.hardErrors) ? selectedCandidate.evaluation.hardErrors.length : 0;
-        addBadge(hardErrorTotal ? "hard-errors warning" : "hard-errors", formatText(localized("ui.ai.hardErrorCount", "硬错误 {count}"), { count: hardErrorTotal }));
+        if (selectedCandidate?.evaluation?.status === "reviewed") addBadge(hardErrorTotal ? "hard-errors warning" : "hard-errors", formatText(localized("ui.ai.hardErrorCount", "硬错误 {count}"), { count: hardErrorTotal }));
+        else addBadge("unscored", localized("ui.ai.noAuxiliaryScore", "未进行辅助评分"));
         delivery.appendChild(badges);
         const remaining = Array.isArray(message.result?.residualIssues) ? message.result.residualIssues : [];
         if (remaining.length) {
@@ -3253,7 +3255,7 @@
       }
       if (type === "prompt.revised") put("#talkStatus", "已按评价修订 Tag，准备下一张候选…");
       if (type === "generation.needs_input") put("#talkStatus", event.needsInput?.message || "生成任务需要补充信息");
-      if (type === "generation.awaiting_feedback") put("#talkStatus", "本轮完成，等待点评");
+      if (type === "generation.awaiting_feedback") put("#talkStatus", event.decisionRequired ? "主 AI 正在判断下一步…" : "本轮完成，等待点评");
       if (type === "generation.completed") { updateStreamingCandidates(); put("#talkStatus", event.outputType === "tags" ? "Tag 生成完成" : "候选比较完成"); }
       if (type === "generation.failed") put("#talkStatus", event.error?.message || "生成任务失败");
       if (type === "generation.cancelled") put("#talkStatus", "生成任务已取消");
