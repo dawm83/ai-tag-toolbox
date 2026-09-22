@@ -636,3 +636,29 @@ test('public generation result is compact while the UI snapshot retains full eva
   assert.equal(compact.artifacts, undefined);
   assert(Buffer.byteLength(JSON.stringify(compact)) < 5000);
 });
+
+test('legacy generation jobs expose a migrated task brief without changing prompt fields', () => {
+  const storage = createStorage({ prefix: `generation-brief-legacy-${Date.now()}-${Math.random()}` });
+  storage.set('generation_jobs', [{
+    jobId: 'legacy-brief-job', status: 'completed', mode: 'recreate',
+    originalRequirements: '保留构图并改服装', positiveTags: ['character_tag', 'sitting'], negativeTags: ['lowres'],
+    visualBlueprint: { pose: ['sitting'] },
+    characterReferences: [{ id: 'role-1', identityTags: ['character_tag'], generalTags: ['default uniform'], specificTags: [] }],
+    candidates: [], rounds: [], createdAt: Date.now(), updatedAt: Date.now()
+  }]);
+  const app = harness({ storage });
+  const snapshot = app.orchestrator.get('legacy-brief-job');
+  assert.deepEqual(snapshot.positiveTags, ['character_tag', 'sitting']);
+  assert.equal(snapshot.brief.version, 1);
+  assert.equal(snapshot.brief.items.some(item => item.source === 'vision' && item.value === 'sitting'), true);
+  assert.equal(snapshot.brief.items.some(item => item.source === 'character_library' && item.directive === 'reference_only'), true);
+});
+
+test('generation revisions mirror current prompt and increment brief iteration', async () => {
+  const app = harness({ reviewScores: [70, 94] });
+  const result = await app.orchestrator.execute({ requirements: '蓝发女孩', mode: 'create', strategy: 'auto' }, app.context);
+  assert.equal(result.status, 'completed');
+  assert.deepEqual(result.brief.currentPrompt.positiveTags, result.positiveTags);
+  assert.deepEqual(result.brief.currentPrompt.negativeTags, result.negativeTags);
+  assert.equal(result.brief.currentPrompt.iteration, 1);
+});

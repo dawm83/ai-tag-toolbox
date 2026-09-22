@@ -11,6 +11,7 @@ const {
 } = require('./draw-candidates');
 const { parseVisionPayload } = require('./vision-payload');
 const { applyPromptPatch } = require('./prompt-patch');
+const { createBrief, addItems, briefForAgent, migrateBrief } = require('./task-brief');
 
 const JOB_STATES = Object.freeze([
   'preparing', 'compiling', 'rendering', 'evaluating', 'revising', 'selecting',
@@ -156,6 +157,16 @@ function programRanking(candidates) {
     return aBlocked - bBlocked || score(b) - score(a) || a.iteration - b.iteration;
   });
 }
+function syncBriefPrompt(job, iteration = job.brief?.currentPrompt?.iteration || 0) {
+  if (!job.brief || typeof job.brief !== 'object') job.brief = createBrief({ mode: job.mode, userRequest: job.originalRequirements });
+  job.brief.version = 1;
+  job.brief.currentPrompt = {
+    positiveTags: strings(job.positiveTags),
+    negativeTags: strings(job.negativeTags),
+    iteration: Math.max(0, Number.isInteger(iteration) ? iteration : 0)
+  };
+  return job.brief;
+}
 
 function createGenerationOrchestrator(options = {}) {
   const storage = options.storage || null;
@@ -199,6 +210,8 @@ function createGenerationOrchestrator(options = {}) {
     const derivedPromptKey = text(source.lastSubmittedPromptKey)
       || (lastRound?.prompt ? promptFingerprint(lastRound.prompt, lastRound.negative) : '')
       || (lastCandidate ? promptFingerprint(lastCandidate.positiveTags || lastCandidate.prompt, lastCandidate.negative) : '');
+    const brief = migrateBrief({ ...source, originalRequirements: text(source.originalRequirements || source.requirements), positiveTags: strings(source.positiveTags), negativeTags: strings(source.negativeTags) });
+    syncBriefPrompt({ brief, mode: source.mode === 'recreate' ? 'recreate' : 'create', originalRequirements: text(source.originalRequirements || source.requirements), positiveTags: strings(source.positiveTags), negativeTags: strings(source.negativeTags) }, brief.currentPrompt.iteration);
     return {
       ...source,
       jobId: text(source.jobId, `job_${randomUUID()}`),
@@ -214,7 +227,7 @@ function createGenerationOrchestrator(options = {}) {
       characterIds: strings(source.characterIds, 8),
       referenceTags: text(source.referenceTags),
       characterReferences: Array.isArray(source.characterReferences) ? clone(source.characterReferences).slice(0, 8) : [],
-      brief: object(source.brief) ? clone(source.brief) : {},
+      brief,
       policy: policyFrom(source.policy),
       promptSnapshot: promptSnapshot(source.promptSnapshot),
       positiveTags: strings(source.positiveTags),
@@ -283,6 +296,7 @@ function createGenerationOrchestrator(options = {}) {
       outputType: job.outputType,
       requirements: job.originalRequirements,
       originalRequirements: job.originalRequirements,
+      brief: clone(job.brief),
       sourceImageId: job.sourceImageId,
       recreationMode: job.recreationMode || '',
       aspectRatioMode: job.aspectRatioMode || '',
@@ -334,6 +348,7 @@ function createGenerationOrchestrator(options = {}) {
       outcome: job.outcome || '',
       mode: job.mode,
       outputType: job.outputType,
+      brief: briefForAgent(job.brief),
       recreationMode: job.recreationMode || '',
       aspectRatioMode: job.aspectRatioMode || '',
       selected: selected ? {
@@ -507,6 +522,7 @@ function createGenerationOrchestrator(options = {}) {
       emit(job, context, 'source.inspected', { sourceImageId: job.sourceImageId });
     }
     job.brief = {
+      ...job.brief,
       mode: job.mode,
       requirements: job.originalRequirements,
       sourceImageId: job.sourceImageId,
@@ -539,6 +555,7 @@ function createGenerationOrchestrator(options = {}) {
         if (job.referenceTags) job.positiveTags = strings(job.referenceTags);
         if (!job.positiveTags.length) throw failure('OUTPUT_INVALID', '文生图 Tag 子代理未返回正向 Tag');
       }
+    syncBriefPrompt(job);
     emit(job, context, 'prompt.compiled', { positiveTagCount: job.positiveTags.length, negativeTagCount: job.negativeTags.length });
     return true;
   }
@@ -624,6 +641,7 @@ function createGenerationOrchestrator(options = {}) {
       }
       job.positiveTags = next.positiveTags;
       job.negativeTags = next.negativeTags;
+      syncBriefPrompt(job, (job.brief?.currentPrompt?.iteration || 0) + 1);
       job.lockedTags = next.lockedTags;
       job.patchWarnings = [...(job.patchWarnings || []), ...next.warnings].slice(-32);
       emit(job, context, 'prompt.revised', { positiveTagCount: job.positiveTags.length, negativeTagCount: job.negativeTags.length, warningCount: next.warnings.length });
