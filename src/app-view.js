@@ -61,6 +61,7 @@
       aiTabBeforeGallery: "talk",
       editingTagId: "",
       comfyFollow: { "#talkConv": true },
+      talkRendered: false,
       comfyCapabilities: null,
       started: false,
     };
@@ -2306,7 +2307,7 @@
           const label = $("#talkSendBtn")?.textContent || "📤 发送";
           const input = talkContext(value, message.imageIds || [], config);
           input.onStart = () => renderTalk();
-          input.onDelta = () => scheduleTalkRender(updateStreamingTalk);
+          input.onDelta = (_text, _reasoning, messageSnapshot) => scheduleTalkRender(() => updateStreamingTalk(messageSnapshot));
           input.onToolEvent = handleTalkToolEvent;
           setTalkBusy(true, label);
           let result;
@@ -2332,7 +2333,7 @@
       const label = $("#talkSendBtn")?.textContent || "📤 发送";
       const input = talkContext(previous.text, previous.imageIds || [], config);
       input.onStart = () => renderTalk();
-      input.onDelta = () => scheduleTalkRender(updateStreamingTalk);
+      input.onDelta = (_text, _reasoning, messageSnapshot) => scheduleTalkRender(() => updateStreamingTalk(messageSnapshot));
       input.onToolEvent = handleTalkToolEvent;
       setTalkBusy(true, label);
       let result;
@@ -2641,10 +2642,9 @@
       renderTalkSessions();
       renderConversationRepository();
     }
-    function updateStreamingTalk() {
+    function updateStreamingTalk(messageSnapshot = null) {
       const host = $("#talkConv");
-      const session = assistant?.currentSession?.();
-      const message = session?.messages?.at(-1);
+      const message = messageSnapshot || assistant?.currentSession?.()?.messages?.at(-1);
       if (!host || !message || message.status !== "streaming") return renderTalk();
       const row = [...host.children].find(item => item.dataset?.messageId === message.id);
       if (!row) return renderTalk();
@@ -2686,7 +2686,7 @@
           pre.scrollTop = atBottom ? pre.scrollHeight : Math.min(previousTop, Math.max(0, pre.scrollHeight - pre.clientHeight));
         }
       } else if (details) details.remove();
-      updateActivityTimeline();
+      updateActivityTimeline(message);
       talkScroll();
     }
     function conversationDeleteImpact(session) {
@@ -2926,7 +2926,7 @@
       return item.message || name || "任务事件";
     }
     function renderActivityTimeline(row, message) {
-      const activity = Array.isArray(message?.activity) ? message.activity : [];
+      const activity = Array.isArray(message?.activity) ? message.activity : Array.isArray(message?.events) ? message.events : [];
       if (!activity.length) return null;
       const details = doc.createElement("details");
       details.className = "draw-activity";
@@ -2951,10 +2951,9 @@
       details.open = message.status === "streaming";
       return details;
     }
-    function updateActivityTimeline() {
+    function updateActivityTimeline(messageSnapshot = null) {
       const host = $("#talkConv");
-      const session = assistant?.currentSession?.();
-      const message = session?.messages?.at(-1);
+      const message = messageSnapshot || assistant?.currentSession?.()?.messages?.at(-1);
       if (!host || !message) return;
       const row = [...host.children].find(item => item.dataset?.messageId === message.id);
       if (!row) return;
@@ -2964,7 +2963,8 @@
       if (!list) return;
       const previousOpen = details.open;
       const next = doc.createDocumentFragment();
-      (message.activity || []).forEach(item => {
+      const activity = Array.isArray(message.activity) ? message.activity : Array.isArray(message.events) ? message.events : [];
+      activity.forEach(item => {
         const line = doc.createElement("li");
         line.className = `activity-${item.status || "done"}`;
         const label = doc.createElement("span");
@@ -2978,7 +2978,7 @@
         next.appendChild(line);
       });
       list.replaceChildren(next);
-      details.querySelector("summary").textContent = `任务过程（${(message.activity || []).length}）`;
+      details.querySelector("summary").textContent = `任务过程（${activity.length}）`;
       details.open = previousOpen;
     }
     function updateStreamingCandidates() {
@@ -3275,12 +3275,12 @@
       input.autoLocalVision = ids.length > 0;
       let streamRenderPending = false;
       input.onStart = () => renderTalk();
-      input.onDelta = () => {
+      input.onDelta = (_text, _reasoning, messageSnapshot) => {
         if (streamRenderPending) return;
         streamRenderPending = true;
         setTimeout(() => {
           streamRenderPending = false;
-          updateStreamingTalk();
+          updateStreamingTalk(messageSnapshot);
         }, 50);
       };
       input.onToolEvent = event => {
@@ -3396,6 +3396,11 @@
       };
       Object.values(panelSelectors).forEach((selector) => show(selector, false));
       show(panelSelectors[ui.aiTab], true);
+      if (ui.aiTab === "talk" && !ui.talkRendered) {
+        ui.talkRendered = true;
+        renderTalk();
+        renderConversationRepository();
+      }
       $$(".ai-module-tab").forEach((button) => {
         const active = button.dataset.panel === ui.aiTab;
         button.classList.toggle("on", active);
@@ -4276,8 +4281,6 @@
       renderTags();
       renderSelection();
       renderPrompt();
-      renderTalk();
-      renderConversationRepository();
       renderVisionPreview();
       renderEmbeddedVision();
       views.agentStatus?.render({ status: "idle" });

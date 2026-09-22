@@ -93,12 +93,16 @@ function createAssistant(options = {}) {
     const sessionId = unique(raw.id, 'session', usedSessions);
     return {
       id: sessionId, title: text(raw.title, '新对话'), createdAt: Number(raw.createdAt) || Date.now(), updatedAt: Number(raw.updatedAt) || Date.now(),
-      messages: array(raw.messages).filter(row => object(row) && ['user', 'assistant', 'error'].includes(row.role)).map(row => ({
-        id: unique(row.id, 'message', usedMessages), role: row.role, text: typeof row.text === 'string' ? row.text : '',
-        reasoning: typeof row.reasoning === 'string' ? row.reasoning : '', imageIds: ids(row.imageIds),
-        toolCalls: clone(array(row.toolCalls)), transcript: transcript(row.transcript), artifacts: clone(array(row.artifacts)), events: clone(array(row.events)), activity: clone(array(row.events)),
-        result: object(row.result) ? clone(row.result) : null, status: row.status === 'streaming' ? 'cancelled' : text(row.status, 'done'), createdAt: Number(row.createdAt) || Date.now()
-      }))
+      messages: array(raw.messages).filter(row => object(row) && ['user', 'assistant', 'error'].includes(row.role)).map(row => {
+        const events = clone(array(row.events));
+        if (!events.length && Array.isArray(row.activity)) events.push(...clone(row.activity));
+        return {
+          id: unique(row.id, 'message', usedMessages), role: row.role, text: typeof row.text === 'string' ? row.text : '',
+          reasoning: typeof row.reasoning === 'string' ? row.reasoning : '', imageIds: ids(row.imageIds),
+          toolCalls: clone(array(row.toolCalls)), transcript: transcript(row.transcript), artifacts: clone(array(row.artifacts)), events,
+          result: object(row.result) ? clone(row.result) : null, status: row.status === 'streaming' ? 'cancelled' : text(row.status, 'done'), createdAt: Number(row.createdAt) || Date.now()
+        };
+      })
     };
   }
   function incomingBundle(value) {
@@ -193,7 +197,7 @@ function createAssistant(options = {}) {
 
   function append(role, value, extra = {}, sessionId = state.currentId) {
     const session = sessionById(sessionId); if (!session) return null;
-    const message = { id: id('message'), role: ['user', 'assistant', 'error'].includes(role) ? role : 'user', text: typeof value === 'string' ? value : '', reasoning: '', imageIds: ids(extra.imageIds), toolCalls: [], transcript: [], artifacts: [], events: [], activity: [], result: null, status: text(extra.status, 'done'), createdAt: Date.now() };
+    const message = { id: id('message'), role: ['user', 'assistant', 'error'].includes(role) ? role : 'user', text: typeof value === 'string' ? value : '', reasoning: '', imageIds: ids(extra.imageIds), toolCalls: [], transcript: [], artifacts: [], events: [], result: null, status: text(extra.status, 'done'), createdAt: Date.now() };
     session.messages.push(message); session.updatedAt = Date.now(); persist(); return clone(message);
   }
   function writable(job) { return !destroyed && active === job && !job.invalidated && sessionById(job.sessionId) === job.session && job.session.messages.includes(job.live); }
@@ -212,7 +216,6 @@ function createAssistant(options = {}) {
     if (Array.isArray(payload.artifacts)) live.artifacts = clone(payload.artifacts);
     live.imageIds = ids([...live.imageIds, ...array(payload.imageIds), ...live.artifacts.map(item => item.imageId || item.id)]);
     if (Array.isArray(payload.events)) live.events = clone(payload.events).filter(event => !isNoiseEvent(event));
-    live.activity = clone(live.events);
   }
   function hydrateGenerationPayload(payload = {}) {
     const jobId = text(payload?.jobId);
@@ -295,7 +298,7 @@ function createAssistant(options = {}) {
     }
     if (references.length) imageRepository.markSent(session.id, references.map(row => row.refId));
     const previous = history(session);
-    const user = { id: userId, role: 'user', text: body, imageIds, reasoning: '', toolCalls: [], transcript: [], artifacts: [], events: [], activity: [], result: null, status: 'done', createdAt: Date.now() };
+    const user = { id: userId, role: 'user', text: body, imageIds, reasoning: '', toolCalls: [], transcript: [], artifacts: [], events: [], result: null, status: 'done', createdAt: Date.now() };
     session.messages.push(user);
     const liveSnapshot = append('assistant', '', { status: 'streaming' }, session.id);
     const live = session.messages.find(message => message.id === liveSnapshot.id);
@@ -309,7 +312,7 @@ function createAssistant(options = {}) {
     const onEvent = event => {
       if (!writable(job)) return;
       if (isNoiseEvent(event)) return; // 流式增量不写入任务事件，避免刷满 256 条上限。
-      live.events.push(clone(event)); if (live.events.length > 256) live.events.shift(); live.activity = clone(live.events);
+      live.events.push(clone(event)); if (live.events.length > 256) live.events.shift();
       if (event?.jobId && (typeof generation?.uiSnapshot === 'function' || typeof generation?.get === 'function')) {
         const generationState = generation.uiSnapshot?.(event.jobId) || generation.get?.(event.jobId);
         if (generationState) {
@@ -417,7 +420,7 @@ function createAssistant(options = {}) {
     observe(options.onStart, { user: clone(user), assistant: clone(live), requestId, sessionId: session.id });
     const onEvent = event => {
       if (!writable(job) || isNoiseEvent(event)) return;
-      live.events.push(clone(event)); if (live.events.length > 256) live.events.shift(); live.activity = clone(live.events);
+      live.events.push(clone(event)); if (live.events.length > 256) live.events.shift();
       const generationState = event?.jobId ? (generation?.uiSnapshot?.(event.jobId) || generation?.get?.(event.jobId)) : null;
       if (generationState) {
         live.result = { ...(object(live.result) ? live.result : {}), ...clone(generationState) };
@@ -484,7 +487,7 @@ function createAssistant(options = {}) {
     observe(options.onStart, { requestId, sessionId: session.id });
     const onEvent = event => {
       if (!writable(job) || isNoiseEvent(event)) return;
-      live.events.push(clone(event)); if (live.events.length > 256) live.events.shift(); live.activity = clone(live.events);
+      live.events.push(clone(event)); if (live.events.length > 256) live.events.shift();
       const generationState = event?.jobId ? (generation?.uiSnapshot?.(event.jobId) || generation?.get?.(event.jobId)) : null;
       if (generationState) {
         live.result = { ...(object(live.result) ? live.result : {}), ...clone(generationState) };

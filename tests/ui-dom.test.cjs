@@ -867,6 +867,7 @@ test('candidate rounds render as separate horizontal comparison tracks', () => {
     { id: 'candidate-4', iteration: 4, roundIndex: 2, imageId: 'img-4', prompt: 'fourth', evaluation: { status: 'reviewed', score: 85 } }
   ];
   const app = boot({ initialMessages: [{ id: 'a1', role: 'assistant', text: '', imageIds: candidates.map(row => row.imageId), status: 'done', result: { status: 'completed', candidates } }] });
+  app.view.route('ai'); app.view.showAi('talk');
   const rounds = [...app.window.document.querySelectorAll('.draw-round')];
   assert.equal(rounds.length, 2);
   assert.deepEqual(rounds.map(round => round.querySelectorAll('.draw-round-track > .draw-candidate').length), [2, 2]);
@@ -887,6 +888,7 @@ test('generation delivery badges expose limits, approximation and residual issue
   const issue = { expected: '原图构图', observed: '视角仍有偏差', severity: 'hard', suggestedChange: '改成低视角' };
   const candidate = { id: 'candidate-1', iteration: 1, imageId: 'img-1', prompt: '1girl, church', negative: 'lowres', selected: true, evaluation: { status: 'reviewed', score: 78, verdict: 'revise', hardErrors: [issue], issues: [], summary: '尚未完全匹配' } };
   const app = boot({ initialMessages: [{ id: 'a1', role: 'assistant', text: '', imageIds: ['img-1'], status: 'done', result: { status: 'completed', outcome: 'best_available', recreationMode: 'text_approximation', aspectRatioMode: 'workflow_fixed', selectedCandidateId: candidate.id, residualIssues: [issue], candidates: [candidate] } }] });
+  app.view.route('ai'); app.view.showAi('talk');
   const delivery = app.window.document.querySelector('.generation-delivery');
   assert(delivery);
   assert.equal(delivery.dataset.outcome, 'best_available');
@@ -908,6 +910,7 @@ test('character question shows names, works and tags, submits one choice and rec
   let release;
   const choices = [];
   const app = boot({ initialMessages: [{ id: 'a1', role: 'assistant', text: '', status: 'done', result: { status: 'needs_input', jobId: 'job-1', needsInput: { kind: 'character', query: '天子', message: '请选择角色', options: [{ id: 'hinanawi_tenshi', name: '比那名居天子', series: 'touhou', trigger: 'hinanawi_tenshi' }, { id: 'tenshi-2', name: '天子', series: '其他作品' }] } } }], selectGenerationCharacter: (...args) => { choices.push(args.slice(0, 2)); return new Promise(resolve => { release = resolve; }); } });
+  app.view.route('ai'); app.view.showAi('talk');
   try {
     const doc = app.window.document;
     const buttons = [...doc.querySelectorAll('.generation-character-choice')];
@@ -929,6 +932,7 @@ test('empty character choices can be searched locally and selected without sendi
   const searches = [];
   const choices = [];
   const app = boot({ initialMessages: [{ id: 'a1', role: 'assistant', text: '', status: 'done', result: { status: 'needs_input', jobId: 'job-1', needsInput: { kind: 'character', query: 'touhou', message: '请选择角色', options: [] } } }], characters: { page: async value => { searches.push(value); return { items: [{ id: 'hinanawi_tenshi', nameZh: '比那名居天子', seriesName: 'touhou', trigger: 'hinanawi_tenshi' }] }; } }, selectGenerationCharacter: async (...args) => { choices.push(args.slice(0, 2)); return { ok: true }; } });
+  app.view.route('ai'); app.view.showAi('talk');
   try {
     const doc = app.window.document;
     const input = doc.querySelector('.generation-character-search');
@@ -949,6 +953,7 @@ test('original-character button bypasses an empty library and recovers after a f
   let release;
   const choices = [];
   const app = boot({ initialMessages: [{ id: 'a1', role: 'assistant', text: '', status: 'done', result: { status: 'needs_input', jobId: 'job-oc', needsInput: { kind: 'character', query: '小星', options: [] } } }], selectGenerationCharacter: (messageId, characterId, options) => { choices.push({ messageId, characterId, original: options.original }); return new Promise(resolve => { release = resolve; }); } });
+  app.view.route('ai'); app.view.showAi('talk');
   try {
     const doc = app.window.document;
     const button = doc.querySelector('.generation-character-original');

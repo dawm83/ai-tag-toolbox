@@ -48,6 +48,7 @@ test('streaming deltas are throttled in runtime events and excluded from message
   assert(message.events.length <= 256, 'events capped');
   assert(message.events.every(event => event.type !== 'delta'), 'message.events must not contain delta noise');
   assert(message.events.some(event => event.type === 'round.start'), 'message task events should keep round.start');
+  assert.equal(Object.hasOwn(message, 'activity'), false, 'new messages should not duplicate events into activity');
 });
 
 test('render progress polling events are deduped and excluded from message task events', async () => {
