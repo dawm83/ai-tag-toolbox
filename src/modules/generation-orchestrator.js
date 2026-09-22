@@ -849,6 +849,7 @@ function createGenerationOrchestrator(options = {}) {
         } else {
           const ready = await checkPreflight(job, context);
           if (ready !== true) return ready;
+          emit(job, context, 'baseline.prompt', { stage: 'baseline', summary: `首轮使用 ${job.positiveTags.length} 个初始 Tag 出图`, details: { tagCount: job.positiveTags.length, source: job.sourceImageId ? 'reference' : 'user' } });
           await renderRound(job, context);
           guard(job, context);
           job.stopReason = job.policy.autoRun ? 'awaiting_agent' : 'awaiting_feedback';
@@ -1075,8 +1076,12 @@ function createGenerationOrchestrator(options = {}) {
     const candidate = activeCandidate(job, input.candidateId);
     if (!candidate) throw failure('CANDIDATE_NOT_FOUND', '没有找到候选图');
     const run = runContext(job, context), status = job.status;
+    emit(job, run, 'candidate.comparing', { stage: 'compare', candidateId: candidate.id, imageId: candidate.imageId, summary: '正在对照原图和候选图' });
     try { await evaluateOne(job, candidate, run); }
-    finally { if (job.status === 'evaluating') transition(job, status); releaseRun(job.jobId); }
+    finally { if (job.status === 'evaluating') transition(job, status); }
+    const reviewedCandidate = activeCandidate(job, candidate.id);
+    emit(job, run, 'candidate.diff', { stage: 'compare', candidateId: candidate.id, summary: reviewedCandidate?.evaluation?.summary || '对照完成', details: { issues: residualIssues(reviewedCandidate), score: score(reviewedCandidate) >= 0 ? score(reviewedCandidate) : null } });
+    releaseRun(job.jobId);
     return result(job);
   }
   function get(jobId) {
@@ -1127,6 +1132,7 @@ function createGenerationOrchestrator(options = {}) {
     job.residualIssues = residualIssues(candidate);
     job.status = 'finishing';
     const running = active.get(job.jobId);
+    emit(job, running?.context || {}, 'candidate.selected', { stage: 'selection', candidateId: candidate.id, imageId: candidate.imageId, source, summary: source === 'primary' ? '主 AI 选择了本轮候选' : '用户选择了本轮候选' });
     emit(job, running?.context || {}, 'generation.user_selected', { candidateId: candidate.id, imageId: candidate.imageId, source });
     if (running && !running.controller.signal.aborted) running.controller.abort(failure('USER_SELECTED', '用户已选择最终候选'));
     if (running) {

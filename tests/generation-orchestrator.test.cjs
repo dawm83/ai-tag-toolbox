@@ -675,6 +675,9 @@ test('agent-controlled recreation renders supplied baseline once and returns the
   const visible = app.orchestrator.publicResult(result.jobId);
   assert.equal(visible.decisionRequired, true);
   assert.deepEqual(visible.viewImageIds, ['source-1', 'img-1']);
+  assert(app.events.some(event => event.type === 'baseline.prompt'));
+  assert(app.events.some(event => event.type === 'candidate.ready'));
+  assert(app.events.some(event => event.type === 'generation.awaiting_feedback' && event.decisionRequired === true));
 });
 
 test('agent-controlled rounds preserve the job, reject duplicate prompts and stop at the task budget', async () => {
@@ -701,6 +704,8 @@ test('agent-controlled generation requires a ready prompt and evaluation is expl
   assert.equal(app.subagentCalls.length, 1);
   assert.equal(app.subagentCalls[0].name, 'evaluateImages');
   assert.equal(app.renders.length, 1);
+  assert(app.events.some(event => event.type === 'candidate.comparing'));
+  assert(app.events.some(event => event.type === 'candidate.diff'));
 });
 
 test('agent callers cannot override the configured render budget or resume without prepared Tags', async () => {

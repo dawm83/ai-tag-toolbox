@@ -931,6 +931,25 @@ test('generation delivery badges expose limits, approximation and residual issue
   app.dom.window.close();
 });
 
+test('agent-controlled task timeline is open and shows structured comparison details', () => {
+  const candidate = { id: 'candidate-1', iteration: 1, roundIndex: 1, imageId: 'img-1', prompt: '1girl, standing', evaluation: { status: 'pending' } };
+  const events = [
+    { type: 'source.local_hint', summary: '本地识图返回 12 个初始 Tag', details: { tags: ['1girl', 'standing'] } },
+    { type: 'baseline.prompt', summary: '首轮使用初始 Tag 出图', details: { tagCount: 12 } },
+    { type: 'candidate.comparing', candidateId: 'candidate-1', summary: '正在对照原图和候选图' },
+    { type: 'candidate.diff', candidateId: 'candidate-1', summary: '发现 2 项差异', details: { changes: ['改为三人', '保留背景'] } }
+  ];
+  const app = boot({ initialMessages: [{ id: 'a1', role: 'assistant', text: '', status: 'done', events, activity: events, result: { status: 'awaiting_feedback', agentControlled: true, decisionRequired: true, jobId: 'job-1', candidates: [candidate] } }] });
+  app.view.route('ai'); app.view.showAi('talk'); app.view.renderTalk();
+  const timeline = app.window.document.querySelector('.draw-activity');
+  assert(timeline);
+  assert.equal(timeline.open, true);
+  assert.match(timeline.textContent, /本地识图返回 12 个初始 Tag/);
+  assert.match(timeline.textContent, /正在对照原图和候选图/);
+  assert.match(timeline.textContent, /改为三人/);
+  app.dom.window.close();
+});
+
 test('needs-input generation result is shown as an actionable conversation notice', () => {
   const app = boot({ initialMessages: [{ id: 'a1', role: 'assistant', text: '请选择参考图', imageIds: [], status: 'done', result: { status: 'needs_input', jobId: 'job-1', needsInput: { kind: 'source_image', message: '请选择当前会话中的参考原图' }, candidates: [] } }] });
   app.view.route('ai'); app.view.showAi('talk'); app.view.renderTalk();

@@ -223,6 +223,8 @@ function createPrimaryTools(options = {}) {
         while (initialHints.size > 64) initialHints.delete(initialHints.keys().next().value);
         options.storage?.set?.('initial_vision_hints', [...initialHints]);
       }
+      if (args.mode === 'metadata') context.onEvent?.({ type: 'source.metadata', stage: 'source', summary: data.hasBuiltinTags ? `读取到 ${data.builtinTags.length} 个内置 Tag` : '未读取到内置 Tag', details: { tagCount: data.builtinTags.length, source: 'metadata' } });
+      if (args.mode === 'local') context.onEvent?.({ type: 'source.local_hint', stage: 'source', summary: `本地识图返回 ${data.tags.length} 个初始 Tag`, details: { tagCount: data.tags.length, tags: data.tags.slice(0, 12), reliability: data.reliability || 'weak' } });
       return data;
     },
     'translation.translate': (args, context) => subagent('translation', args, context),
@@ -233,6 +235,7 @@ function createPrimaryTools(options = {}) {
         if (args.operation !== 'revise') return value;
         const next = applyPromptPatch(args, value, { negativeEnabled: getSettings()?.generateNegativeTags === true });
         if (!next.ok) throw failure('INVALID_PATCH', next.rejected.map(row => row.message).join('；'));
+        context.onEvent?.({ type: 'prompt.revised', stage: 'prompt', summary: `Tag 已修改，增加 ${value.add?.length || 0} 项，删除 ${value.remove?.length || 0} 项`, details: { add: value.add || [], remove: value.remove || [] } });
         return { positiveTags: next.positiveTags, negativeTags: next.negativeTags, changes: { add: value.add, remove: value.remove } };
       }
       if (args.characterIds?.length) {
@@ -336,8 +339,12 @@ function createPrimaryTools(options = {}) {
     },
     'generation.review': async (args, context) => {
       const { generation } = await scopedJob(args.jobId, context);
+      context.onEvent?.({ type: 'candidate.comparing', stage: 'compare', candidateId: args.candidateId, summary: '正在对照原图和候选图' });
       await generation.review(args, context);
-      return generation.publicResult(args.jobId);
+      const value = generation.publicResult(args.jobId);
+      const candidate = value?.candidates?.find(row => row.candidateId === args.candidateId);
+      context.onEvent?.({ type: 'candidate.diff', stage: 'compare', candidateId: args.candidateId, summary: candidate?.summary || '对照完成', details: { issues: candidate?.issues || [], score: candidate?.score ?? null } });
+      return value;
     },
     'generation.select': async (args, context) => {
       const { generation, job } = await scopedJob(args.jobId, context);

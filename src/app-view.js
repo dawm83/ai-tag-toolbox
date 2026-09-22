@@ -2898,6 +2898,7 @@
       return str(selected?.prompt);
     }
     function activityLabel(item) {
+      if (item.summary) return String(item.summary);
       if (item.type === "task.routed") return "本轮任务：" + ({ search_tags: "搜索 Tag", analyze_image: "分析图片", compile_tags: "生成 Tag", answer: "直接回答", translate: "翻译", create_image: "生成图片", recreate_image: "复刻图片", auto: "结合上下文判断" }[item.intent] || item.intent);
       if (item.type === "task.answering") return item.status === "failed" ? "任务未能完成，正在说明原因" : "工具结果已取得，正在整理答复";
       if (item.type === "task.waiting") return "任务已暂停，等待补充信息或点评";
@@ -2926,6 +2927,14 @@
       if (item.type === "event") return item.name ? `${item.name} 事件` : "任务事件";
       return item.message || name || "任务事件";
     }
+    function activityNote(item) {
+      if (item.message) return String(item.message);
+      const details = item.details || {};
+      if (Array.isArray(details.changes) && details.changes.length) return details.changes.join("；");
+      if (Array.isArray(details.tags) && details.tags.length) return `初始 Tag：${details.tags.join(", ")}`;
+      if (Array.isArray(details.issues) && details.issues.length) return details.issues.slice(0, 3).map(issue => str(issue?.suggestedChange || issue?.observed || issue?.expected)).filter(Boolean).join("；");
+      return "";
+    }
     function renderActivityTimeline(row, message) {
       const activity = Array.isArray(message?.activity) ? message.activity : Array.isArray(message?.events) ? message.events : [];
       if (!activity.length) return null;
@@ -2940,16 +2949,17 @@
         const label = doc.createElement("span");
         label.textContent = activityLabel(item);
         line.appendChild(label);
-        if (item.message && item.type !== "thinking") {
+        const noteText = activityNote(item);
+        if (noteText && item.type !== "thinking") {
           const note = doc.createElement("small");
-          note.textContent = item.message;
+          note.textContent = noteText;
           line.appendChild(note);
         }
         list.appendChild(line);
       });
       details.append(summary, list);
       row.appendChild(details);
-      details.open = message.status === "streaming";
+      details.open = message.status === "streaming" || message.result?.agentControlled === true;
       return details;
     }
     function updateActivityTimeline(messageSnapshot = null) {
@@ -2971,9 +2981,10 @@
         const label = doc.createElement("span");
         label.textContent = activityLabel(item);
         line.appendChild(label);
-        if (item.message && item.type !== "thinking") {
+        const noteText = activityNote(item);
+        if (noteText && item.type !== "thinking") {
           const note = doc.createElement("small");
-          note.textContent = item.message;
+          note.textContent = noteText;
           line.appendChild(note);
         }
         next.appendChild(line);
