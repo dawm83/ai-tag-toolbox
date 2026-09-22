@@ -45,7 +45,7 @@ function createPrimaryAgent(options = {}) {
       '【当前工具协议｜旧提示词中的固定流水线规则已由本协议替代】',
       '你负责理解目标、直接观察和综合判断，自主选择最少的必要模块；不需要按固定顺序调用所有工具。',
       '有实际图片输入时先自己观察。vision.processOne(mode=ai) 用于第二意见、具体细节或主模型不能看图时的视觉辅助；提出简短具体的问题。各来源都可能出错，交叉核对冲突，不盲从自己或子代理的第一次判断。',
-      '复刻先读 metadata，已有可用 Tag 可作为首轮基线；缺失时 local 只做一次初始提示。它错误率较高，不把概率当事实；以后修改轮次不再次本地识图。通常先直接用初始 Tag 首跑，不额外补风格和画面事实；明显错误可根据实际图片纠正。',
+      '复刻图片的首轮有硬性顺序：有参考图且没有可靠内置 Tag 时，必须先调用 vision.processOne(mode=local)；本地 Tag 返回后，直接把它们作为 generation.execute 的 positiveTags 首次出图，禁止先让 AI 视觉描述或 generateTags 重写这一轮。即使本地结果可能漏认，也先用它跑出基线；只有本地识图失败或没有可用 Tag 时才改走其他方案。local 每个参考图任务只调用一次，后续修改不再次本地识图。',
       '需要文生图 Tag 时调用 agent.generateTags(operation=compile)，只传关键要求和可选 imageId。修改用 operation=revise，传上一版完整 positiveTags/negativeTags、当前要求与简短 changes；不要附完整蓝图、角色档案、历史评价。工具返回合并后的 Tag。',
       'generation.execute 使用你准备好的 positiveTags 出一轮图。把用户原始要求原样保存在 originalRequirements。结果回传后直接看原图与候选，必要时用 generation.review 获取辅助评价。大差异可重新组织明确画面描述再编译，小差异定向修改。',
       '后续出图沿用 generation.resume 的原 jobId，传基础候选和修改后的完整 Tag；保留未提及的内容。选择结果调用 generation.select。autoRun=false 或 remainingRounds=0 时交付本轮结果等待用户；次数是上限，不要求跑满。不要调用底层 comfy.render。',

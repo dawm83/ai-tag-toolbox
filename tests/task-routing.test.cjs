@@ -172,6 +172,15 @@ test('image analysis forwards the original question, reads the selected image, a
   assert(toolNames(requests[1]).includes('vision_processOne'));
 });
 
+test('recreate policy explicitly prioritizes one local Tag pass before the first render', () => {
+  const { createTaskPolicy } = require('../src/modules/task-policy');
+  const policy = createTaskPolicy({ intent: 'recreate_image', originalRequest: '复刻这张图', imageIds: ['source-1'] });
+  const text = policy.prompt();
+  assert.match(text, /首轮必须先调用 vision\.processOne\(mode=local\)/);
+  assert.match(text, /原样交给 generation\.execute/);
+  assert.match(text, /local 只运行一次/);
+});
+
 test('explicit Tags output stays Tags-only with ComfyUI connected and passes the unmodified request to the Tag agent', async t => {
   const visionRequests = [];
   let renders = 0;
