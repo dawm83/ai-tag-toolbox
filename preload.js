@@ -97,7 +97,7 @@ try {
     translation: translationProxyTarget,
     storage,
     promptDir: path.join(assetDir, '提示词素材'),
-    callMonitorPath: path.join(userDataDir, 'debug', 'ai-calls.json'),
+    callMonitorPath: path.join(userDataDir, 'debug', 'ai-call-summary.json'),
     promptSource: prompts || undefined
   });
   comfy = assistant.comfy || null;
@@ -233,8 +233,9 @@ contextBridge.exposeInMainWorld('AppModules', {
     const catalogSaved = ready?.ok === false ? true : await catalog?.flush?.();
     if (catalogSaved === false) return false;
     const sessionsSaved = await assistant?.flushPersistence?.();
+    const callsSaved = await assistant?.flushCallRecords?.();
     const settingsSaved = await storage?.flush?.();
-    return catalogSaved !== false && sessionsSaved !== false && settingsSaved !== false;
+    return catalogSaved !== false && sessionsSaved !== false && callsSaved !== false && settingsSaved !== false;
   },
   characters: characters ? Object.fromEntries([
     'get', 'copyText', 'page', 'series', 'select', 'selected', 'size', 'count', 'manifest', 'selectionText', 'removeSelection', 'clearSelection', 'edit', 'restore', 'editHistory'
@@ -323,6 +324,7 @@ contextBridge.exposeInMainWorld('AppModules', {
     listCallRecords: assistant.listCallRecords,
     clearCallRecords: assistant.clearCallRecords,
     getCallMonitorInfo: assistant.getCallMonitorInfo,
+    flushCallRecords: assistant.flushCallRecords,
     flushPersistence: assistant.flushPersistence,
   } : null,
   runtime: runtime ? {
@@ -331,9 +333,7 @@ contextBridge.exposeInMainWorld('AppModules', {
     callTool: runtime.callTool,
     cancel: runtime.cancel,
     getStatus: runtime.getStatus,
-    listTools: runtime.listTools,
-    listCallRecords: runtime.listCallRecords,
-    clearCallRecords: runtime.clearCallRecords
+    listTools: runtime.listTools
   } : null,
   primaryTools: primaryTools ? {
     list: primaryTools.list,

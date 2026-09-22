@@ -104,7 +104,7 @@ function boot(options = {}) {
     save: value => { comfyProfile = structuredClone(value); return structuredClone(comfyProfile); },
     setActive: () => structuredClone(comfyProfile), remove: () => false
   };
-  const modules = { catalog: options.catalog, formatTagOutput: options.formatTagOutput, assistant, favorites: options.favorites, joinFavoriteBlocks: options.joinFavoriteBlocks, characters: options.characters, runtime: { listCallRecords: assistant.listCallRecords, clearCallRecords: assistant.clearCallRecords, ...options.runtime }, prompts, tags, images: { get: id => images.get(id), preview: id => images.get(id) }, imageRepository: repository, preferences: options.preferences || { get: (_k, fallback) => fallback, set: () => {} }, translation: options.translation || { findReferences: () => [] }, comfy, locales: options.locales || { 'zh-CN': {} }, version: '1.4.34' };
+  const modules = { catalog: options.catalog, formatTagOutput: options.formatTagOutput, assistant, favorites: options.favorites, joinFavoriteBlocks: options.joinFavoriteBlocks, characters: options.characters, runtime: { ...options.runtime }, prompts, tags, images: { get: id => images.get(id), preview: id => images.get(id) }, imageRepository: repository, preferences: options.preferences || { get: (_k, fallback) => fallback, set: () => {} }, translation: options.translation || { findReferences: () => [] }, comfy, locales: options.locales || { 'zh-CN': {} }, version: '1.4.34' };
 
   for (const file of ['views/tag-location-view.js', 'views/tag-editor-view.js', 'views/settings-view.js', 'views/comfy-view.js', 'views/prompt-view.js', 'views/agent-status-view.js', 'views/call-monitor-view.js', 'modules/translation-alignment.js', 'views/translation-view.js', 'views/favorites-view.js', 'app-view.js']) window.eval(source(file));
   if (options.favoritesView) window.AppViews.favorites = { createFavoritesView: () => options.favoritesView };
@@ -974,14 +974,17 @@ test('deleting a conversation defaults to removing images unless gallery retenti
   app.dom.window.close();
 });
 
-test('external call monitor opens with redacted IO and exports its records', async () => {
+test('call monitor renders compact summaries and never exposes request or response payloads', async () => {
   const app = boot({ callRecords: [{
-    requestId: 'primary-1', rootRequestId: 'primary-1', parentRequestId: '', kind: 'primary', status: 'completed',
-    startedAt: 1, endedAt: 2, input: { messages: [{ role: 'user', content: '查找角色' }] },
-    output: { text: '完成', key: '[REDACTED]' }, events: [], usage: { total_tokens: 4 }
+    requestId: 'primary-1', rootRequestId: 'primary-1', parentRequestId: '', sessionId: 'session-1',
+    messageId: 'message-1', jobId: 'job-1', kind: 'primary', tool: 'primary', status: 'completed',
+    startedAt: 1, endedAt: 125, durationMs: 124, model: 'test-model', apiCalls: 1,
+    httpStatus: 200, usage: { total_tokens: 4 }, usageScope: 'root-total-at-completion', error: null
   }, {
-    requestId: 'tool-2', rootRequestId: 'primary-2', parentRequestId: 'primary-2', kind: 'tool:tags.search', status: 'completed',
-    startedAt: 3, endedAt: 5, input: { args: { query: 'blue hair' } }, output: { items: [] }, events: [], usage: {}
+    requestId: 'tool-2', rootRequestId: 'primary-2', parentRequestId: 'primary-2', sessionId: 'session-2',
+    messageId: '', jobId: '', kind: 'tool:tags.search', tool: 'tags.search', status: 'error',
+    startedAt: 3, endedAt: 305, durationMs: 302, model: 'tag-tool', apiCalls: 0,
+    httpStatus: null, usage: { total_tokens: 0 }, usageScope: 'call', error: { code: 'TAG_LOOKUP', message: '查询失败' }
   }] });
   app.window.document.querySelector('#openCallMonitor').click();
   const modal = app.window.document.querySelector('#callMonitorModal');
@@ -989,12 +992,21 @@ test('external call monitor opens with redacted IO and exports its records', asy
   assert.equal(modal.classList.contains('show'), true);
   assert.equal(modal.getAttribute('aria-hidden'), 'false');
   assert.match(app.window.document.querySelector('#callMonitorList').textContent, /primary-1/);
-  assert.match(app.window.document.querySelector('#callMonitorList').textContent, /查找角色/);
-  assert.match(app.window.document.querySelector('#callMonitorList').textContent, /REDACTED/);
+  assert.match(app.window.document.querySelector('#callMonitorList').textContent, /124 ms/);
+  assert.match(app.window.document.querySelector('#callMonitorList').textContent, /Token 4/);
+  assert.match(app.window.document.querySelector('#callMonitorList').textContent, /test-model/);
+  assert.match(app.window.document.querySelector('#callMonitorList').textContent, /message-1/);
+  assert.match(app.window.document.querySelector('#callMonitorList').textContent, /job-1/);
+  assert.doesNotMatch(app.window.document.querySelector('#callMonitorList').textContent, /实际请求|原始返回|调用输入|处理后的输出|系统提示词|messages|blue hair|REDACTED/);
   const filter = app.window.document.querySelector('#callMonitorFilter');
   filter.value = 'primary-2';
   filter.dispatchEvent(new app.window.Event('change', { bubbles: true }));
+  assert.match(app.window.document.querySelector('#callMonitorList').textContent, /tags.search/);
+  assert.match(app.window.document.querySelector('#callMonitorList').textContent, /失败/);
+  assert.match(app.window.document.querySelector('#callMonitorList').textContent, /TAG_LOOKUP：查询失败/);
   const exported = app.view.views.callMonitor.exportJson();
+  assert.equal(exported.format, 'ai-tag-call-monitor');
+  assert.equal(exported.version, 2);
   assert.equal(exported.records.length, 1);
   assert.equal(exported.records[0].requestId, 'tool-2');
   app.window.document.querySelector('#callMonitorExport').click();

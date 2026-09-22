@@ -723,7 +723,7 @@
       <div class="box call-monitor-box">
         <button class="hbtn close btn btn-icon" id="callMonitorClose" type="button" aria-label="关闭">✕</button>
         <div class="call-monitor-head">
-          <div><h3 id="callMonitorTitle">AI 调用监视器</h3><div class="hint">记录实际请求、原始返回及处理结果。密钥、图片内容和本地路径已隐藏。</div></div>
+          <div><h3 id="callMonitorTitle">AI 调用监视器</h3><div class="hint">记录调用状态、耗时、Token 用量和错误摘要。详细调度过程保留在对话中。</div></div>
           <span class="secret-status" id="callMonitorCount">0 条调用</span>
         </div>
         <div class="form-acts call-monitor-actions">
@@ -733,7 +733,7 @@
           <button class="abtn btn btn-secondary" id="callMonitorExport" type="button">导出日志</button>
           <button class="abtn ghost danger btn btn-danger" id="callMonitorClear" type="button">清空记录</button>
         </div>
-        <div class="hint" id="callMonitorRetention">自动刷新；最多保留 200 条调用 / 12 MB。过长记录会标记截断。复制和导出采用当前请求筛选。</div>
+        <div class="hint" id="callMonitorRetention">自动刷新；最多保留 200 条摘要 / 512 KiB。复制和导出采用当前请求筛选。</div>
         <div id="callMonitorList" class="call-monitor-list"></div>
       </div>
     </div>

@@ -168,17 +168,16 @@ test('call monitor records primary, tool and subagent IO with sensitive payloads
   const result = await runtime.runPrimary({ requestId: 'monitor-parent', input: { text: 'translate' }, config: { key: 'request-secret' } });
   assert.equal(result.ok, true);
   const records = runtime.listCallRecords();
-  assert(records.some(row => row.kind === 'primary' && row.input.messages.some(message => message.content === 'translate')));
-  assert(records.some(row => row.kind === 'tool:translation.translate' && row.input.args.text === '你好' && row.output.text === 'hello'));
-  assert(records.some(row => row.kind === 'subagent:translation' && row.input.text === '你好' && row.output.text === 'hello'));
+  assert(records.some(row => row.kind === 'primary' && row.status === 'completed'));
+  assert(records.some(row => row.kind === 'tool:translation.translate' && row.tool === 'translation.translate'));
+  assert(records.some(row => row.kind === 'subagent:translation' && row.status === 'completed'));
   const json = JSON.stringify(records);
-  assert.doesNotMatch(json, /secret-key|request-secret|data:image|base64,AQ==/);
-  assert.match(json, /\[REDACTED\]/);
+  assert.doesNotMatch(json, /secret-key|request-secret|data:image|base64,AQ==|你好|hello/);
   runtime.clearCallRecords();
   assert.deepEqual(runtime.listCallRecords(), []);
 });
 
-test('generateTags monitor record includes the actual prompt and raw provider output', async () => {
+test('generateTags monitor record keeps only the execution summary', async () => {
   const app = require('../src/modules/assistant').createAssistant({
     promptSource: { composeGenerate: () => 'GENERATOR SYSTEM PROMPT', get: () => '' },
     visionGateway: { complete: async () => ({ ok: true, text: '{"positiveTags":["blue hair"]}', raw: { provider: 'raw-response' } }) }
@@ -186,10 +185,11 @@ test('generateTags monitor record includes the actual prompt and raw provider ou
   const result = await app.runtime.runSubAgent('generateTags', { input: { requirements: 'blue-haired character' } });
   assert.equal(result.ok, true);
   const record = app.listCallRecords().find(row => row.kind === 'subagent:generateTags');
-  assert.match(record.exchanges[0].request.body.messages[0].content, /GENERATOR SYSTEM PROMPT/);
-  assert.equal(record.exchanges[0].request.body.messages[1].content[0].text, '当前要求：blue-haired character');
-  assert.equal(record.exchanges[0].response.raw.provider, 'raw-response');
-  assert.deepEqual(record.output.positiveTags, ['blue hair']);
+  assert.equal(record.apiCalls, 1);
+  assert.equal(record.status, 'completed');
+  assert.equal(result.data.positiveTags[0], 'blue hair');
+  assert.equal(record.input, undefined);
+  assert.equal(record.output, undefined);
   app.destroy();
 });
 
@@ -225,9 +225,10 @@ test('evaluateImages shares the Vision client and monitor redacts all image payl
   assert.equal(result.data.recommendedCandidateId, 'candidate-2');
   assert.equal(providerMessages[1].content.filter(part => part.type === 'image_url').length, 2);
   const record = monitor.list().find(row => row.kind === 'subagent:evaluateImages');
-  assert.equal(record.input.candidateImageIds[0], 'candidate-1');
-  assert.equal(record.exchanges[0].request.body.messages[1].content[2].image_url, '[REDACTED]');
-  assert.doesNotMatch(JSON.stringify(monitor.list()), /data:image|base64/);
+  assert.equal(record.apiCalls, 1);
+  assert.equal(record.input, undefined);
+  assert.equal(record.output, undefined);
+  assert.doesNotMatch(JSON.stringify(monitor.list()), /data:image|base64|candidate-1/);
 });
 
 test('primary uses one high-level generation tool and rejects hidden low-level calls', async () => {

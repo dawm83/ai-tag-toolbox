@@ -9,10 +9,10 @@
   const pretty = value => JSON.stringify(value ?? null, null, 2);
   const names = { primary: '主 AI', api: '独立 API 请求', 'subagent:vision': '识图子代理', 'subagent:translation': '翻译子代理', 'subagent:generateTags': '文生图 Tag 子代理' };
   const statuses = { running: '进行中', completed: '完成', error: '失败', timeout: '超时', cancelled: '已取消', interrupted: '已中断' };
-  function createCallMonitorView({ document: doc, assistant, runtime, notify, download, confirm, autoBind = true } = {}) {
+  function createCallMonitorView({ document: doc, assistant, notify, download, confirm, autoBind = true } = {}) {
     const win = doc.defaultView;
     const q = selector => doc.querySelector(selector);
-    const service = assistant?.listCallRecords ? assistant : runtime;
+    const service = assistant;
     let records = [], selected = '', filter = '', revision = -1, bound = false, timer, returnFocus;
     const source = () => service?.listCallRecords?.() || [];
     const filtered = () => records.filter(row => !filter || row.rootRequestId === filter);
@@ -22,27 +22,47 @@
       if (text != null) el.textContent = String(text);
       return el;
     }
+    function duration(row) {
+      const value = Number(row?.durationMs);
+      if (Number.isFinite(value) && value >= 0) return Math.round(value);
+      const started = Number(row?.startedAt);
+      const ended = row?.endedAt == null ? Date.now() : Number(row.endedAt);
+      return Number.isFinite(started) && Number.isFinite(ended) ? Math.max(0, Math.round(ended - started)) : 0;
+    }
+    function usageLabel(usage) {
+      if (!usage || typeof usage !== 'object') return 'Token 未返回';
+      if (usage.total_tokens != null) return `Token ${usage.total_tokens}`;
+      const prompt = usage.prompt_tokens;
+      const completion = usage.completion_tokens;
+      if (prompt != null || completion != null) return `Token ${prompt ?? 0} + ${completion ?? 0}`;
+      return 'Token 未返回';
+    }
     function detail(row) {
       const box = element('div', 'call-record-detail');
-      box.append(element('div', 'call-record-meta', `请求：${row.requestId} · 上级：${row.parentRequestId || '无'} · 会话：${row.sessionId || '独立调用'}`));
-      if (row.truncated) box.append(element('p', 'hint', '这条记录超过容量限制，部分内容已截断。'));
-      function section(title, payload, open = false) {
-        const fold = element('details', 'call-record-section'); fold.open = open;
-        fold.append(element('summary', '', title), element('pre', '', pretty(payload)));
-        box.append(fold);
+      box.append(element('div', 'call-record-meta', `请求：${row.requestId || '未知'} · 根请求：${row.rootRequestId || row.requestId || '未知'} · 上级：${row.parentRequestId || '无'} · 会话：${row.sessionId || '独立调用'}`));
+      const grid = element('dl', 'call-record-summary');
+      const fields = [
+        ['调用类型', label(row)],
+        ['工具', row.tool || row.kind || '未指定'],
+        ['状态', statuses[row.status] || row.status || '未知'],
+        ['耗时', `${duration(row)} ms`],
+        ['模型', row.model || '未指定'],
+        ['API 调用', row.apiCalls == null ? '0' : row.apiCalls],
+        ['HTTP', row.httpStatus == null ? '未返回' : row.httpStatus],
+        ['用量', usageLabel(row.usage)],
+        ['会话消息', row.messageId || '无'],
+        ['生成任务', row.jobId || '无']
+      ];
+      for (const [name, value] of fields) {
+        grid.append(element('dt', '', name), element('dd', '', value));
       }
-      section('调用输入', row.input);
-      section('处理后的输出', row.output, true);
-      if (row.error) section('错误', row.error, true);
-      for (const [index, exchange] of (row.exchanges || []).entries()) {
-        const ms = Math.max(0, (exchange.endedAt || Date.now()) - exchange.startedAt);
-        const tokens = exchange.usage?.total_tokens;
-        box.append(element('h4', '', `API 第 ${index + 1} 次 · ${exchange.request?.body?.model || '未指定模型'} · ${statuses[exchange.status] || exchange.status} · ${ms} ms · Token ${tokens == null ? '未返回' : tokens}`));
-        section('实际请求（系统提示词、消息与参数）', exchange.request);
-        section('接口原始返回（含解析前文本）', exchange.response);
-        if (exchange.error) section('接口错误', exchange.error, true);
+      box.append(grid);
+      if (row.usageScope) box.append(element('p', 'hint', `用量范围：${row.usageScope}`));
+      if (row.error) {
+        const error = typeof row.error === 'object' ? [row.error.code, row.error.message].filter(Boolean).join('：') : String(row.error);
+        box.append(element('p', 'call-record-error', `错误：${error || '调用失败'}`));
       }
-      section('运行事件', row.events);
+      if (row.truncated) box.append(element('p', 'hint', '这条摘要超过容量限制，部分字段已截断。'));
       return box;
     }
     function render(value = source()) {
@@ -60,19 +80,19 @@
       }
       const rows = filtered().slice().reverse();
       q('#callMonitorCount').textContent = `${rows.length} / ${records.length} 条调用`;
-      q('#callMonitorRetention').textContent = info.persistenceError || `自动刷新；最多保留 200 条调用 / 12 MB，过长记录会标记截断。${info.dropped ? ` 已淘汰 ${info.dropped} 条。` : ''}复制和导出采用当前筛选。`;
+      q('#callMonitorRetention').textContent = info.persistenceError || `自动刷新；最多保留 ${info.maxRecords || 200} 条摘要 / ${Math.round((info.maxBytes || 512 * 1024) / 1024)} KiB。${info.dropped ? ` 已淘汰 ${info.dropped} 条。` : ''}复制和导出采用当前筛选。`;
       const host = q('#callMonitorList');
       const scroll = host.scrollTop;
       const previous = q('.call-record-detail');
       const openSections = previous ? [...previous.querySelectorAll('details')].map(node => node.open) : [];
       host.replaceChildren();
-      if (!rows.length) { host.append(element('p', 'call-monitor-empty', '暂无记录。发送 AI 消息后可在此检查调用内容。')); return records; }
+      if (!rows.length) { host.append(element('p', 'call-monitor-empty', '暂无记录。发送 AI 消息后可在此查看调用摘要。')); return records; }
       if (!rows.some(row => row.requestId === selected)) selected = (rows.find(row => row.kind === 'primary') || rows[0]).requestId;
       for (const row of rows) {
         const article = element('article', 'call-record');
         const button = element('button', 'call-record-heading'); button.type = 'button'; button.dataset.requestId = row.requestId;
         button.setAttribute('aria-expanded', String(row.requestId === selected));
-        const elapsed = Math.max(0, (row.endedAt || Date.now()) - row.startedAt);
+        const elapsed = duration(row);
         button.append(element('strong', '', label(row)), element('span', 'call-record-status', statuses[row.status] || row.status), element('code', '', row.requestId), element('span', 'call-record-duration', `${elapsed} ms`));
         article.append(button);
         if (row.requestId === selected) {
@@ -108,9 +128,9 @@
     }
     function payload() {
       const rows = source().filter(row => !filter || row.rootRequestId === filter);
-      return { format: 'ai-tag-call-monitor', version: 1, exportedAt: new Date().toISOString(), filter: filter || null, info: service?.getCallMonitorInfo?.() || {}, records: rows };
+      return { format: 'ai-tag-call-monitor', version: 2, exportedAt: new Date().toISOString(), filter: filter || null, info: service?.getCallMonitorInfo?.() || {}, records: rows };
     }
-    function exportJson() { const data = payload(); if (download) download(`ai-call-monitor-${Date.now()}.json`, data); return data; }
+    function exportJson() { const data = payload(); if (download) download(`ai-call-summary-${Date.now()}.json`, data); return data; }
     async function copyJson() {
       try {
         if (!win.navigator.clipboard?.writeText) throw new Error('clipboard unavailable');

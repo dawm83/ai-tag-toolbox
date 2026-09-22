@@ -119,8 +119,8 @@ test('assistant create/recreate workflows iterate, compare, upload source and pr
   assert.equal(createToolPayload.candidates[0].evaluation, undefined);
   assert.equal(created.candidates[0].evaluation.status, 'reviewed', 'Assistant UI result keeps the local snapshot');
   assert.deepEqual(created.usage.byKind, { primary: 21, generateTags: 40, evaluateImages: 210 });
-  const createExchangeTotal = assistant.listCallRecords().filter(row => row.rootRequestId === 'integration-create').flatMap(row => row.exchanges || []).reduce((sum, exchange) => sum + Number(exchange.usage?.total_tokens || 0), 0);
-  assert.equal(created.usage.total_tokens, createExchangeTotal);
+  const createSummary = assistant.listCallRecords().find(row => row.rootRequestId === 'integration-create' && row.kind === 'primary');
+  assert.equal(createSummary.usage.total_tokens, created.usage.total_tokens);
   assert.equal(created.usage.total_tokens, 271);
 
   const recreated = await assistant.run({ text: '复刻这张图片', imageIds: [sourceImage.id], requestId: 'integration-recreate' });
@@ -132,14 +132,14 @@ test('assistant create/recreate workflows iterate, compare, upload source and pr
   assert(submitted.slice(2).every(call => call.sourceImage?.name === 'source.png'));
   assert.equal(recreated.candidates[3].prompt, submitted.at(-1).prompt);
   assert.deepEqual(recreated.usage.byKind, { primary: 21, vision: 15, generateTags: 40, evaluateImages: 210 });
-  const recreateExchangeTotal = assistant.listCallRecords().filter(row => row.rootRequestId === 'integration-recreate').flatMap(row => row.exchanges || []).reduce((sum, exchange) => sum + Number(exchange.usage?.total_tokens || 0), 0);
-  assert.equal(recreated.usage.total_tokens, recreateExchangeTotal);
+  const recreateSummary = assistant.listCallRecords().find(row => row.rootRequestId === 'integration-recreate' && row.kind === 'primary');
+  assert.equal(recreateSummary.usage.total_tokens, recreated.usage.total_tokens);
   assert.equal(recreated.usage.total_tokens, 286);
 
   const records = assistant.listCallRecords();
   assert(records.some(row => row.kind === 'tool:generation.execute'));
   assert(records.some(row => row.kind === 'subagent:evaluateImages'));
-  assert(records.some(row => row.kind === 'tool:comfy.render' && row.output.recreationMode === 'reference_image'));
+  assert(records.some(row => row.kind === 'tool:comfy.render' && row.tool === 'comfy.render' && row.status === 'completed'));
   assert.doesNotMatch(JSON.stringify(records), /data:image|base64|AQID/);
 
   assistant.setSettings({ generationAutoRun: false, imagesPerRound: 2, maxAutoRounds: 2 });
