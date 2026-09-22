@@ -397,6 +397,22 @@ function createAssistant(options = {}) {
     persist();
     return clone(found.message.result);
   }
+  async function resumeWithJudgement(args, job, options, onEvent) {
+    const resumed = await runtime.callTool('generation.resume', args, { requestId: job.id, sessionId: job.sessionId, messageId: job.live.id, signal: job.controller.signal, onEvent });
+    if (!resumed.ok || !resumed.data?.agentControlled || !resumed.data.decisionRequired || !writable(job)) return { outcome: resumed, resumed };
+    const current = resumed.data;
+    const decision = await runtime.runPrimary({ requestId: id('primary'), sessionId: job.sessionId, messageId: job.live.id,
+      task: { intent: 'auto', originalRequest: current.originalRequirements, feedbackJobId: current.jobId, forbidImages: current.outputType === 'tags' },
+      generationContext: current,
+      messages: [...history(job.session), { role: 'user', imageIds: current.viewImageIds || [], content: '继续原任务。确认信息或连接已恢复，请结合以下实际结果选择下一步；尚未出图时先准备确认后的 Tag：' + JSON.stringify(current) }],
+      signal: job.controller.signal, onEvent,
+      onDelta: (delta, reasoning = '') => { if (!writable(job)) return; job.live.text += delta || ''; job.live.reasoning += reasoning || ''; schedulePersist(); observe(options.onDelta, job.live.text, job.live.reasoning); }
+    });
+    const usage = { ...decision.usage, byKind: { ...decision.usage?.byKind } };
+    for (const [key, value] of Object.entries(resumed.usage || {})) if (typeof value === 'number') usage[key] = value + (usage[key] || 0);
+    for (const [key, value] of Object.entries(resumed.usage?.byKind || {})) usage.byKind[key] = value + (usage.byKind[key] || 0);
+    return { outcome: { ...decision, data: { ...current, ...decision.data }, usage }, resumed };
+  }
   async function continueGeneration(value, candidateId, feedback, options = {}, sessionId = state.currentId) {
     if (typeof options === 'string') { sessionId = options; options = {}; }
     if (destroyed) return failure('ASSISTANT_CLOSED', '会话服务已关闭');
@@ -443,7 +459,7 @@ function createAssistant(options = {}) {
     };
     try {
       const args = resumeOnly ? { jobId } : { jobId, action: 'continue', ...(candidateId ? { baseCandidateId: text(candidateId) } : {}), ...(requestTags ? { outputType: 'tags' } : {}), feedback: note, maxAutoRounds: 1, autoRun: false };
-      const outcome = await runtime.callTool('generation.resume', args, { requestId, sessionId: session.id, messageId: live.id, signal: controller.signal, onEvent });
+      const { outcome, resumed } = await resumeWithJudgement(args, job, options, onEvent);
       if (!writable(job)) return { ...failure('CANCELLED', '请求已取消', requestId, session.id), data: cancelledPayload(job) };
       const publicPayload = object(outcome.data) ? outcome.data : {};
       const payload = hydrateGenerationPayload(publicPayload);
@@ -451,10 +467,10 @@ function createAssistant(options = {}) {
       const error = outcome.ok ? null : errorShape(outcome.error);
       live.status = outcome.ok ? 'done' : error.code === 'CANCELLED' ? 'cancelled' : 'error';
       live.result = { ...clone(payload), ok: outcome.ok, error: error || payload.error || null, usage: clone(outcome.usage) };
-      live.toolCalls = [{ id: requestId, name: 'generation.resume', arguments: args, ok: outcome.ok, result: clone(publicPayload), error }];
+      live.toolCalls = [{ id: requestId, name: 'generation.resume', arguments: args, ok: outcome.ok, result: clone(resumed.data), error }, ...array(publicPayload.toolCalls)];
       live.transcript = [
         { role: 'assistant', content: '', tool_calls: [{ id: requestId, type: 'function', function: { name: 'generation_resume', arguments: JSON.stringify(args) } }] },
-        { role: 'tool', tool_call_id: requestId, content: JSON.stringify(outcome.ok ? publicPayload : outcome.error) }
+        { role: 'tool', tool_call_id: requestId, content: JSON.stringify(resumed.ok ? resumed.data : resumed.error) }, ...transcript(publicPayload.transcript)
       ];
       if (payload.stopReason === 'revision_failed') live.text = '本轮修改未通过校验，已保留原有 Tag 和候选图，请缩小修改范围后重试。';
       if (payload.stopReason === 'prompt_unchanged') live.text = '本轮没有产生有效的 Tag 改动，已保留原结果。';
@@ -510,7 +526,7 @@ function createAssistant(options = {}) {
     };
     try {
       const args = { jobId, characterSelection };
-      const outcome = await runtime.callTool('generation.resume', args, { requestId, sessionId: session.id, messageId: live.id, signal: controller.signal, onEvent });
+      const { outcome, resumed } = await resumeWithJudgement(args, job, options, onEvent);
       if (!writable(job)) return { ...failure('CANCELLED', '请求已取消', requestId, session.id), data: cancelledPayload(job) };
       const publicPayload = object(outcome.data) ? outcome.data : {};
       const payload = hydrateGenerationPayload(publicPayload);
@@ -519,10 +535,10 @@ function createAssistant(options = {}) {
       const ok = outcome.ok && !error;
       live.status = ok ? 'done' : error.code === 'CANCELLED' ? 'cancelled' : 'error';
       live.result = { ...clone(payload), ok, error, usage: clone(outcome.usage) };
-      live.toolCalls = [{ id: requestId, name: 'generation.resume', arguments: args, ok, result: clone(publicPayload), error }];
+      live.toolCalls = [{ id: requestId, name: 'generation.resume', arguments: args, ok, result: clone(resumed.data), error }, ...array(publicPayload.toolCalls)];
       live.transcript = [
         { role: 'assistant', content: '', tool_calls: [{ id: requestId, type: 'function', function: { name: 'generation_resume', arguments: JSON.stringify(args) } }] },
-        { role: 'tool', tool_call_id: requestId, content: JSON.stringify(outcome.ok ? publicPayload : outcome.error) }
+        { role: 'tool', tool_call_id: requestId, content: JSON.stringify(resumed.ok ? resumed.data : resumed.error) }, ...transcript(publicPayload.transcript)
       ];
       if (!live.text && error) live.text = error.message;
       if (outcome.ok) {

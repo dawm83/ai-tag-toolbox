@@ -352,6 +352,7 @@ function createGenerationOrchestrator(options = {}) {
       remainingRounds: Math.max(0, (job.agentRoundLimit ?? job.policy.maxAutoRounds) - job.successfulRounds),
       originalRequirements: job.originalRequirements,
       sourceImageId: job.sourceImageId,
+      characterIdentities: identityCharacterReferences(job.characterReferences),
       ...(job.agentControlled && job.outputType === 'images' ? { viewImageIds: [job.sourceImageId, ...job.candidates.slice(-3).map(row => row.imageId)].filter(Boolean) } : {}),
       outcome: job.outcome || '',
       mode: job.mode,
@@ -837,6 +838,7 @@ function createGenerationOrchestrator(options = {}) {
       emit(job, context, 'generation.started', { mode: job.mode, outputType: job.outputType, autoRun: job.policy.autoRun, imagesPerRound: job.policy.imagesPerRound, maxAutoRounds: job.policy.maxAutoRounds });
       const prepared = await prepare(job, context);
       if (prepared !== true) return prepared;
+      guard(job, context);
       if (job.agentControlled) {
         if (!job.positiveTags.length) throw failure('PROMPT_REQUIRED', '请先提供可执行 Tag；可直接使用初始 Tag，或调用 agent.generateTags');
         syncBriefPrompt(job, job.successfulRounds);
@@ -847,6 +849,7 @@ function createGenerationOrchestrator(options = {}) {
           const ready = await checkPreflight(job, context);
           if (ready !== true) return ready;
           await renderRound(job, context);
+          guard(job, context);
           job.stopReason = job.policy.autoRun ? 'awaiting_agent' : 'awaiting_feedback';
           transition(job, 'awaiting_feedback');
         }
@@ -978,7 +981,7 @@ function createGenerationOrchestrator(options = {}) {
       if (input.baseCandidateId && !activeCandidate(job, input.baseCandidateId)) throw failure('CANDIDATE_NOT_FOUND', '没有找到基础候选');
       if (job.pendingRender) throw failure('RENDER_PENDING', '旧图仍在处理中，请先恢复原请求');
       if (input.outputType !== 'tags' && job.outputType !== 'tags' && job.successfulRounds >= (job.agentRoundLimit ?? job.policy.maxAutoRounds)) throw failure('GENERATION_BUDGET_EXHAUSTED', '本轮生成次数已用完，请交付已有候选并等待用户反馈');
-      if (promptFingerprint(positiveTags, negativeTags) === promptFingerprint(job.positiveTags, job.negativeTags)) throw failure('PROMPT_UNCHANGED', 'Tag 未改变，不重复出图');
+      if (job.candidates.length && promptFingerprint(positiveTags, negativeTags) === promptFingerprint(job.positiveTags, job.negativeTags)) throw failure('PROMPT_UNCHANGED', 'Tag 未改变，不重复出图');
       job.positiveTags = positiveTags; job.negativeTags = negativeTags;
       if (input.outputType === 'tags') job.outputType = 'tags';
       job.selectedCandidateId = ''; job.outcome = ''; job.stopReason = ''; job.residualIssues = [];
@@ -1027,6 +1030,13 @@ function createGenerationOrchestrator(options = {}) {
       });
       job.characterReferences = [];
       job.needsInput = null;
+      if (job.agentControlled) {
+        const ready = await resolveCharacters(job, context);
+        if (ready !== true) return ready;
+        job.stopReason = 'awaiting_agent';
+        transition(job, 'awaiting_feedback');
+        return result(job);
+      }
     }
     if (input.sourceImageId !== undefined) job.sourceImageId = text(input.sourceImageId);
     if (input.characterIds !== undefined) {

@@ -8,7 +8,7 @@ let callNumber = 0;
 const call = (name, args) => ({ toolCalls: [{ id: `call-${++callNumber}`, name: name.replace('.', '_'), arguments: args }] });
 const toolResult = messages => { const row = messages.findLast(m => m.role === 'tool'); return row ? JSON.parse(row.content) : null; };
 
-function setup(t, decide, settings = {}) {
+function setup(t, decide, settings = {}, extra = {}) {
   const storage = createStorage(), images = createImages({ storage }), renders = [], children = [], primary = [], local = [];
   const source = images.add({ filename: 'reference.png', mime: 'image/png', dataUrl: 'data:image/png;base64,AQID' });
   const app = createAssistant({ storage, images,
@@ -24,7 +24,7 @@ function setup(t, decide, settings = {}) {
       renders.push(structuredClone({ prompt: input.prompt, negative: input.negative }));
       return { artifact: { id: `draw-${renders.length}`, dataUrl: 'data:image/png;base64,BAUG', filename: 'output.png', mime: 'image/png' } };
     } },
-    settings: { comfy: { enabled: true }, generation: { autoRun: true, maxAutoRounds: 2 }, limits: { maxToolRounds: 16 }, ...settings }
+    settings: { comfy: { enabled: true }, generation: { autoRun: true, maxAutoRounds: 2 }, limits: { maxToolRounds: 16 }, ...settings }, ...extra
   });
   t.after(() => app.destroy());
   return { app, images, source, renders, children, primary, local, storage };
@@ -89,4 +89,24 @@ test('candidate feedback returns to the primary with the original job and select
   assert.equal(f.renders[1].prompt, 'standing, garden, 3girls');
   assert.equal(f.local.length, 0);
   assert.equal(f.children.length, 1);
+});
+
+test('confirming an ambiguous character returns its identity to the primary before first rendering', async t => {
+  let jobId;
+  const f = setup(t, ({ turn, messages }) => {
+    if (turn === 1) return call('generation.execute', { requirements: 'draw Alice', positiveTags: ['1girl'], characterQueries: ['Alice'] });
+    if (turn === 2) { assert.match(JSON.stringify(messages), /alice_b/); return call('generation.resume', { jobId, action: 'continue', positiveTags: ['1girl', 'alice_b'] }); }
+    return { text: '按确认的角色生成。' };
+  }, {}, { characters: { page: () => ({ items: [{ id: 'alice-a' }, { id: 'alice-b' }] }), get: id => ({ id, name: id, identityTags: [id === 'alice-b' ? 'alice_b' : 'alice_a'], generalTags: [], specificTags: [] }) } });
+  await f.app.refreshCapabilities();
+  const paused = await f.app.run('draw Alice');
+  jobId = paused.jobId;
+  assert.equal(paused.data.status, 'needs_input');
+  assert.equal(f.renders.length, 0);
+  const message = f.app.currentSession().messages.at(-1);
+  const result = await f.app.selectGenerationCharacter(message.id, 'alice-b');
+  assert.equal(result.ok, true, JSON.stringify(result.error));
+  assert.equal(f.renders[0]?.prompt, '1girl, alice_b');
+  assert.equal(f.children.length, 0);
+  assert.equal(f.primary.length, 3);
 });

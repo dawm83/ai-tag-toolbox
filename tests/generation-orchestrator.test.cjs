@@ -710,3 +710,32 @@ test('agent callers cannot override the configured render budget or resume witho
   await assert.rejects(app.orchestrator.resume({ jobId: first.jobId, action: 'continue', positiveTags: ['sitting'] }, app.context), e => e.code === 'GENERATION_BUDGET_EXHAUSTED');
   assert.equal(app.renders.length, 1);
 });
+
+test('agent character confirmation returns the selected identity before spending a render on old draft Tags', async () => {
+  const app = harness({ resolveCharacter: async (value, context) => context.mode === 'query' ? { items: [{ id: 'alice-a' }, { id: 'alice-b' }] } : { id: value, name: 'Alice B', identityTags: ['alice_b'], generalTags: [], specificTags: [] } });
+  const paused = await app.orchestrator.execute({ requirements: 'draw Alice', positiveTags: ['1girl'], characterQueries: ['Alice'], agentControlled: true }, app.context);
+  assert.equal(paused.status, 'needs_input');
+  const ready = await app.orchestrator.resume({ jobId: paused.jobId, characterSelection: { query: 'Alice', characterId: 'alice-b' } }, app.context);
+  assert.equal(app.renders.length, 0);
+  assert.equal(ready.status, 'awaiting_feedback');
+  const result = app.orchestrator.publicResult(ready.jobId);
+  assert.equal(result.decisionRequired, true);
+  assert.deepEqual(result.characterIdentities[0].identityTags, ['alice_b']);
+  await app.orchestrator.resume({ jobId: ready.jobId, action: 'continue', positiveTags: ['1girl', 'alice_b'] }, app.context);
+  assert.deepEqual(app.renders[0].positiveTags, ['1girl', 'alice_b']);
+});
+
+test('cancelling during agent preparation cannot publish a completed Tags result', async () => {
+  let release, entered;
+  const started = new Promise(resolve => { entered = resolve; });
+  const controller = new AbortController();
+  const app = harness({ resolveCharacter: async () => { entered(); return new Promise(resolve => { release = () => resolve({ id: 'alice', identityTags: ['alice'] }); }); } });
+  const pending = app.orchestrator.execute({ requirements: 'draw Alice', agentControlled: true, outputType: 'tags', positiveTags: ['alice'], characterIds: ['alice'] }, { ...app.context, signal: controller.signal });
+  await started;
+  controller.abort(Object.assign(new Error('cancelled'), { code: 'CANCELLED' }));
+  release();
+  const result = await pending;
+  assert.equal(result.status, 'cancelled');
+  assert.notEqual(result.outcome, 'tags_only');
+  assert.equal(app.orchestrator.get(result.jobId).status, 'cancelled');
+});
