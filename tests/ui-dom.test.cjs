@@ -829,6 +829,16 @@ test('manual candidate feedback continues only the selected image', async () => 
   app.dom.window.close();
 });
 
+test('primary model image capability can be selected explicitly', t => {
+  const app = boot(); t.after(() => app.dom.window.close());
+  const select = app.window.document.querySelector('#primaryVisionMode');
+  assert(select);
+  assert.deepEqual([...select.options].map(option => option.value), ['auto', 'supported', 'unsupported']);
+  select.value = 'supported';
+  select.dispatchEvent(new app.window.Event('change', { bubbles: true }));
+  assert.equal(app.assistant.getSettings().primaryVisionMode, 'supported');
+});
+
 test('candidate feedback remains separate from Tags and identifies its target', () => {
   const candidate = { id: 'candidate-1', iteration: 1, roundId: 'round-1', roundIndex: 1, imageId: 'img-1', prompt: '1girl', negative: '', evaluation: { status: 'pending' } };
   const app = boot({ initialMessages: [{ id: 'a1', role: 'assistant', text: '', status: 'done', result: { status: 'awaiting_feedback', jobId: 'job-1', candidates: [candidate] } }] });

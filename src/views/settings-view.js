@@ -9,7 +9,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : window, function createFactory() {
   const number = (value, fallback, min, max) => { const n = Number(value); if (!Number.isFinite(n)) return fallback; return Math.max(min, Math.min(max, n)); };
   const fields = {
-    base: ['#aiBase', 'value'], model: ['#aiModel', 'value'], key: ['#aiKey', 'value'],
+    base: ['#aiBase', 'value'], model: ['#aiModel', 'value'], key: ['#aiKey', 'value'], primaryVisionMode: ['#primaryVisionMode', 'value'],
     visionInheritPrimary: ['#visionInheritPrimary', 'checked'], visionBase: ['#visionBase', 'value'], visionModel: ['#visionModel', 'value'], visionKey: ['#visionKey', 'value'],
     imagesPerRound: ['#imagesPerRound', 'value'], maxAutoRounds: ['#maxAutoRounds', 'value'], generationAutoRun: ['#generationAutoRun', 'checked']
   };

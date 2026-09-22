@@ -51,7 +51,7 @@ async function testCancellationAndBusyGuard() {
 
 async function testSettingsCanonicalAndIndependentVision() {
   const { assistant, storage } = setup({ complete: async () => ({ ok: true, text: 'ok' }) }, `settings-flow-${Date.now()}`);
-  const form = assistant.setSettings({ key: '', temperature: 0, comfyCfg: 0, comfySeed: '', batchCount: 10, maxComfyCalls: 10, generationStrategy: 'fixed3', generationAutoSelect: false, visionInheritPrimary: false, visionBase: 'https://vision.test/v1', visionModel: 'vision-model', visionKey: '' });
+  const form = assistant.setSettings({ key: '', temperature: 0, primaryVisionMode: 'supported', comfyCfg: 0, comfySeed: '', batchCount: 10, maxComfyCalls: 10, generationStrategy: 'fixed3', generationAutoSelect: false, visionInheritPrimary: false, visionBase: 'https://vision.test/v1', visionModel: 'vision-model', visionKey: '' });
   assert.equal(form.key, '');
   assert.equal(form.temperature, 0);
   assert.equal(form.comfyCfg, 0);
@@ -63,8 +63,9 @@ async function testSettingsCanonicalAndIndependentVision() {
   assert.equal(form.generationStrategy, 'fixed3');
   assert.equal(form.generationAutoSelect, false);
   assert.equal(form.visionBase, 'https://vision.test/v1');
+  assert.equal(form.primaryVisionMode, 'supported');
   const persisted = storage.get('settings');
-  assert.deepEqual(Object.keys(persisted).sort(), ['comfy', 'generateNegativeTags', 'generation', 'limits', 'primaryApi', 'visionApi'].sort());
+  assert.deepEqual(Object.keys(persisted).sort(), ['comfy', 'generateNegativeTags', 'generation', 'limits', 'primaryApi', 'primaryVisionMode', 'visionApi'].sort());
   assert.equal(persisted.primaryApi.temperature, 0);
   assert.equal(persisted.comfy.batchCount, 10);
   assert.equal(persisted.generation.imagesPerRound, 10);

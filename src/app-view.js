@@ -938,6 +938,7 @@
               ? s.model
               : formValue("#aiModel", s.model),
         key: formValue("#aiKey", s.key),
+        primaryVisionMode: ["auto", "supported", "unsupported"].includes(formValue("#primaryVisionMode", s.primaryVisionMode || "auto")) ? formValue("#primaryVisionMode", s.primaryVisionMode || "auto") : "auto",
         visionInheritPrimary: $("#visionInheritPrimary") ? Boolean($("#visionInheritPrimary").checked) : s.visionInheritPrimary !== false,
         visionBase: formValue("#visionBase", s.visionBase).replace(/\/+$/, ""),
         visionKey: formValue("#visionKey", s.visionKey),
@@ -2229,7 +2230,7 @@
       return {
         text,
         imageIds,
-        primaryVision: modelIsVision(config.model),
+        primaryVision: config.primaryVisionMode === "supported" || (config.primaryVisionMode !== "unsupported" && modelIsVision(config.model)),
         nsfwEnabled: Boolean(tagSnapshot().adult),
         includeAdult: Boolean(tagSnapshot().adult),
         searchPrecision: ui.searchPrecision,
@@ -3308,7 +3309,7 @@
       input.onToolEvent = event => {
         handleTalkToolEvent(event);
       };
-      if (ids.length && !modelIsVision(s.model))
+      if (ids.length && (s.primaryVisionMode || "auto") === "auto" && !modelIsVision(s.model))
         notify("当前模型未标记为视觉模型，若发送失败请切换带 👁 的模型");
       const button = $("#talkSendBtn");
       const label = button?.textContent || "📤 发送";
@@ -4017,6 +4018,7 @@
       });
       $("#aiModelCustom")?.addEventListener("input", configFromView);
       $("#aiModelCustom")?.addEventListener("change", configFromView);
+      $("#primaryVisionMode")?.addEventListener("change", configFromView);
       $("#visionInheritPrimary")?.addEventListener("change", () => {
         configFromView({ preserveVisionModel: true });
         syncApiMode();

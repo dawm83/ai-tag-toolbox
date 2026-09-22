@@ -59,7 +59,8 @@ function createPrimaryAgent(options = {}) {
     return [prompt, guidance.join('\n')].filter(Boolean).join('\n\n');
   }
   async function complete(messages, request = {}) {
-    const config = { ...publicRequestConfig(options.getSettings?.()?.primaryApi), ...publicRequestConfig(request) };
+    const settings = options.getSettings?.() || {};
+    const config = { ...publicRequestConfig(settings.primaryApi), ...publicRequestConfig(request), primaryVisionMode: settings.primaryVisionMode || 'auto' };
     for (const key of RUNTIME_CONFIG_KEYS) if (Object.prototype.hasOwnProperty.call(request, key)) config[key] = request[key];
     return visualComplete(messages, config, request);
   }

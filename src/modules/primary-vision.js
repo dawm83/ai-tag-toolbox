@@ -10,7 +10,8 @@ function createPrimaryVision({ resolveImage, client }) {
   const unsupportedProfiles = new Set();
   return async function complete(messages, config, context) {
     const profile = `${config.base}\n${config.model}`;
-    const primaryCanSee = !TEXT_ONLY.test(config.model || '') && !unsupportedProfiles.has(profile);
+    const visionMode = ['auto', 'supported', 'unsupported'].includes(config.primaryVisionMode) ? config.primaryVisionMode : 'auto';
+    const primaryCanSee = visionMode !== 'unsupported' && (visionMode === 'supported' || (!TEXT_ONLY.test(config.model || '') && !unsupportedProfiles.has(profile)));
     const lastUser = messages.findLast(row => row.role === 'user');
     let selected = lastUser?.imageIds || [];
     // Only actual tool receipts can request old/candidate images; never parse user text as pixels.
@@ -46,9 +47,9 @@ function createPrimaryVision({ resolveImage, client }) {
       const result = await request(primaryCanSee);
       if (!primaryCanSee || !parts.length || result?.ok !== false || !unsupported(result)) return result;
     } catch (error) {
-      if (!primaryCanSee || !parts.length || context.signal?.aborted || !unsupported(error)) throw error;
+      if (visionMode !== 'auto' || !primaryCanSee || !parts.length || context.signal?.aborted || !unsupported(error)) throw error;
     }
-    unsupportedProfiles.add(profile);
+    if (visionMode === 'auto') unsupportedProfiles.add(profile);
     return request(false);
   };
 }

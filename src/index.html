@@ -394,6 +394,15 @@
                 <input id="aiModelCustom" data-i18n-placeholder="ui.settings.customModel" placeholder="输入自定义模型名" style="display: none; margin-top: 6px" />
               </label>
               <div class="api-model-hint" data-i18n="ui.settings.visionModelMark"></div>
+              <label>
+                <span data-i18n="ui.settings.primaryVisionMode">主模型图片能力</span>
+                <select id="primaryVisionMode" aria-describedby="primaryVisionModeHint">
+                  <option value="auto" data-i18n="ui.settings.primaryVisionAuto">自动判断</option>
+                  <option value="supported" data-i18n="ui.settings.primaryVisionSupported">确认支持图片</option>
+                  <option value="unsupported" data-i18n="ui.settings.primaryVisionUnsupported">确认不支持图片</option>
+                </select>
+                <span class="hint" id="primaryVisionModeHint" data-i18n="ui.settings.primaryVisionHint">自动模式会参考模型名；自定义视觉模型请选“确认支持图片”。</span>
+              </label>
               <details class="aiset api-vision-settings" open>
                 <summary data-i18n="ui.settings.visionApiTitle">👁 识图 API（独立配置）</summary>
                 <label class="opt"><input type="checkbox" id="visionInheritPrimary" checked /> <span data-i18n="ui.settings.visionInherit">沿用主对话 API 配置</span></label>

@@ -8,6 +8,7 @@ const DEFAULT_SETTINGS = Object.freeze({
   comfy: { enabled: false, base: 'http://127.0.0.1:8188', workflow: '', profiles: { version: 2, activeProfileId: 'profile-default', items: [] }, positiveTags: '', negativeTags: '', width: 768, height: 1024, steps: 25, cfg: 7, seed: null, sampler: '', scheduler: '', batchCount: 1 },
   limits: { maxComfyCalls: 3, maxToolRounds: 8, maxToolCalls: 32, primaryTimeoutMs: 120000 },
   generation: { autoRun: true, imagesPerRound: 1, maxAutoRounds: 3, maxRenderAttempts: 5, acceptScore: 90, minImprovement: 3, followSourceAspectRatio: true, jobTimeoutMs: 1200000 },
+  primaryVisionMode: 'auto',
   generateNegativeTags: false
 });
 const FORM_FIELDS = Object.freeze({
@@ -54,9 +55,11 @@ function normaliseSettings(value = {}) {
   const imagesPerRound = number(imagesPerRoundSource, DEFAULT_SETTINGS.generation.imagesPerRound, 1, 10, true);
   const maxAutoRounds = number(maxAutoRoundsSource, legacyStrategy === 'quick' ? 1 : DEFAULT_SETTINGS.generation.maxAutoRounds, 1, 10, true);
   const defaults = DEFAULT_SETTINGS.comfy;
+  const primaryVisionMode = ['auto', 'supported', 'unsupported'].includes(source.primaryVisionMode) ? source.primaryVisionMode : DEFAULT_SETTINGS.primaryVisionMode;
   const tagText = item => Array.isArray(item) ? item.map(value2 => string(value2)).filter(Boolean).join(', ') : string(item);
   return {
     primaryApi: apiProfile(source.primaryApi, DEFAULT_SETTINGS.primaryApi),
+    primaryVisionMode,
     visionApi: { inheritPrimary: source.visionApi?.inheritPrimary !== false, ...apiProfile(source.visionApi, DEFAULT_SETTINGS.visionApi) },
     comfy: {
       enabled: own(comfy, 'enabled') ? comfy.enabled === true : defaults.enabled,
@@ -103,12 +106,14 @@ function applySettingsPatch(current, patch = {}, form = false) {
   if (object(source.generation) && own(source.generation, 'maxAutoRounds')) next.limits.maxComfyCalls = clone(source.generation.maxAutoRounds);
   else if (object(source.limits) && own(source.limits, 'maxComfyCalls')) next.generation.maxAutoRounds = clone(source.limits.maxComfyCalls);
   if (own(source, 'generateNegativeTags')) next.generateNegativeTags = source.generateNegativeTags;
+  if (['auto', 'supported', 'unsupported'].includes(source.primaryVisionMode)) next.primaryVisionMode = source.primaryVisionMode;
   return normaliseSettings(next);
 }
 function settingsForm(value) {
   const output = {};
   for (const [key, [group, name]] of Object.entries(FORM_FIELDS)) output[key] = clone(value[group][name]);
   output.generateNegativeTags = value.generateNegativeTags;
+  output.primaryVisionMode = value.primaryVisionMode;
   return output;
 }
 function createSettings(options = {}) {

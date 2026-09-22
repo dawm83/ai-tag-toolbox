@@ -34,6 +34,21 @@ test('a known text-only primary receives an honest visual capability note and im
   assert.match(JSON.stringify(f.requests[0]), new RegExp(f.image.id));
 });
 
+test('manual primaryVisionMode supported sends images for an unknown model name', async t => {
+  const f = fixture(t, 'my-custom-model');
+  f.app.setSettings({ primaryVisionMode: 'supported' });
+  await f.app.run({ text: '分析图片', imageIds: [f.image.id] });
+  assert.equal(pictures(f.requests[0]).length, 1);
+});
+
+test('manual primaryVisionMode unsupported never sends image pixels', async t => {
+  const f = fixture(t, 'fixture-vision');
+  f.app.setSettings({ primaryVisionMode: 'unsupported' });
+  await f.app.run({ text: '分析图片', imageIds: [f.image.id] });
+  assert.equal(pictures(f.requests[0]).length, 0);
+  assert.match(f.requests[0][0].content, /不能直接看图/);
+});
+
 test('explicit unsupported image response retries as text once and remembers the provider capability', async t => {
   const f = fixture(t, 'custom-model', (_m, _c, n) => {
     if (n === 1) throw new Error('HTTP 400: model does not support image input');
