@@ -948,6 +948,7 @@ function createGenerationOrchestrator(options = {}) {
       if (!feedback || (job.outputType !== 'tags' && !baseCandidateId)) throw failure('INVALID_INPUT', '继续优化需要基础候选和用户反馈');
       if (baseCandidateId && !activeCandidate(job, baseCandidateId)) throw failure('CANDIDATE_NOT_FOUND', '没有找到要继续优化的候选图');
       if (!job.positiveTags.length) throw failure('INVALID_INPUT', '任务没有可供修订的提示词');
+      if (input.outputType === 'tags') job.outputType = 'tags';
       job.pendingFeedback = { baseCandidateId, feedback };
       // A user feedback turn is a new optimization round. Preserve history for
       // comparison, but reset the active prompt submission guard and budget.

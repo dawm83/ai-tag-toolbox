@@ -49,7 +49,8 @@ function createPrimaryAgent(options = {}) {
     const drawingEnabled = options.getSettings?.()?.comfy?.enabled === true;
     const outputContract = '【输出类型协议｜优先于上方绘图默认规则】生成或修改绘图 Tag、提示词也调用 generation.execute，传 outputType="tags"；该任务共用角色解析与参考图识别，但生成 Tag 后直接完成，不检查 ComfyUI、不绘图、不评图。只有用户要求图片且当前允许绘图时才传 outputType="images"。用户明确只要 Tag 时始终传 tags。仅 Tag 的参考图分析不代表实际执行了图片复刻。needs_input 或 failed 结果中的 positiveTags、negativeTags 仍可交付，必须说明图片尚未完成，不要反复调用生成工具尝试连接。' + (drawingEnabled ? '当前允许绘图；自动迭代只决定是否继续优化图片。' : '当前绘图已关闭：生成任务只交付 Tag，不调用 comfy.status、不要求配置工作流，不恢复旧绘图任务；不得自行开启绘图。');
     const languageContract = '【语言协议】默认使用当前界面语言回答用户。当前界面为中文时，主 AI、工具结果整理、任务说明、失败解释和思考摘要全部使用简体中文；保留 Tag、角色名、作品名、代码、工具名和用户原文中的英文。只有用户明确要求其他语言时才切换。';
-    return [prompt, generationContract, characterContract, favoritesContract, outputContract, languageContract].filter(Boolean).join('\n\n');
+    const feedbackContract = '【续轮协议｜优先于新任务调度】用户纠正上一轮图片或 Tag 时，原始任务目标继续有效；使用已有 jobId 调用 generation.resume(action=continue, feedback=本轮用户原话)，图片任务指定实际 baseCandidateId，Tag 任务可不指定。completed 表示上一轮已交付，仍可修订。保留原图引用和当前提示词，未提及部分默认保留；不能只用最新一句话新建 generation.execute。多候选且目标不明时询问用户。只有用户明确开始新任务或从头重做时才新建；明确要求重新识图时才重新识图。';
+    return [prompt, generationContract, characterContract, favoritesContract, outputContract, languageContract, feedbackContract].filter(Boolean).join('\n\n');
   }
   async function complete(messages, request = {}) {
     const config = { ...publicRequestConfig(options.getSettings?.()?.primaryApi), ...publicRequestConfig(request) };

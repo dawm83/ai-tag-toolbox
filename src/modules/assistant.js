@@ -17,7 +17,7 @@ const { createPrimaryAgent, publicRequestConfig } = require('./primary-agent');
 const { errorShape, resultError } = require('./error-manager');
 const { createCallMonitor } = require('./call-monitor');
 const { createGenerationOrchestrator } = require('./generation-orchestrator');
-const { routeTask } = require('./task-router');
+const { routeTask, isGenerationFeedback } = require('./task-router');
 
 const SESSION_FORMAT = 'ai-tag-sessions';
 const SESSION_VERSION = 1;
@@ -245,6 +245,25 @@ function createAssistant(options = {}) {
     }
     return result;
   }
+  function feedbackTarget(session, input) {
+    if (!isGenerationFeedback(input)) return null;
+    const seen = new Set(), targets = [];
+    for (const message of session.messages.slice().reverse()) {
+      const jobId = message.result?.jobId;
+      if (!jobId || seen.has(jobId)) continue;
+      seen.add(jobId);
+      const job = generation.get?.(jobId);
+      if (job && ['completed', 'awaiting_feedback'].includes(job.status)) targets.push({ messageId: message.id, job });
+    }
+    if (!targets.length) return null;
+    const mentionedIds = new Set(input.text.match(/[a-zA-Z0-9_-]+/g) || []);
+    const explicit = targets.flatMap(target => array(target.job.candidates).filter(c => mentionedIds.has(c.imageId)).map(candidate => ({ ...target, candidateId: candidate.id })));
+    if (explicit.length === 1) return explicit[0];
+    const target = targets[0], candidates = array(target.job.candidates);
+    const selected = candidates.find(c => c.id === target.job.selectedCandidateId || c.selected);
+    if (explicit.length > 1 || (candidates.length > 1 && !selected)) return { ...target, ambiguous: true };
+    return { ...target, candidateId: selected?.id || candidates[0]?.id || '' };
+  }
   async function runPrimaryWithRuntime(value, config = {}) {
     const input = typeof value === 'string' ? { text: value } : object(value) ? value : {};
     if (destroyed) return failure('ASSISTANT_CLOSED', '会话服务已关闭');
@@ -255,6 +274,17 @@ function createAssistant(options = {}) {
     const imageIds = ids(input.imageIds);
     if (!body && !imageIds.length) return failure('EMPTY_INPUT', '请输入内容或添加图片', input.requestId, session.id);
     if (input.signal?.aborted) return failure('CANCELLED', '请求已取消', input.requestId, session.id);
+    const target = feedbackTarget(session, { text: body, imageIds });
+    if (target?.ambiguous) {
+      const note = '有多张候选图，请在要修改的候选图下填写这条修改意见，再点击“继续优化”。';
+      append('user', body, {}, session.id);
+      const reply = append('assistant', note, { status: 'done' }, session.id);
+      const data = { status: 'needs_input', needsInput: { kind: 'candidate', message: note } };
+      session.messages.find(row => row.id === reply.id).result = data;
+      await flushPersist();
+      return { ok: true, text: note, data, sessionId: session.id };
+    }
+    if (target) return continueGeneration(target.messageId, target.candidateId, body, { ...input, onEvent: event => { observe(input.onEvent, event); observe(input.onToolEvent, event); } }, session.id);
     const requestId = text(input.requestId, id('primary'));
     const userId = id('message');
     const references = [];
@@ -357,12 +387,18 @@ function createAssistant(options = {}) {
   }
   async function continueGeneration(value, candidateId, feedback, options = {}, sessionId = state.currentId) {
     if (typeof options === 'string') { sessionId = options; options = {}; }
+    if (destroyed) return failure('ASSISTANT_CLOSED', '会话服务已关闭');
+    if (options.signal?.aborted) return failure('CANCELLED', '请求已取消');
     if (active) return failure('BUSY', '当前请求仍在处理中', active.id, active.sessionId);
     const found = messageLocation(value, sessionId);
     const jobId = text(found?.message?.result?.jobId);
     const resumeOnly = options.resumeOnly === true;
     const note = resumeOnly ? '恢复原绘图任务' : text(feedback);
-    if (!found || !jobId || (!resumeOnly && (!text(candidateId) || !note))) return failure('INVALID_INPUT', '继续优化需要候选图和修改意见');
+    const feedbackTask = routeTask({ text: note });
+    const requestTags = !resumeOnly && (feedbackTask.forbidImages || feedbackTask.intent === 'compile_tags' || /只(?:要|需).*?(?:tags?|提示词|标签)/i.test(note));
+    const tagsOnly = found?.message?.result?.outputType === 'tags';
+    if (!found || !jobId || (!resumeOnly && ((!tagsOnly && !text(candidateId)) || !note))) return failure('INVALID_INPUT', '继续优化需要候选图和修改意见');
+    if (found.session.id !== state.currentId) return failure('SESSION_UNAVAILABLE', '当前会话不可用');
     if (resumeOnly) {
       const current = generation.get(jobId);
       if (current?.status !== 'needs_input' || !['connection', 'workflow'].includes(current.needsInput?.kind) || current.stopReason === 'COMFY_SUBMISSION_UNKNOWN') return failure('INPUT_EXPIRED', '当前任务无法直接恢复，请按任务提示处理');
@@ -376,6 +412,9 @@ function createAssistant(options = {}) {
     const controller = new AbortController();
     const job = { id: requestId, sessionId: session.id, session, live, controller, invalidated: false };
     active = job; state.busy = true; state.status = 'running'; state.jobId = requestId; state.lastError = '';
+    const callerAbort = () => cancel(requestId);
+    options.signal?.addEventListener?.('abort', callerAbort, { once: true });
+    observe(options.onStart, { user: clone(user), assistant: clone(live), requestId, sessionId: session.id });
     const onEvent = event => {
       if (!writable(job) || isNoiseEvent(event)) return;
       live.events.push(clone(event)); if (live.events.length > 256) live.events.shift(); live.activity = clone(live.events);
@@ -388,7 +427,7 @@ function createAssistant(options = {}) {
       schedulePersist(); observe(options.onEvent, clone(event));
     };
     try {
-      const args = resumeOnly ? { jobId } : { jobId, action: 'continue', baseCandidateId: text(candidateId), feedback: note, maxAutoRounds: 1, autoRun: false };
+      const args = resumeOnly ? { jobId } : { jobId, action: 'continue', ...(candidateId ? { baseCandidateId: text(candidateId) } : {}), ...(requestTags ? { outputType: 'tags' } : {}), feedback: note, maxAutoRounds: 1, autoRun: false };
       const outcome = await runtime.callTool('generation.resume', args, { requestId, sessionId: session.id, messageId: live.id, signal: controller.signal, onEvent });
       if (!writable(job)) return { ...failure('CANCELLED', '请求已取消', requestId, session.id), data: cancelledPayload(job) };
       const publicPayload = object(outcome.data) ? outcome.data : {};
@@ -397,10 +436,18 @@ function createAssistant(options = {}) {
       const error = outcome.ok ? null : errorShape(outcome.error);
       live.status = outcome.ok ? 'done' : error.code === 'CANCELLED' ? 'cancelled' : 'error';
       live.result = { ...clone(payload), ok: outcome.ok, error: error || payload.error || null, usage: clone(outcome.usage) };
+      live.toolCalls = [{ id: requestId, name: 'generation.resume', arguments: args, ok: outcome.ok, result: clone(publicPayload), error }];
+      live.transcript = [
+        { role: 'assistant', content: '', tool_calls: [{ id: requestId, type: 'function', function: { name: 'generation_resume', arguments: JSON.stringify(args) } }] },
+        { role: 'tool', tool_call_id: requestId, content: JSON.stringify(outcome.ok ? publicPayload : outcome.error) }
+      ];
+      if (payload.stopReason === 'revision_failed') live.text = '本轮修改未通过校验，已保留原有 Tag 和候选图，请缩小修改范围后重试。';
+      if (payload.stopReason === 'prompt_unchanged') live.text = '本轮没有产生有效的 Tag 改动，已保留原结果。';
       if (!live.text && error) live.text = error.message;
-      session.updatedAt = Date.now(); state.status = outcome.ok ? 'idle' : live.status; state.lastError = error?.message || ''; persist();
+      session.updatedAt = Date.now(); state.status = outcome.ok ? 'idle' : live.status; state.lastError = error?.message || ''; await flushPersist();
       return { ...outcome, ...payload, data: clone(payload), text: live.text, status: live.status, requestId, sessionId: session.id, userMessageId: user?.id };
     } finally {
+      options.signal?.removeEventListener?.('abort', callerAbort);
       await storage?.flush?.();
       if (active === job) { active = null; state.busy = false; state.jobId = ''; }
     }
