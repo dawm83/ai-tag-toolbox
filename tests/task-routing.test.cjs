@@ -181,6 +181,16 @@ test('recreate policy explicitly prioritizes one local Tag pass before the first
   assert.match(text, /local 只运行一次/);
 });
 
+test('recreate policy keeps Tag compilation and review closed until the baseline job exists', () => {
+  const { createTaskPolicy } = require('../src/modules/task-policy');
+  const policy = createTaskPolicy({ intent: 'recreate_image', originalRequest: '复刻这张图', imageIds: ['source-1'] });
+  assert.equal(policy.allowedNames().includes('agent.generateTags'), false);
+  assert.equal(policy.allowedNames().includes('generation.review'), false);
+  assert.equal(policy.completionFor('generation.execute', { jobId: 'job-1', status: 'awaiting_feedback', decisionRequired: true }), false);
+  assert.equal(policy.allowedNames().includes('agent.generateTags'), true);
+  assert.equal(policy.allowedNames().includes('generation.review'), true);
+});
+
 test('explicit Tags output stays Tags-only with ComfyUI connected and passes the unmodified request to the Tag agent', async t => {
   const visionRequests = [];
   let renders = 0;

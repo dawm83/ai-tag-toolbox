@@ -29,7 +29,15 @@ function createTaskPolicy(task = {}) {
   let completed = false;
   let waiting = false;
   let activeJobId = text(task.feedbackJobId);
-  function allowedNames() { return completed ? [] : route.allowed.filter(name => (!snapshot.forbidImages || name !== 'comfy.status') && (!activeJobId || name !== 'generation.execute')); }
+  function allowedNames() {
+    if (completed) return [];
+    return route.allowed.filter(name => {
+      if (snapshot.forbidImages && name === 'comfy.status') return false;
+      if (activeJobId && name === 'generation.execute') return false;
+      if (snapshot.intent === 'recreate_image' && !activeJobId && ['agent.generateTags', 'generation.review', 'generation.select'].includes(name)) return false;
+      return true;
+    });
+  }
   function allows(name) { return allowedNames().includes(name); }
   function prepareCall(name, args = {}) {
     const next = { ...args };
