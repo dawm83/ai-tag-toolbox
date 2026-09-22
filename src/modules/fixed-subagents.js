@@ -155,6 +155,7 @@ function createFixedSubagents(options = {}) {
     const protocol = [
       '系统修订协议：根据候选图评价修订上一版 Tag，只返回一个有效 JSON 对象。',
       'JSON 必须包含 add、remove、preserve 三个字符串数组；preserve 仅在本次补丁中保留 Tag，不形成后续永久锁定。',
+      '有 userFeedback 时，只修改本轮明确要求的部分，以上一版 Tag 为基线；未提及的角色身份、外貌、服装、背景、风格默认保留。feedbackHistory 是此前已确认的修改，最新反馈仅覆盖冲突部分。editScope=pose 时，add/remove 及负向补丁只能涉及姿势词，禁止调整角色或场景。',
       allowNegative ? '可选返回 negativeAdd 与 negativeRemove 字符串数组。' : '用户设置关闭负面 Tag，禁止修订负面 Tag。',
       SOURCE_REFERENCE_GUIDANCE,
       input.characterReferences?.length ? TAG_CHARACTER_REFERENCE_GUIDANCE : '',

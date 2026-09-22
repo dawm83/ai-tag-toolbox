@@ -10,7 +10,7 @@ const {
   snapshot: candidateSnapshot
 } = require('./draw-candidates');
 const { parseVisionPayload } = require('./vision-payload');
-const { applyPromptPatch } = require('./prompt-patch');
+const { applyPromptPatch, feedbackPatchOptions } = require('./prompt-patch');
 const { createBrief, addItems, briefForAgent, migrateBrief } = require('./task-brief');
 
 const JOB_STATES = Object.freeze([
@@ -532,6 +532,7 @@ function createGenerationOrchestrator(options = {}) {
         characterReferencePolicy: 'identity_only_for_tags_full_for_evaluation'
       } : {}),
       ...(job.mode === 'recreate' ? { sourceReferenceRole: 'observations_before_requested_changes' } : {}),
+      userFeedback: (job.feedbackHistory || []).map(row => row.feedback),
       visualBlueprint: clone(job.visualBlueprint || {})
     };
     persist(job);
@@ -609,6 +610,8 @@ function createGenerationOrchestrator(options = {}) {
     transition(job, 'revising');
     const previousPromptKey = promptFingerprint(job.positiveTags, job.negativeTags);
     const characterReferences = identityCharacterReferences(job.characterReferences);
+    const editPolicy = force ? feedbackPatchOptions(evaluation.userFeedback) : {};
+    evaluation = { ...evaluation, feedbackHistory: (job.feedbackHistory || []).map(row => row.feedback), ...editPolicy };
     try {
       let patch = await callAgent(job, context, 'generateTags', {
         operation: 'revise',
@@ -619,7 +622,7 @@ function createGenerationOrchestrator(options = {}) {
         evaluation: clone(evaluation),
         ...(characterReferences.length ? { characterReferences } : {})
       }, 'prompt_revision');
-      const patchOptions = { negativeEnabled: getSettings()?.generateNegativeTags === true, allowedPositiveNegations: ['no humans'] };
+      const patchOptions = { negativeEnabled: getSettings()?.generateNegativeTags === true, allowedPositiveNegations: ['no humans'], ...editPolicy };
       let next = applyPromptPatch(job, patch, patchOptions);
       if (!next.ok) {
         patch = await callAgent(job, context, 'generateTags', {
@@ -825,6 +828,29 @@ function createGenerationOrchestrator(options = {}) {
       const prepared = await prepare(job, context);
       if (prepared !== true) return prepared;
       await compile(job, context);
+      if (job.pendingFeedback) {
+        const pending = job.pendingFeedback;
+        const base = pending.baseCandidateId ? activeCandidate(job, pending.baseCandidateId) : null;
+        if (base) {
+          job.positiveTags = base.positiveTags.slice();
+          job.negativeTags = base.negativeTags.slice();
+        }
+        syncBriefPrompt(job);
+        // The user's correction is the only new revision goal. An old review
+        // must not silently add unrelated work to this feedback turn.
+        const revision = await revise(job, { status: 'reviewed', candidateId: base?.imageId || '', userFeedback: pending.feedback }, context, true);
+        job.pendingFeedback = null;
+        if (!revision.ok) {
+          job.stopReason = revision.reason || 'revision_failed';
+          job.status = 'awaiting_feedback';
+          emit(job, context, 'generation.awaiting_feedback', { roundId: job.rounds.at(-1)?.roundId || '', recommendedCandidateId: job.rounds.at(-1)?.recommendedCandidateId || '', reason: job.stopReason });
+          persist(job);
+          return result(job);
+        }
+        job.feedbackHistory = [...(job.feedbackHistory || []), { baseCandidateId: base?.id || '', feedback: pending.feedback, at: Date.now() }].slice(-32);
+        job.brief.userFeedback = job.feedbackHistory.map(row => row.feedback);
+        persist(job);
+      }
       if (job.outputType === 'tags') {
         guard(job, context);
         job.outcome = 'tags_only';
@@ -835,23 +861,6 @@ function createGenerationOrchestrator(options = {}) {
       }
       const ready = await checkPreflight(job, context);
       if (ready !== true) return ready;
-      if (job.pendingFeedback) {
-        const base = activeCandidate(job, job.pendingFeedback.baseCandidateId);
-        if (!base) throw failure('CANDIDATE_NOT_FOUND', '没有找到要继续优化的候选图');
-        job.positiveTags = base.positiveTags.slice();
-        job.negativeTags = base.negativeTags.slice();
-        const revision = await revise(job, { ...(base.evaluation || {}), status: 'reviewed', candidateId: base.imageId, userFeedback: job.pendingFeedback.feedback }, context, true);
-        job.feedbackHistory = [...(job.feedbackHistory || []), { baseCandidateId: base.id, feedback: job.pendingFeedback.feedback, at: Date.now() }].slice(-32);
-        job.pendingFeedback = null;
-        if (!revision.ok) {
-          job.stopReason = revision.reason || 'revision_failed';
-          job.status = 'awaiting_feedback';
-          emit(job, context, 'generation.awaiting_feedback', { roundId: job.rounds.at(-1)?.roundId || '', recommendedCandidateId: job.rounds.at(-1)?.recommendedCandidateId || '', reason: job.stopReason });
-          persist(job);
-          return result(job);
-        }
-        persist(job);
-      }
       await renderLoop(job, context);
       guard(job, context);
       if (!job.candidates.length) throw failure('NO_CANDIDATE', '在允许的尝试次数内没有生成可用图片');
@@ -928,14 +937,17 @@ function createGenerationOrchestrator(options = {}) {
     const job = jobs.get(text(input.jobId));
     if (!job) throw failure('JOB_NOT_FOUND', '没有找到生成任务');
     if (job.sessionId && context.sessionId && text(context.sessionId) !== job.sessionId) throw failure('SESSION_UNAVAILABLE', '当前会话无权恢复这个生成任务');
-    if (TERMINAL_STATES.has(job.status)) return result(job);
+    if (TERMINAL_STATES.has(job.status) && !(job.status === 'completed' && input.action === 'continue')) return result(job);
     if (job.stopReason === 'COMFY_SUBMISSION_UNKNOWN') return result(job);
     if (active.has(job.jobId)) throw failure('JOB_BUSY', '生成任务仍在执行中');
-    if (job.status === 'awaiting_feedback') {
+    const continuing = input.action === 'continue' && ['awaiting_feedback', 'completed'].includes(job.status);
+    if (job.status === 'awaiting_feedback' || continuing) {
       if (input.action !== 'continue') throw failure('INVALID_INPUT', '手动任务需要明确的 continue 操作');
       const feedback = text(input.feedback);
       const baseCandidateId = text(input.baseCandidateId);
-      if (!feedback || !baseCandidateId) throw failure('INVALID_INPUT', '继续优化需要基础候选和用户反馈');
+      if (!feedback || (job.outputType !== 'tags' && !baseCandidateId)) throw failure('INVALID_INPUT', '继续优化需要基础候选和用户反馈');
+      if (baseCandidateId && !activeCandidate(job, baseCandidateId)) throw failure('CANDIDATE_NOT_FOUND', '没有找到要继续优化的候选图');
+      if (!job.positiveTags.length) throw failure('INVALID_INPUT', '任务没有可供修订的提示词');
       job.pendingFeedback = { baseCandidateId, feedback };
       // A user feedback turn is a new optimization round. Preserve history for
       // comparison, but reset the active prompt submission guard and budget.
@@ -943,6 +955,7 @@ function createGenerationOrchestrator(options = {}) {
       job.stopReason = '';
       job.selectedCandidateId = '';
       job.outcome = '';
+      job.residualIssues = [];
     }
     if (input.characterSelection !== undefined) {
       const selection = object(input.characterSelection) ? input.characterSelection : {};
@@ -977,6 +990,10 @@ function createGenerationOrchestrator(options = {}) {
     }
     if (input.workflowProfileId !== undefined) job.workflowProfileId = text(input.workflowProfileId);
     job.policy = policyFrom({ strategy: input.strategy ?? job.policy.legacyStrategy, autoSelect: input.autoSelect ?? job.policy.autoSelect, autoRun: input.autoRun ?? job.policy.autoRun, imagesPerRound: input.imagesPerRound ?? job.policy.imagesPerRound, maxAutoRounds: input.maxAutoRounds ?? job.policy.maxAutoRounds }, { generation: job.policy });
+    if (continuing) {
+      job.policy.autoRun = false;
+      job.policy.maxRenderAttempts = job.renderAttempts + 1;
+    }
     job.sessionId = text(context.sessionId, job.sessionId);
     job.status = 'preparing';
     persist(job);

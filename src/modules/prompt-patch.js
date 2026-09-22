@@ -35,6 +35,18 @@ function semanticConflicts(rows) {
   return result;
 }
 
+// A narrow pose correction must not rewrite identity, clothing or scenery.
+// These are per-turn limits, never permanent locks on the user's prompt.
+function feedbackPatchOptions(feedback) {
+  const value = text(feedback);
+  const pose = /姿势|站着|站立|坐着|坐姿|躺|蹲|跪|手.*举|举.*手|\b(?:pose|posture|standing|sitting|kneeling|crouching|lying)\b/i.test(value);
+  const other = /发色|头发|眼睛|衣服|服装|裙|帽|背景|场景|画风|风格|构图|镜头|视角|换.*(?:角色|人物)|\b(?:hair|outfit|clothes|background|scene|style|camera|character)\b/i.test(value);
+  return pose && !other ? { editScope: 'pose' } : {};
+}
+function poseTag(value) {
+  return /\b(?:standing|sitting|lying|kneeling|crouching|squatting|reclining|leaning|walking|running|jumping|upright|posture|pose|arms?|hands?|legs?|knees?|feet|tiptoes|bent over)\b/.test(key(value));
+}
+
 function applyPromptPatch(current = {}, patch = {}, options = {}) {
   const positive = mapByKey(current.positiveTags);
   const negative = mapByKey(current.negativeTags);
@@ -48,6 +60,12 @@ function applyPromptPatch(current = {}, patch = {}, options = {}) {
   const allowed = new Set([...DEFAULT_ALLOWED_NEGATIONS, ...values(options.allowedPositiveNegations)].map(key));
   const rejected = [];
   const warnings = [];
+
+  if (options.editScope === 'pose') {
+    for (const item of [...add, ...remove, ...negativeAdd, ...negativeRemove]) {
+      if (!poseTag(item)) rejected.push({ code: 'OUTSIDE_FEEDBACK_SCOPE', tag: item, message: `本轮只修改姿势，不得改动其他内容：${item}` });
+    }
+  }
 
   const addKeys = new Set(add.map(key));
   for (const item of remove) {
@@ -90,5 +108,5 @@ function applyPromptPatch(current = {}, patch = {}, options = {}) {
   return { ok: true, positiveTags: [...positive.values()], negativeTags: [...negative.values()], lockedTags, rejected, warnings };
 }
 
-module.exports = { DEFAULT_ALLOWED_NEGATIONS, CONFLICT_GROUPS, applyPromptPatch };
+module.exports = { DEFAULT_ALLOWED_NEGATIONS, CONFLICT_GROUPS, applyPromptPatch, feedbackPatchOptions };
 
