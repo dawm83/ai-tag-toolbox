@@ -3154,13 +3154,13 @@
         addTagSection(localized("ui.ai.positiveTags", "正向 Tag"), candidate.prompt, "positive");
         addTagSection(localized("ui.ai.negativeTags", "负向 Tag"), candidate.negative, "negative");
         card.appendChild(tags);
-        const manualWaiting = message.result?.status === "awaiting_feedback";
+        const canContinue = ["awaiting_feedback", "completed"].includes(message.result?.status) && Boolean(message.result?.jobId);
         const running = message.status === "streaming" || ["preparing", "compiling", "rendering", "evaluating", "revising", "selecting", "finishing"].includes(message.result?.status);
         const feedback = doc.createElement("textarea");
         feedback.className = "draw-candidate-feedback";
         feedback.rows = 2;
         feedback.placeholder = localized("ui.ai.candidateFeedback", "输入对这张图的修改意见");
-        feedback.hidden = !manualWaiting;
+        feedback.hidden = running || !canContinue;
         card.appendChild(feedback);
         const actions = doc.createElement("div");
         actions.className = "draw-candidate-actions";
@@ -3177,28 +3177,26 @@
         continueButton.type = "button";
         continueButton.className = "cico btn btn-secondary draw-candidate-continue";
         continueButton.textContent = localized("ui.ai.candidateContinue", "继续优化");
-        continueButton.title = "基于这张候选图开始新的优化任务";
-        continueButton.hidden = running && !manualWaiting;
+        continueButton.title = "基于这张候选图继续原任务";
+        continueButton.hidden = running || !canContinue;
         continueButton.onclick = async () => {
-          const imageId = str(candidate.imageId);
-          const suggestions = issueRows.map(issue => str(issue?.suggestedChange || issue?.observed)).filter(Boolean).join("；");
-          if (manualWaiting) {
-            const value = str(feedback.value);
-            if (!value) return notify("请先输入修改意见");
-            const label = $("#talkSendBtn")?.textContent || "发送";
-            setTalkBusy(true, label); put("#talkStatus", "正在按点评继续优化…");
+          if (continueButton.disabled || assistant?.snapshot?.().busy) return;
+          const value = str(feedback.value);
+          if (!value) return notify("请先输入修改意见");
+          const label = $("#talkSendBtn")?.textContent || "发送";
+          continueButton.disabled = true;
+          setTalkBusy(true, label); put("#talkStatus", "正在按点评继续优化…");
+          try {
             const pending = assistant?.continueGeneration?.(message.id, candidate.id, value, { onEvent: handleTalkToolEvent });
             renderTalk();
             const result = await pending;
-            setTalkBusy(false, label);
             if (result?.ok === false) notify(result.error?.message || "继续优化失败");
-            else renderTalk();
-            return;
+          } catch (error) { notify(error?.message || "继续优化失败"); }
+          finally {
+            continueButton.disabled = false;
+            setTalkBusy(false, label);
+            renderTalk();
           }
-          const input = $("#talkIn");
-          if (!input) return;
-          input.value = `请基于对话图片 ${imageId} 继续优化${suggestions ? `，重点修正：${suggestions}` : "，保留当前优点并进一步提高匹配度"}`;
-          resizeTalkInput(); input.focus();
         };
         actions.append(continueButton, choose);
         card.appendChild(actions);

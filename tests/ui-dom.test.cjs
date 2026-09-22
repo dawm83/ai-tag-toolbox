@@ -826,6 +826,23 @@ test('manual candidate feedback continues only the selected image', async () => 
   app.dom.window.close();
 });
 
+test('completed candidate continue button resumes the original job directly', async () => {
+  const candidate = { id: 'candidate-1', iteration: 1, roundId: 'round-1', roundIndex: 1, imageId: 'img-1', prompt: '1girl, sitting', negative: '', evaluation: { status: 'reviewed', score: 70, summary: '姿势需要调整', issues: [{ observed: '姿势不对', suggestedChange: '改成 standing' }] } };
+  const app = boot({ initialMessages: [{ id: 'a1', role: 'assistant', text: '', status: 'done', result: { status: 'completed', jobId: 'job-1', candidates: [candidate] } }] });
+  app.view.route('ai'); app.view.showAi('talk'); app.view.renderTalk();
+  const feedback = app.window.document.querySelector('.draw-candidate-feedback');
+  assert.equal(feedback.hidden, false);
+  app.window.document.querySelector('.draw-candidate-continue').click();
+  assert.equal(app.continuationCalls.length, 0, 'a completed task needs actual user feedback');
+  feedback.value = '姿势改成 standing';
+  app.window.document.querySelector('.draw-candidate-continue').click();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(app.continuationCalls[0].messageId, 'a1');
+  assert.equal(app.continuationCalls[0].candidateId, 'candidate-1');
+  assert.match(app.continuationCalls[0].feedback, /standing/);
+  app.dom.window.close();
+});
+
 test('candidate rounds render as separate horizontal comparison tracks', () => {
   const candidates = [
     { id: 'candidate-1', iteration: 1, roundIndex: 1, imageId: 'img-1', prompt: 'first', evaluation: { status: 'reviewed', score: 70 } },
