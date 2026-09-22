@@ -826,6 +826,22 @@ test('manual candidate feedback continues only the selected image', async () => 
   app.dom.window.close();
 });
 
+test('selecting a gallery card updates only selection state without rereading the gallery', t => {
+  const app = boot();
+  app.view.route('gallery');
+  let listCalls = 0;
+  const listGallery = app.repository.listGallery;
+  app.repository.listGallery = (...args) => { listCalls += 1; return listGallery(...args); };
+  const card = app.window.document.querySelector('.gallery-card');
+  const before = app.window.document.querySelector('.gallery-card');
+  listCalls = 0;
+  card.click();
+  assert.equal(listCalls, 0);
+  assert.equal(app.window.document.querySelector('.gallery-card'), before);
+  assert.equal(card.getAttribute('aria-pressed'), 'true');
+  app.dom.window.close();
+});
+
 test('completed candidate continue button resumes the original job directly', async () => {
   const candidate = { id: 'candidate-1', iteration: 1, roundId: 'round-1', roundIndex: 1, imageId: 'img-1', prompt: '1girl, sitting', negative: '', evaluation: { status: 'reviewed', score: 70, summary: '姿势需要调整', issues: [{ observed: '姿势不对', suggestedChange: '改成 standing' }] } };
   const app = boot({ initialMessages: [{ id: 'a1', role: 'assistant', text: '', status: 'done', result: { status: 'completed', jobId: 'job-1', candidates: [candidate] } }] });

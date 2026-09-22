@@ -377,10 +377,8 @@ function createImages(options = {}) {
     if (!Array.isArray(rows)) return;
     for (const row of rows) {
       if (!row || !row.id) continue;
-      let bytes = null;
-      try { if (imageDir && fs.existsSync(filePath(row.id))) bytes = fs.readFileSync(filePath(row.id)); } catch { bytes = null; }
-      const item = normaliseInput({ ...row, bytes: bytes || undefined, dataUrl: bytes ? dataUrlFromBytes(bytes, row.mime || 'image/png') : row.dataUrl, thumbnailDataUrl: row.thumbnailDataUrl }, {}, ++sequence);
-      item.id = String(row.id); item.metadata = row.metadata ? clone(row.metadata) : (bytes ? parsePngMetadata(bytes) : null); item.analysis = row.analysis ? clone(row.analysis) : null; item.status = text(row.status, 'ready'); item.blobId = text(row.blobId);
+      const item = normaliseInput({ ...row, bytes: undefined, dataUrl: row.dataUrl || '', thumbnailDataUrl: row.thumbnailDataUrl }, {}, ++sequence);
+      item.id = String(row.id); item.metadata = row.metadata ? clone(row.metadata) : null; item.analysis = row.analysis ? clone(row.analysis) : null; item.status = text(row.status, 'ready'); item.blobId = text(row.blobId);
       items.set(item.id, item);
       if (item.analysis) analysisCache.set(item.id, new BoundedCache(4).set('default', clone(item.analysis)));
       for (const name of Array.isArray(row.collections) ? row.collections : []) collectionSet(name).add(item.id);
@@ -453,6 +451,25 @@ function createImages(options = {}) {
     return publicImage(id ? items.get(id) : null);
   }
 
+  function getMeta(value) {
+    const id = typeof value === 'string' ? value : value && value.id;
+    const item = id ? items.get(id) : null;
+    if (!item) return null;
+    return {
+      imageId: item.id, displayName: item.displayName || item.name || item.filename || item.id,
+      filename: item.filename, width: item.width, height: item.height, mime: item.mime,
+      source: item.source, status: item.status, hasThumbnail: Boolean(item.thumbnailDataUrl),
+      createdAt: item.createdAt, updatedAt: item.updatedAt
+    };
+  }
+
+  function getThumbnail(value) {
+    const id = typeof value === 'string' ? value : value && value.id;
+    const item = id ? items.get(id) : null;
+    if (!item || !item.thumbnailDataUrl) return null;
+    return { imageId: item.id, mime: item.mime || 'image/png', dataUrl: item.thumbnailDataUrl };
+  }
+
   // Return a UI-ready copy only when a caller explicitly needs to display the
   // image. Normal get()/list() keep byte-backed images lightweight across the
   // preload bridge; candidate cards and previews can opt in here.
@@ -460,6 +477,7 @@ function createImages(options = {}) {
     const id = typeof value === 'string' ? value : value && value.id;
     const item = id ? items.get(id) : null;
     if (!item) return null;
+    if (!item.bytes) getBytes(id);
     const output = publicImage(item);
     if (!output.dataUrl && item.bytes) output.dataUrl = dataUrlFromBytes(item.bytes, item.mime || 'image/png');
     return output;
@@ -468,7 +486,14 @@ function createImages(options = {}) {
   function getBytes(value) {
     const id = typeof value === 'string' ? value : value && value.id;
     const item = id ? items.get(id) : null;
-    return item && item.bytes ? Buffer.from(item.bytes) : null;
+    if (!item) return null;
+    if (item.bytes) return Buffer.from(item.bytes);
+    if (!imageDir) return null;
+    try {
+      const bytes = fs.readFileSync(filePath(id));
+      item.bytes = bytes;
+      return Buffer.from(bytes);
+    } catch { return null; }
   }
 
   function list() {
@@ -580,6 +605,8 @@ function createImages(options = {}) {
     addFile,
     addBlob,
     get,
+    getMeta,
+    getThumbnail,
     preview,
     getBytes,
     getBlob,

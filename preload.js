@@ -147,6 +147,8 @@ function safeImageAdd(input, meta = {}) {
   return images?.add?.(source, safeImageMeta(meta)) || null;
 }
 function safeImageGet(value) { const id = safeImageId(value); return id ? images?.get?.(id) || null : null; }
+function safeImageMeta(value) { const id = safeImageId(value); return id ? images?.getMeta?.(id) || null : null; }
+function safeImageThumbnail(value) { const id = safeImageId(value); return id ? images?.getThumbnail?.(id) || null : null; }
 function safeImagePreview(value) { const id = safeImageId(value); return id ? images?.preview?.(id) || null : null; }
 function safeImageBytes(value) { const id = safeImageId(value); return id ? images?.getBytes?.(id) || null : null; }
 function safeImageMetadata(value) { const id = safeImageId(value); return id ? images?.metadata?.(id) || null : null; }
@@ -172,6 +174,8 @@ function safeImageClearCollection(name) { return typeof name === 'string' ? imag
 const safeImageStore = images ? {
   add: safeImageAdd,
   get: safeImageGet,
+  getMeta: safeImageMeta,
+  getThumbnail: safeImageThumbnail,
   preview: safeImagePreview,
   getBytes: safeImageBytes,
   metadata: safeImageMetadata,

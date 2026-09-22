@@ -68,6 +68,17 @@ function createImageRepository(options = {}) {
   }
 
   function imageAsset(imageId) {
+    const meta = typeof images?.getMeta === 'function' ? images.getMeta(imageId) : null;
+    if (meta) {
+      const thumbnail = typeof images?.getThumbnail === 'function' ? images.getThumbnail(imageId) : null;
+      return {
+        ...clone(meta),
+        imageId: text(meta.imageId || imageId),
+        displayName: text(meta.displayName || meta.filename, imageId),
+        dataRef: text(meta.dataRef || meta.blobId || ('rewrite-images/' + imageId + '.bin')),
+        ...(thumbnail?.dataUrl ? { thumbnailDataUrl: thumbnail.dataUrl } : {})
+      };
+    }
     const value = image(imageId);
     if (!value) return null;
     return {

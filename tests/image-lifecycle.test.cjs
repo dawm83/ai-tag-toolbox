@@ -2,6 +2,9 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const { createStorage } = require('../src/modules/storage');
 const { createImages } = require('../src/modules/images');
 
@@ -42,4 +45,25 @@ test('clearing images releases every persisted blob', async () => {
   images.clear();
   assert.equal(await storage.getBlob(`image:${first.id}`), null);
   assert.equal(await storage.getBlob(`image:${second.id}`), null);
+});
+
+test('restores image metadata without loading original bytes or exposing a Base64 payload', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'image-lazy-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const storage = createStorage({ prefix: `image-lazy-${Date.now()}-${Math.random()}` });
+  const imageDir = path.join(root, 'rewrite-images'); fs.mkdirSync(imageDir, { recursive: true });
+  const bytes = Buffer.from([137, 80, 78, 71, 1, 2, 3]);
+  const id = 'img-lazy';
+  fs.writeFileSync(path.join(imageDir, `${id}.bin`), bytes);
+  storage.set('images_index', [{ id, filename: 'lazy.png', displayName: 'Lazy', mime: 'image/png', source: 'upload', width: 1, height: 1, status: 'ready', collections: [], dataUrl: '', thumbnailDataUrl: 'data:image/png;base64,AA==' }]);
+  const images = createImages({ storage, imageDir });
+  const meta = images.getMeta(id);
+  assert.equal(meta.imageId, id);
+  assert.equal(meta.hasThumbnail, true);
+  assert.equal(images.get(id).dataUrl, '');
+  assert.equal(images.get(id).bytes, undefined);
+  assert.match(images.preview(id).dataUrl, /^data:image\/png;base64/, 'preview reads original bytes on demand');
+  assert.deepEqual(await images.getBytes(id), bytes);
+  const thumbnail = images.getThumbnail(id);
+  assert.equal(thumbnail.dataUrl, 'data:image/png;base64,AA==');
 });

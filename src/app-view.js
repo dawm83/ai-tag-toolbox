@@ -1403,7 +1403,7 @@
         card.setAttribute("role", "button");
         card.setAttribute("aria-pressed", String(ui.gallerySelected.has(item.imageId)));
         if (ui.gallerySelected.has(item.imageId)) card.classList.add("is-selected");
-        const preview = images?.preview?.(item.imageId) || item;
+        const preview = item?.thumbnailDataUrl ? item : images?.preview?.(item.imageId) || item;
         const src = preview?.thumbnailDataUrl || preview?.dataUrl || "";
         const nameText = item.displayName || item.filename || item.imageId;
         card.setAttribute("aria-label", nameText);
@@ -1415,13 +1415,16 @@
         const img = $(".gallery-thumb", card); img.src = src; img.alt = nameText;
         const toggleSelection = () => {
           if (ui.gallerySelected.has(item.imageId)) ui.gallerySelected.delete(item.imageId); else ui.gallerySelected.add(item.imageId);
-          renderGallery();
+          const selected = ui.gallerySelected.has(item.imageId);
+          card.classList.toggle("is-selected", selected);
+          card.setAttribute("aria-pressed", String(selected));
+          updateGalleryToolbar(rows);
         };
         card.addEventListener("keydown", event => {
           if (event.target !== card || !["Enter", " "].includes(event.key)) return;
           event.preventDefault();
           toggleSelection();
-          $$(".gallery-card", host).find(next => next.dataset.imageId === item.imageId)?.focus();
+          card.focus();
         });
         card.addEventListener("click", event => {
           if (event.target.closest("[data-action]")) return;

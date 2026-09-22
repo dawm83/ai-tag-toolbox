@@ -61,3 +61,21 @@ test('clearing conversation images removes conversation references and orphaned 
   assert.equal(repository.reconcileSessionMessages('session-1'), 0);
 });
 
+test('gallery listing returns lightweight metadata when the image store provides it', () => {
+  const f = fixture();
+  f.images.get = id => id === 'img-1'
+    ? { id, filename: 'one.png', displayName: 'One', width: 640, height: 480, mime: 'image/png', source: 'upload', status: 'ready', dataUrl: 'data:image/png;base64,large' }
+    : f.values.get(id) || null;
+  f.images.getMeta = id => id === 'img-1'
+    ? { imageId: id, displayName: 'One', filename: 'one.png', width: 640, height: 480, mime: 'image/png', source: 'upload', status: 'ready', hasThumbnail: true }
+    : null;
+  f.images.getThumbnail = () => ({ imageId: 'img-1', mime: 'image/png', dataUrl: 'data:image/png;base64,thumb' });
+  const repository = createImageRepository({ images: f.images, storage: f.storage, sessions: () => f.sessions });
+  repository.addToGallery('img-1');
+  const listed = repository.listGallery().items[0];
+  assert.equal(listed.imageId, 'img-1');
+  assert.equal(listed.width, 640);
+  assert.equal(listed.dataUrl, undefined);
+  assert.equal(listed.bytes, undefined);
+});
+
