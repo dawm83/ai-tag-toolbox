@@ -2380,6 +2380,45 @@
       const messageText = doc.createElement("p");
       messageText.textContent = pending?.message || "生成任务需要补充信息后继续";
       notice.appendChild(messageText);
+      if (pending?.kind === "candidate") {
+        const choices = doc.createElement("div");
+        choices.className = "generation-candidate-choices";
+        let selecting = false;
+        const setDisabled = disabled => $$('button', notice).forEach(button => { button.disabled = disabled; });
+        for (const option of Array.isArray(pending.options) ? pending.options : []) {
+          const candidateId = str(option?.candidateId || option?.id);
+          if (!candidateId) continue;
+          const button = doc.createElement("button");
+          button.type = "button";
+          button.className = "generation-candidate-choice btn btn-secondary";
+          const image = fullImageFor(option.imageId);
+          const source = image?.thumbnailDataUrl || image?.dataUrl || "";
+          if (source) {
+            const preview = doc.createElement("img");
+            preview.src = source; preview.alt = `候选 ${candidateId}`; preview.loading = "lazy";
+            button.appendChild(preview);
+          }
+          const label = doc.createElement("span");
+          label.textContent = [option.slotNo ? `图${option.slotNo}` : '', option.iteration ? `第${option.iteration}轮` : '', candidateId].filter(Boolean).join(' · ');
+          button.appendChild(label);
+          if (option.summary) { const summary = doc.createElement("small"); summary.textContent = option.summary; button.appendChild(summary); }
+          button.onclick = async () => {
+            if (selecting || assistant?.snapshot?.().busy) return;
+            selecting = true; setDisabled(true);
+            const labelText = $("#talkSendBtn")?.textContent || "📤 发送";
+            setTalkBusy(true, labelText);
+            try {
+              const result = await assistant?.continueGeneration?.(message.id, candidateId, str(pending.feedback), { displayText: `选择${option.slotNo ? `图${option.slotNo}` : candidateId}继续优化`, onEvent: handleTalkToolEvent });
+              if (result?.ok === false) notify(result.error?.message || "继续优化失败");
+            } catch (error) { notify(error?.message || "继续优化失败"); }
+            finally { setTalkBusy(false, labelText); selecting = false; renderTalk(); }
+          };
+          choices.appendChild(button);
+        }
+        notice.appendChild(choices);
+        if (ui.characterSelectionBusy || message.status === "streaming" || assistant?.snapshot?.().busy) setDisabled(true);
+        return notice;
+      }
       if (pending?.kind !== "character") {
         if (['connection', 'workflow'].includes(pending?.kind) && message.result?.stopReason !== 'COMFY_SUBMISSION_UNKNOWN') {
           const resume = doc.createElement('button'); resume.type = 'button'; resume.className = 'generation-resume-connection btn btn-secondary';

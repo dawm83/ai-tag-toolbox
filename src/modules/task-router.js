@@ -42,11 +42,10 @@ function routeTask(input = {}) {
 }
 
 function isGenerationFeedback(input = {}) {
-  if (list(input.imageIds).length) return false;
   const value = text(input.text).replace(/```[\s\S]*?```|“[^”]*”|「[^」]*」|『[^』]*』|"[^"\n]*"/g, ' ').trim();
   if (ANSWER_RE.test(value) || SEARCH_RE.test(value) || /翻译|重新.*(?:识图|分析|提取)|从头|新(?:的)?(?:任务|图片|角色)|另(?:外)?(?:画|一张)|\b(?:translate|start over|new (?:image|task)|reinspect)\b/i.test(value)) return false;
   if (/识图|分析图片|描述图片/.test(value)) return false;
-  return /继续(?:优化|修改|调整)|改成|改为|换成|修正|调整|保留.*(?:改|换)|(?:姿势|动作|人物|角色|服装|背景|构图|视角|颜色|你这|原来)[\s\S]*(?:不对|错|应该|站着)|\b(?:change|adjust|fix|correct|refine|wrong pose)\b/i.test(value);
+  return /(?:继续|进一步|再)(?:优化|修改|调整)|改成|改为|换成|修正|调整|保留.*(?:改|换)|(?:姿势|动作|人物|角色|服装|背景|构图|视角|颜色|你这|原来)[\s\S]*(?:不对|错|应该|站着)|\b(?:change|adjust|fix|correct|refine|wrong pose)\b/i.test(value);
 }
 
 module.exports = { routeTask, isGenerationFeedback };

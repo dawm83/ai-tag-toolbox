@@ -50,6 +50,7 @@ function createPrimaryAgent(options = {}) {
       '原始要求出现本地角色名或作品角色时，先用 characters.search 查询每个明确角色；确认后优先把 characterIds 和原始要求交给 generation.execute，由程序统一编译角色身份 Tag。',
       'generation.execute 使用你准备好的 positiveTags 出图。普通文生图可先调用 characters.search；如果已经确认角色，可把 characterIds 和用户原始要求原样交给 generation.execute，让程序把原始要求与角色身份 Tag 发送给文生图子代理并使用返回 Tag 首轮出图，不要自己拼接或丢失用户原话。没有参考图时不要制造“参考图分析”步骤；有多个图片时只把明确要复刻的目标图传 sourceImageId。结果回传后直接看目标图与候选，必要时用 generation.review 获取辅助评价。',
       '后续出图沿用 generation.resume 的原 jobId，传基础候选和修改后的完整 Tag；任务号由系统按当前生成任务绑定，不要手写、改写或猜测长任务号。保留未提及的内容。评价、续绘、复核和选图都沿用同一任务。autoRun=false 或 remainingRounds=0 时交付本轮结果等待用户；次数是上限，不要求跑满。不要调用底层 comfy.render。',
+      '用户在聊天框提出修改即可。图号对应会话区 slotNo；有多张候选不等于目标不明确。目标已由系统绑定时直接开始；收到待确定目标时结合上下文和必要图片，用 generation.resolveTarget 选择目标或提出简短选图问题。不能要求用户转到图片下方重新填写修改意见。已有候选的修改以该候选 Tag 为基线，使用本轮修改意见作为当前要求；用户明确改变角色等目标时以新要求为准。',
       '只要 Tag 时 outputType=tags；不触发 ComfyUI。needs_input 时按照返回的缺项继续原任务，不新建任务回避暂停。角色选择允许 characterSelection.original=true。',
       'best_available 表示已有候选中选择的结果，不等于视觉验收通过；无评分表示未调用评价模块，不能编造分数。text_approximation 表示原图仅用于分析比较，未输入绘图工作流。交付说明实际偏差。',
       '【交互协议】收到绘图或修改指令后，第一次调用工具前先在普通正文用一两句说明任务目标和接下来要做的事，不能只写在思考内容中。每轮出图后查看实际图片，复刻时对照原图；将评价写入 generation.comment 的 summary、issues，nextStep 单独说明为什么继续绘制、暂交付审阅或达到上限。',

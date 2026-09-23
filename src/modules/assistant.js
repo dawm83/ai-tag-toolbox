@@ -18,6 +18,7 @@ const { errorShape, resultError } = require('./error-manager');
 const { createCallMonitor } = require('./call-monitor');
 const { createGenerationOrchestrator } = require('./generation-orchestrator');
 const { routeTask, isGenerationFeedback } = require('./task-router');
+const { candidateOptions, resolveFeedbackTarget } = require('./feedback-target');
 
 const SESSION_FORMAT = 'ai-tag-sessions';
 const SESSION_VERSION = 1;
@@ -174,7 +175,7 @@ function createAssistant(options = {}) {
   const primary = createPrimaryAgent({ client: ai, prompts, resolveImage, getSettings: executionSettings, charactersEnabled: Boolean(options.characters), favoritesEnabled: Boolean(options.favorites) });
   const subagents = createFixedSubagents({ vision: visionService, translation: options.translation, ai, visionAI: visionClient, prompts, resolveImage, getSettings: settings.snapshot });
   runtime = createAgentRuntime({ primaryClient: primary, subagents, tools: () => primaryTools, getSettings: executionSettings, getPrimaryPrompt: primary.getPrompt, monitor: callMonitor });
-  primaryTools = createPrimaryTools({ storage, tags, favorites: options.favorites, characters: options.characters, images, imageRepository, runtime, comfy, comfyProfiles, generation: () => generation, getSettings: executionSettings });
+  primaryTools = createPrimaryTools({ storage, tags, favorites: options.favorites, characters: options.characters, images, imageRepository, runtime, comfy, comfyProfiles, generation: () => generation, getSettings: executionSettings, resolveFeedbackTarget: resolveFeedbackChoice });
   const internalTool = async (name, args, context) => {
     const outcome = await runtime.callTool(name, args, { parentRequestId: context.requestId, signal: context.signal, sessionId: context.sessionId, messageId: context.messageId, onEvent: context.onEvent });
     if (outcome?.ok === false) throw Object.assign(new Error(outcome.error?.message || '内部工具调用失败'), { code: outcome.error?.code || 'TOOL_FAILED', retryable: outcome.error?.retryable === true });
@@ -232,6 +233,7 @@ function createAssistant(options = {}) {
     if (Array.isArray(payload.events)) live.events = clone(payload.events).filter(event => !isNoiseEvent(event));
   }
   function hydrateGenerationPayload(payload = {}) {
+    if (payload.needsInput?.kind === 'candidate') return clone(payload);
     const jobId = text(payload?.jobId);
     const local = jobId ? (generation?.uiSnapshot?.(jobId) || generation?.get?.(jobId)) : null;
     return local ? { ...clone(payload), ...clone(local) } : clone(payload);
@@ -262,24 +264,53 @@ function createAssistant(options = {}) {
     }
     return result;
   }
-  function feedbackTarget(session, input) {
-    if (!isGenerationFeedback(input)) return null;
+  function generationTargets(session) {
     const seen = new Set(), targets = [];
     for (const message of session.messages.slice().reverse()) {
-      const jobId = message.result?.jobId;
+      const jobId = text(message.result?.jobId);
       if (!jobId || seen.has(jobId)) continue;
       seen.add(jobId);
       const job = generation.get?.(jobId);
-      if (job && ['completed', 'awaiting_feedback'].includes(job.status)) targets.push({ messageId: message.id, job });
+      if (job && job.sessionId === session.id && ['completed', 'awaiting_feedback'].includes(job.status)) targets.push({ messageId: message.id, job });
     }
+    return targets;
+  }
+  function feedbackTarget(session, input) {
+    if (!isGenerationFeedback(input)) return null;
+    const targets = generationTargets(session);
     if (!targets.length) return null;
-    const mentionedIds = new Set(input.text.match(/[a-zA-Z0-9_-]+/g) || []);
-    const explicit = targets.flatMap(target => array(target.job.candidates).filter(c => mentionedIds.has(c.imageId)).map(candidate => ({ ...target, candidateId: candidate.id })));
-    if (explicit.length === 1) return explicit[0];
-    const target = targets[0], candidates = array(target.job.candidates);
-    const selected = candidates.find(c => c.id === target.job.selectedCandidateId || c.selected);
-    if (explicit.length > 1 || candidates.length > 1) return { ...target, ambiguous: true };
-    return { ...target, candidateId: selected?.id || candidates[0]?.id || '' };
+    const refs = imageRepository.listConversation(session.id).items;
+    const options = candidateOptions(targets, refs);
+    if (input.imageIds.length && !options.some(option => input.imageIds.includes(option.imageId))) return null;
+    if (!options.length && targets[0].job.outputType === 'tags') return { ...targets[0], candidateId: '' };
+    const resolution = resolveFeedbackTarget(input, options, targets[0].job.jobId);
+    return resolution.option ? { ...targets.find(target => target.job.jobId === resolution.option.jobId), candidateId: resolution.option.candidateId }
+      : resolution.options.length ? { resolveWithPrimary: true, options: resolution.options } : null;
+  }
+  function candidateQuestion(request, question, locale) {
+    const message = text(question, locale === 'en-US' ? 'Which image should I refine?' : '要继续修改哪张候选图？');
+    return { status: 'needs_input', needsInput: { kind: 'candidate', message, feedback: request.feedback, options: clone(request.options) } };
+  }
+  function checkedFeedbackOption(request, imageId, sessionId) {
+    const option = array(request?.options).find(item => item.imageId === imageId);
+    const job = option && generation.get(option.jobId);
+    if (!option || !job || job.sessionId !== sessionId || !['completed', 'awaiting_feedback'].includes(job.status)) return null;
+    const candidate = array(job.candidates).find(item => item.id === option.candidateId && item.imageId === option.imageId);
+    if (!candidate || !imageRepository.listConversation(sessionId).items.some(ref => ref.imageId === option.imageId)) return null;
+    return { option, job, candidate };
+  }
+  function resolveFeedbackChoice(input, context) {
+    const request = context.feedbackRequest;
+    if (!request || context.sessionId !== state.currentId) throw Object.assign(new Error('没有待确认的修改任务'), { code: 'INPUT_EXPIRED' });
+    if (context.signal?.aborted) throw context.signal.reason;
+    const target = input.action === 'select' && checkedFeedbackOption(request, input.imageId, context.sessionId);
+    if (!target) return candidateQuestion(request, input.action === 'ask' ? input.question : '', context.locale);
+    const { job, candidate } = target;
+    const feedback = job.agentControlled ? generation.beginFeedback(job.jobId, candidate.id, request.feedback, context) : {
+      jobId: job.jobId, baseCandidateId: candidate.id, originalRequirements: job.originalRequirements, feedback: request.feedback,
+      positiveTags: candidate.positiveTags, negativeTags: candidate.negativeTags, outputType: job.outputType, viewImageIds: [candidate.imageId]
+    };
+    return { ...feedback, targetResolved: true, status: 'awaiting_feedback', decisionRequired: true, agentControlled: job.agentControlled === true };
   }
   async function runPrimaryWithRuntime(value, config = {}) {
     const input = typeof value === 'string' ? { text: value } : object(value) ? value : {};
@@ -294,19 +325,13 @@ function createAssistant(options = {}) {
     const target = input.feedbackJobId
       ? { job: generation.get(input.feedbackJobId), candidateId: input.baseCandidateId }
       : feedbackTarget(session, { text: body, imageIds });
-    const previousCandidateIds = input.feedbackJobId ? candidateIdSet(target?.job) : null;
-    if (target?.ambiguous) {
-      const note = '有多张候选图，请在要修改的候选图下填写这条修改意见，再点击“继续优化”。';
-      append('user', body, {}, session.id);
-      const reply = append('assistant', note, { status: 'done' }, session.id);
-      const data = { status: 'needs_input', needsInput: { kind: 'candidate', message: note } };
-      session.messages.find(row => row.id === reply.id).result = data;
-      await flushPersist();
-      return { ok: true, text: note, data, sessionId: session.id };
-    }
-    if (target && !target.job?.agentControlled) return continueGeneration(target.messageId, target.candidateId, body, { ...input, onEvent: event => { observe(input.onEvent, event); observe(input.onToolEvent, event); } }, session.id);
+    const targetResolution = target?.resolveWithPrimary === true;
+    const feedbackRequest = targetResolution ? { feedback: body, options: clone(target.options) } : null;
+    const previousCandidates = new Map((targetResolution ? generationTargets(session) : target?.job ? [target] : []).map(item => [item.job.jobId, candidateIdSet(item.job)]));
+    const visibleGeneration = payload => generationDelta(payload, previousCandidates.get(payload?.jobId));
+    if (target && !targetResolution && !target.job?.agentControlled) return continueGeneration(target.messageId, target.candidateId, body, { ...input, onEvent: event => { observe(input.onEvent, event); observe(input.onToolEvent, event); } }, session.id);
     let feedbackContext = null;
-    if (target?.job?.agentControlled) {
+    if (target?.job?.agentControlled && !targetResolution) {
       try { feedbackContext = generation.beginFeedback(target.job.jobId, target.candidateId, body, { sessionId: session.id }); }
       catch (error) { return failure(error.code, error.message); }
     }
@@ -320,7 +345,7 @@ function createAssistant(options = {}) {
     }
     if (references.length) imageRepository.markSent(session.id, references.map(row => row.refId));
     const previous = history(session);
-    const user = { id: userId, role: 'user', text: body, imageIds, reasoning: '', toolCalls: [], transcript: [], artifacts: [], events: [], result: null, status: 'done', createdAt: Date.now() };
+    const user = { id: userId, role: 'user', text: text(input.displayText, body), imageIds, reasoning: '', toolCalls: [], transcript: [], artifacts: [], events: [], result: null, status: 'done', createdAt: Date.now() };
     session.messages.push(user);
     const liveSnapshot = append('assistant', '', { status: 'streaming' }, session.id);
     const live = session.messages.find(message => message.id === liveSnapshot.id);
@@ -329,7 +354,8 @@ function createAssistant(options = {}) {
     active = job; state.busy = true; state.status = 'running'; state.jobId = requestId; state.lastError = '';
     const callerAbort = () => cancel(requestId);
     input.signal?.addEventListener?.('abort', callerAbort, { once: true });
-    const current = { role: 'user', imageIds: feedbackContext?.viewImageIds || imageIds, content: [body || '请查看附图。', references.length ? `Attached imageIds: ${references.map(row => row.imageId).join(', ')}` : '', feedbackContext ? '当前修改任务（保留原目标与未提及内容）：' + JSON.stringify(feedbackContext) : ''].filter(Boolean).join('\n\n') };
+    const resolutionContext = targetResolution ? `待确定的修改目标（编号是当前会话图号；仅在证据明确时选择）：${JSON.stringify(feedbackRequest.options)}` : '';
+    const current = { role: 'user', imageIds: feedbackContext?.viewImageIds || imageIds, content: [body || '请查看附图。', references.length ? `Attached imageIds: ${references.map(row => row.imageId).join(', ')}` : '', feedbackContext ? '当前修改任务（保留原目标与未提及内容）：' + JSON.stringify(feedbackContext) : '', resolutionContext].filter(Boolean).join('\n\n') };
     observe(input.onStart, { user: clone(user), assistant: clone(live), requestId, sessionId: session.id });
     const onEvent = event => {
       if (!writable(job)) return;
@@ -338,7 +364,7 @@ function createAssistant(options = {}) {
       if (event?.jobId && (typeof generation?.uiSnapshot === 'function' || typeof generation?.get === 'function')) {
         const generationState = generation.uiSnapshot?.(event.jobId) || generation.get?.(event.jobId);
         if (generationState) {
-          const visibleState = generationDelta(generationState, previousCandidateIds);
+          const visibleState = visibleGeneration(generationState);
           live.result = { ...(object(live.result) ? live.result : {}), ...visibleState };
           live.artifacts = clone(array(visibleState.artifacts));
           live.imageIds = ids(visibleState.imageIds);
@@ -351,15 +377,22 @@ function createAssistant(options = {}) {
     try {
       const task = routeTask({ text: body, imageIds });
       if (feedbackContext) { task.intent = 'auto'; task.feedbackJobId = feedbackContext.jobId; task.baseCandidateId = feedbackContext.baseCandidateId; task.forbidImages ||= feedbackContext.outputType === 'tags'; }
-      const result = await runtime.runPrimary({ requestId, sessionId: session.id, messageId: live.id, locale: input.locale || read('app.locale', 'zh-CN'), task, generationContext: feedbackContext ? generation.publicResult(feedbackContext.jobId) : null, messages: [...previous, current], config: publicRequestConfig(config), signal: controller.signal,
+      if (targetResolution) { task.intent = 'resolve_candidate'; task.originalRequest = body; task.forbidImages ||= routeTask({ text: body }).intent === 'compile_tags'; }
+      const result = await runtime.runPrimary({ requestId, sessionId: session.id, messageId: live.id, locale: input.locale || read('app.locale', 'zh-CN'), task, feedbackRequest, generationContext: feedbackContext ? generation.publicResult(feedbackContext.jobId) : null, messages: [...previous, current], config: publicRequestConfig(config), signal: controller.signal,
         onDelta: (delta, reasoning = '') => { if (!writable(job)) return; if (typeof delta === 'string') live.text += delta; if (typeof reasoning === 'string') live.reasoning += reasoning; schedulePersist(); observe(input.onDelta, live.text, live.reasoning, clone(live)); },
         onEvent,
         onToolCall: traces => { if (!writable(job)) return; for (const trace of array(traces)) { const index = live.toolCalls.findIndex(row => row.id === trace.id); if (index < 0) live.toolCalls.push(clone(trace)); else live.toolCalls[index] = clone(trace); } schedulePersist(); }
       });
       if (!writable(job)) return { ...failure('CANCELLED', '请求已取消', requestId, session.id), data: cancelledPayload(job) };
       const publicPayload = object(result.data) ? result.data : object(result.partial) ? result.partial : {};
-      const payload = hydrateGenerationPayload(publicPayload);
-      const visiblePayload = generationDelta(payload, previousCandidateIds);
+      const targetResolved = targetResolution && array(publicPayload.toolCalls).some(trace => trace?.result?.targetResolved === true && trace.ok);
+      let payload = hydrateGenerationPayload(publicPayload);
+      if (targetResolution && !targetResolved && result.ok) {
+        payload = { ...publicPayload, ...candidateQuestion(feedbackRequest, publicPayload.needsInput?.message, input.locale || read('app.locale', 'zh-CN')) };
+        live.text = payload.needsInput.message;
+        payload.text = live.text;
+      }
+      const visiblePayload = visibleGeneration(payload);
       applyPayload(job, visiblePayload);
       const error = result.ok ? null : errorShape(result.error);
       live.status = result.ok ? 'done' : error.code === 'CANCELLED' ? 'cancelled' : error.code === 'TIMEOUT' ? 'timeout' : 'error';
@@ -456,7 +489,7 @@ function createAssistant(options = {}) {
     }
     const session = found.session;
     const requestId = id('generation_resume');
-    const user = append('user', note, { status: 'done' }, session.id);
+    const user = append('user', text(options.displayText, note), { status: 'done' }, session.id);
     const liveSnapshot = append('assistant', '', { status: 'streaming' }, session.id);
     const live = session.messages.find(message => message.id === liveSnapshot.id);
     const controller = new AbortController();
@@ -579,6 +612,32 @@ function createAssistant(options = {}) {
       if (active === job) { active = null; state.busy = false; state.jobId = ''; }
     }
   }
+  async function selectFeedbackCandidate(messageId, imageId, options = {}, sessionId = state.currentId) {
+    if (destroyed) return failure('ASSISTANT_CLOSED', '会话服务已关闭');
+    if (active) return failure('BUSY', '当前请求仍在处理中');
+    if (options.signal?.aborted) return failure('CANCELLED', '请求已取消');
+    const found = messageLocation(messageId, sessionId);
+    if (!found || sessionId !== state.currentId) return failure('SESSION_UNAVAILABLE', '当前会话不可用');
+    const pending = found.message.result?.needsInput;
+    if (found.message.result?.status !== 'needs_input' || pending?.kind !== 'candidate' || found.session.messages.slice(found.index + 1).some(row => row.role === 'user')) return failure('INPUT_EXPIRED', '该选图问题已结束，请使用当前修改任务');
+    const target = checkedFeedbackOption(pending, text(imageId), sessionId);
+    if (!target) return failure('CANDIDATE_NOT_FOUND', '这张图不在当前待选候选中');
+    const original = clone(found.message.result);
+    found.message.result = { status: 'resolved', selectedImageId: imageId };
+    persist();
+    const before = found.session.messages.length;
+    const displayText = options.locale === 'en-US' ? `Selected image ${target.option.slotNo || imageId}` : `选择图${target.option.slotNo || imageId}继续优化`;
+    try {
+      const result = target.job.agentControlled
+        ? await runPrimaryWithRuntime({ ...options, sessionId, text: pending.feedback, displayText, feedbackJobId: target.job.jobId, baseCandidateId: target.candidate.id })
+        : await continueGeneration(target.option.messageId, target.candidate.id, pending.feedback, { ...options, displayText }, sessionId);
+      if (!result.ok && before === found.session.messages.length) { found.message.result = original; persist(); }
+      return result;
+    } catch (error) {
+      if (before === found.session.messages.length) { found.message.result = original; persist(); }
+      return failure(error.code || 'REQUEST_FAILED', error.message);
+    }
+  }
   async function rerunFromMessage(value, inputPatch = {}, config = {}, sessionId = state.currentId) {
     if (active) return failure('BUSY', '当前请求仍在处理中', active.id, active.sessionId);
     const found = messageLocation(value, sessionId); if (!found || found.session.id !== state.currentId) return failure('MESSAGE_NOT_FOUND', '没有找到要重新执行的消息');
@@ -615,7 +674,7 @@ function createAssistant(options = {}) {
     deleteSession(sessionId = state.currentId, value = {}) { if (!sessionById(sessionId)) return false; if (active?.sessionId === sessionId) cancel(); const result = imageRepository.deleteSession(sessionId, { retainImages: value.retainImages === true }); if (!sessionById()) state.currentId = state.sessions[0]?.id || ''; if (!state.sessions.length) newSession(); else persist(); return result; },
     clearSession(sessionId = state.currentId) { if (!sessionById(sessionId)) return false; if (active?.sessionId === sessionId) cancel(); imageRepository.clearSessionContent(sessionId); persist(); return clone(sessionById(sessionId)); },
     clearConversationImages(sessionId = state.currentId) { if (!sessionById(sessionId)) return false; if (active?.sessionId === sessionId) cancel(); const result = imageRepository.clearConversationImages(sessionId); persist(); return result; },
-    append, editMessage, deleteMessage, chooseCandidate, selectCandidate: chooseCandidate, selectGenerationFinal, continueGeneration, selectGenerationCharacter, rerunFromMessage, regenerateMessage: rerunFromMessage,
+    append, editMessage, deleteMessage, chooseCandidate, selectCandidate: chooseCandidate, selectGenerationFinal, continueGeneration, selectGenerationCharacter, selectFeedbackCandidate, rerunFromMessage, regenerateMessage: rerunFromMessage,
     exportSessions: () => JSON.stringify(sessionBundle(), null, 2),
     importSessions(value, replace = false) { const incoming = incomingBundle(value); if (!incoming) return false; cancel(); const usedSessions = new Set(replace ? [] : state.sessions.map(row => row.id)); const usedMessages = new Set(replace ? [] : state.sessions.flatMap(row => row.messages.map(message => message.id))); const normalized = incoming.sessions.map(row => normalizeSession(row, usedSessions, usedMessages)); state.sessions = replace ? normalized : [...state.sessions, ...normalized]; if (replace || !sessionById()) state.currentId = state.sessions[0]?.id || ''; for (const session of normalized) imageRepository.reconcileSessionMessages(session.id); imageRepository.reconcileSessions(); if (!state.sessions.length) newSession(); else persist(); return clone(state.sessions); },
     listCallRecords: () => runtime?.listCallRecords?.() || [],

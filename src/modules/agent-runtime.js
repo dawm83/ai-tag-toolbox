@@ -8,7 +8,7 @@ const { assertValid } = require('./schema');
 const { createCallMonitor } = require('./call-monitor');
 const { createTaskPolicy } = require('./task-policy');
 
-const TOOL_NAMES = Object.freeze(['tags.search', 'characters.search', 'conversation.listImages', 'conversation.viewImages', 'vision.processOne', 'translation.translate', 'agent.generateTags', 'comfy.status', 'comfy.validateWorkflow', 'comfy.render', 'generation.execute', 'generation.resume', 'generation.review', 'generation.select', 'generation.comment']);
+const TOOL_NAMES = Object.freeze(['tags.search', 'characters.search', 'conversation.listImages', 'conversation.viewImages', 'vision.processOne', 'translation.translate', 'agent.generateTags', 'comfy.status', 'comfy.validateWorkflow', 'comfy.render', 'generation.execute', 'generation.resume', 'generation.review', 'generation.select', 'generation.comment', 'generation.resolveTarget']);
 const NATIVE_NAMES = new Map(TOOL_NAMES.map(name => [name.replace('.', '_'), name]));
 function text(value, fallback = '') { const output = value == null ? '' : String(value).trim(); return output || fallback; }
 function object(value) { return value !== null && typeof value === 'object' && !Array.isArray(value); }
@@ -128,7 +128,7 @@ function createAgentRuntime(options = {}) {
     const limits = object(settings.limits) ? { ...settings.limits } : {};
     const generation = object(settings.generation) ? settings.generation : {};
     const intent = text(request.task?.intent);
-    const isGeneration = ['create_image', 'recreate_image', 'auto'].includes(intent) || Boolean(request.task?.feedbackJobId);
+    const isGeneration = ['create_image', 'recreate_image', 'resolve_candidate', 'auto'].includes(intent) || Boolean(request.task?.feedbackJobId);
     if (isGeneration && generation.autoRun !== false) {
       const rounds = Math.max(1, Math.min(10, Math.floor(Number(generation.maxAutoRounds) || 3)));
       // One image iteration can take a public review, Tag revision and resume
@@ -231,7 +231,7 @@ function createAgentRuntime(options = {}) {
       const registry = getTools();
       // 进度事件（如 ComfyUI 排队轮询）按队列值去重，避免每 1.2 秒刷一条任务事件。
       let lastProgressValue = null;
-      const childContext = { ...context, caller: request.caller, afterRender: request.afterRender, onEvent: event => {
+      const childContext = { ...context, caller: request.caller, afterRender: request.afterRender, feedbackRequest: request.feedbackRequest, onEvent: event => {
         const eventType = event?.type || 'progress';
         if (eventType === 'progress') {
           if (event?.queue !== undefined && event.queue === lastProgressValue) return;
@@ -316,7 +316,7 @@ function createAgentRuntime(options = {}) {
           const key = retryKey(call.name, call.args);
           const attempt = (retryAttempts.get(key) || 0) + 1;
           const previousTrace = retryTraces.get(key);
-          const outcome = blocked ? resultError(blocked, context.requestId) : await callTool(call.name, args, { caller: 'primary', afterRender: Boolean(generationResult?.candidates?.length || request.task?.feedbackJobId), parentRequestId: context.requestId, signal: context.signal, sessionId: context.sessionId, messageId: context.messageId, onEvent: event => { try { request.onEvent?.(event); } catch {} } });
+          const outcome = blocked ? resultError(blocked, context.requestId) : await callTool(call.name, args, { caller: 'primary', feedbackRequest: request.feedbackRequest, locale: context.locale, afterRender: Boolean(generationResult?.candidates?.length || generationResult?.targetResolved || request.task?.feedbackJobId), parentRequestId: context.requestId, signal: context.signal, sessionId: context.sessionId, messageId: context.messageId, onEvent: event => { try { request.onEvent?.(event); } catch {} } });
           const trace = { id: call.id, name: call.name, arguments: args, requestId: outcome.requestId, ok: outcome.ok, result: outcome.data, error: outcome.error, attempt, ...(blocked ? { blocked: true } : {}), ...(previousTrace ? { retryOf: previousTrace.id } : {}) }; toolCalls.push(trace);
           if (call.name.startsWith('generation.')) generationResult = outcome.ok && object(outcome.data) ? clone(outcome.data) : generationResult;
           if (Array.isArray(outcome.data?.artifacts)) for (const artifact of outcome.data.artifacts) if (!artifacts.some(item => item.imageId === artifact.imageId)) artifacts.push(clone(artifact));
@@ -335,7 +335,7 @@ function createAgentRuntime(options = {}) {
           retryAttempts.delete(key);
           retryTraces.delete(key);
           if (policy?.completionFor(call.name, outcome.data)) emit(context, policy.isWaiting() ? 'task.waiting' : 'task.answering', { intent: request.task.intent, status: outcome.data?.status });
-          if ((call.name === 'generation.execute' || call.name === 'generation.resume') && generationResult?.status === 'needs_input') {
+          if (['generation.execute', 'generation.resume', 'generation.resolveTarget'].includes(call.name) && generationResult?.status === 'needs_input') {
             paused = true;
           }
         }

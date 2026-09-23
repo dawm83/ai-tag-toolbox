@@ -43,10 +43,10 @@ function wait(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 function ok(value, message) { assert.equal(Boolean(value), true, message); }
 
 const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
-assert.equal(packageJson.version, '1.4.351', 'package version must be 1.4.351');
-assert.match(fs.readFileSync(path.join(root, 'VERSION.txt'), 'utf8'), /V1\.4\.351\b/);
-assert.match(fs.readFileSync(path.join(root, 'src', 'index.html'), 'utf8'), /V1\.4\.351\b/);
-assert.match(fs.readFileSync(path.join(root, 'preload.js'), 'utf8'), /version:\s*['"]1\.4\.351['"]/);
+assert.equal(packageJson.version, '1.4.352', 'package version must be 1.4.352');
+assert.match(fs.readFileSync(path.join(root, 'VERSION.txt'), 'utf8'), /V1\.4\.352\b/);
+assert.match(fs.readFileSync(path.join(root, 'src', 'index.html'), 'utf8'), /V1\.4\.352\b/);
+assert.match(fs.readFileSync(path.join(root, 'preload.js'), 'utf8'), /version:\s*['"]1\.4\.352['"]/);
 
 for (const name of ['createAgentRuntime', 'createRequestManager', 'createStatusManager', 'createCallMonitor', 'createFixedSubagents', 'createPrimaryTools']) {
   assert.equal(typeof modules[name], 'function', `${name} export missing`);
@@ -142,11 +142,11 @@ const primaryTools = modules.createPrimaryTools({
 });
 assert.deepEqual(primaryTools.names(), [
   'tags.search', 'characters.search', 'conversation.listImages', 'conversation.viewImages', 'vision.processOne', 'translation.translate',
-  'agent.generateTags', 'comfy.status', 'comfy.validateWorkflow', 'comfy.render', 'generation.execute', 'generation.resume', 'generation.review', 'generation.select', 'generation.comment'
+  'agent.generateTags', 'comfy.status', 'comfy.validateWorkflow', 'comfy.render', 'generation.execute', 'generation.resume', 'generation.review', 'generation.select', 'generation.comment', 'generation.resolveTarget'
 ]);
 assert.deepEqual(primaryTools.primaryNames(), [
   'tags.search', 'characters.search', 'conversation.listImages', 'conversation.viewImages', 'vision.processOne', 'translation.translate',
-  'agent.generateTags', 'comfy.status', 'generation.execute', 'generation.resume', 'generation.review', 'generation.select', 'generation.comment'
+  'agent.generateTags', 'comfy.status', 'generation.execute', 'generation.resume', 'generation.review', 'generation.select', 'generation.comment', 'generation.resolveTarget'
 ]);
 assert.equal(primaryTools.resolve('files.read'), null);
 const render = await primaryTools.call('comfy.render', { positiveTags: ['1girl'], negativeTags: ['lowres'] }, { sessionId: 's1' });

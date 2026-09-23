@@ -4,14 +4,17 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { createAssistant } = require('../src/modules/assistant');
 const { createStorage } = require('../src/modules/storage');
+const { createImages } = require('../src/modules/images');
 
 function fixture(t, outputType = 'images', candidates = 1, selectedCandidateId = '') {
   const storage = createStorage(), revisions = [], requests = [];
+  const images = createImages({ storage });
   const rows = Array.from({ length: candidates }, (_, i) => ({ id: `candidate-${i + 1}`, imageId: `image-${i + 1}`, iteration: i + 1, roundIndex: 1, positiveTags: ['identity', 'sitting', 'garden'], negativeTags: [], prompt: 'identity, sitting, garden' }));
+  rows.forEach(row => images.add({ id: row.imageId, dataUrl: 'data:image/png;base64,AQID' }));
   const job = { jobId: 'original-job', sessionId: 's1', status: 'completed', outputType, mode: 'create', originalRequirements: '画角色在花园', positiveTags: ['identity', 'sitting', 'garden'], negativeTags: [], candidates: outputType === 'tags' ? [] : rows, selectedCandidateId };
   storage.set('generation_jobs', [job]);
   const app = createAssistant({
-    storage,
+    storage, images,
     primaryGateway: { complete: async messages => { requests.push(structuredClone(messages)); return { text: '普通对话' }; } },
     visionGateway: { complete: async messages => { revisions.push(structuredClone(messages)); return { text: '{"add":["standing"],"remove":["sitting"],"preserve":[]}' }; } }
   });
@@ -47,27 +50,40 @@ test('Tags feedback remains Tags-only through the ordinary chat entry', async t 
   assert.deepEqual(result.data.positiveTags, ['identity', 'garden', 'standing']);
 });
 
-test('several unselected candidates require a choice and leave the job untouched', async t => {
+test('several unselected candidates are handed to the primary for target resolution', async t => {
   const f = fixture(t, 'images', 2);
   const before = f.storage.get('generation_jobs');
   const result = await f.app.run('姿势不对，改成站立');
   assert.equal(result.data.status, 'needs_input');
   assert.match(result.text, /候选/);
-  assert.equal(f.requests.length, 0);
+  assert.equal(f.requests.length, 1);
   assert.equal(f.revisions.length, 0);
+  assert.equal(result.data.needsInput.kind, 'candidate');
+  assert.equal(result.data.needsInput.options.length, 2);
   assert.deepEqual(f.storage.get('generation_jobs'), before);
 });
 
-test('several candidates still require an explicit choice even when one is preselected', async t => {
+test('several candidates still ask only after the primary cannot resolve even when one is preselected', async t => {
   const f = fixture(t, 'images', 2, 'candidate-1');
   const before = f.storage.get('generation_jobs');
   const result = await f.app.run('姿势不对，改成站立');
   assert.equal(result.data.status, 'needs_input');
   assert.match(result.text, /候选/);
-  assert.equal(f.requests.length, 0);
+  assert.equal(f.requests.length, 1);
   assert.equal(f.revisions.length, 0);
+  assert.equal(result.data.needsInput.options.length, 2);
   assert.deepEqual(f.storage.get('generation_jobs'), before);
 });
+
+test('a clear image slot in feedback resolves directly without a primary round', async t => {
+  const f = fixture(t, 'images', 2);
+  const result = await f.app.run('把图2里的角色换成博丽灵梦');
+  assert.equal(result.data.jobId, 'original-job');
+  assert.equal(f.requests.length, 0);
+  assert.equal(f.revisions.length, 1);
+  assert.equal(f.storage.get('generation_jobs')[0].feedbackHistory[0].baseCandidateId, 'candidate-2');
+});
+
 
 test('an explicit candidate image reference resolves the continuation without guessing', async t => {
   const f = fixture(t, 'images', 2);

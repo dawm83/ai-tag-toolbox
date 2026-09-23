@@ -7,8 +7,8 @@ const { compactVisionResult } = require('./vision-payload');
 const { fitDimensionsToAspectRatio } = require('./images');
 const { hasWritableDimensionBindings } = require('./comfy-workflow');
 const { applyPromptPatch } = require('./prompt-patch');
-const TOOL_NAMES = Object.freeze(['tags.search', 'characters.search', 'conversation.listImages', 'conversation.viewImages', 'vision.processOne', 'translation.translate', 'agent.generateTags', 'comfy.status', 'comfy.validateWorkflow', 'comfy.render', 'generation.execute', 'generation.resume', 'generation.review', 'generation.select', 'generation.comment']);
-const PRIMARY_TOOL_NAMES = Object.freeze(['tags.search', 'characters.search', 'conversation.listImages', 'conversation.viewImages', 'vision.processOne', 'translation.translate', 'agent.generateTags', 'comfy.status', 'generation.execute', 'generation.resume', 'generation.review', 'generation.select', 'generation.comment']);
+const TOOL_NAMES = Object.freeze(['tags.search', 'characters.search', 'conversation.listImages', 'conversation.viewImages', 'vision.processOne', 'translation.translate', 'agent.generateTags', 'comfy.status', 'comfy.validateWorkflow', 'comfy.render', 'generation.execute', 'generation.resume', 'generation.review', 'generation.select', 'generation.comment', 'generation.resolveTarget']);
+const PRIMARY_TOOL_NAMES = Object.freeze(['tags.search', 'characters.search', 'conversation.listImages', 'conversation.viewImages', 'vision.processOne', 'translation.translate', 'agent.generateTags', 'comfy.status', 'generation.execute', 'generation.resume', 'generation.review', 'generation.select', 'generation.comment', 'generation.resolveTarget']);
 const NATIVE_NAMES = new Map(TOOL_NAMES.map(name => [name.replace('.', '_'), name]));
 function text(value) { return typeof value === 'string' ? value.trim() : ''; }
 function object(value) { return value !== null && typeof value === 'object' && !Array.isArray(value); }
@@ -40,6 +40,10 @@ for (const params of [generationExecuteSchema, generationResumeSchema]) {
   params.properties.negativeTags = tagArray;
 }
 const DEFINITIONS = Object.freeze({
+  'generation.resolveTarget': {
+    description: '确定当前修改请求的目标。能从用户描述和会话证据确定时 action=select、imageId=目标图片；返回该图的原始 Tag 与修改要求，然后继续修改。无法判断时 action=ask、question=简短问题，界面会显示图片选择框并保留用户要求。此工具不绘图、不选择最终结果。',
+    parameters: schema({ action: { type: 'string', enum: ['select', 'ask'] }, imageId: nonempty, question: nonempty }, ['action']), outputSchema: { type: 'object' }
+  },
   'generation.comment': {
     description: '主 AI 查看候选后，写入给用户看的简短评价、问题/修改建议，以及下一步（revise 继续改图、deliver 暂交付审阅、limit 达到次数上限）。按界面语言填写，不写思维链或 Tag。记录会出现在图片卡并供下轮读取；不调用子代理、不出图。可与本轮的修改或选图工具先后调用。',
     parameters: schema({
@@ -61,7 +65,7 @@ const DEFINITIONS = Object.freeze({
   'comfy.validateWorkflow': { description: '检查用户当前 API 工作流是否可用。', parameters: schema({}), outputSchema: workflowSchema },
   'comfy.render': { description: '按正向 Tag 和可选负向 Tag 出图；内部复刻任务可传当前会话的 sourceImageId。', parameters: schema({ pendingRender: pendingRenderSchema, positiveTags: { ...tagArray, minItems: 1 }, negativeTags: tagArray, sourceImageId: nonempty, denoise: { type: 'number', minimum: 0, maximum: 1 }, controlStrength: { type: 'number', minimum: 0, maximum: 2 }, batchCount: { type: 'integer', minimum: 1, maximum: 10 } }, ['positiveTags']), outputSchema: renderSchema },
   'generation.execute': { description: '生成 Tag 或图片：仅 Tag 时传 outputType=tags，普通文生图不传 sourceImageId；复刻/改图时只把明确的目标图传 sourceImageId，衣服或姿势属性参考图只转成 Tag，不作为工作流原图。程序返回候选与实际提示词。用户已提供完整角色 Tag 时放入 referenceTags，不能再把角色名拆成 characterQueries 查询。', parameters: generationExecuteSchema, outputSchema: { type: 'object' } },
-  'generation.resume': { description: '恢复暂停任务，或修订 completed/awaiting_feedback 的原任务：系统会绑定当前任务 jobId；修改时传 action=continue、feedback 和明确的 baseCandidateId。仅 Tag 任务可省略候选，用户只要 Tag 时传 outputType=tags。沿用原要求、原图与当前 Tag，不重新调用 generation.execute 或识图。角色确认传原 needsInput.query，已有角色传 characterId，原创人物传 original=true。', parameters: generationResumeSchema, outputSchema: { type: 'object' } }
+  'generation.resume': { description: '恢复暂停任务，或修订 completed/awaiting_feedback 的原任务：系统会绑定当前任务 jobId；修改时传 action=continue、feedback 和明确的 baseCandidateId。候选解析任务由主 AI 根据候选信息选择 baseCandidateId；无法确定时不要猜。仅 Tag 任务可省略候选，用户只要 Tag 时传 outputType=tags。沿用原要求、原图与当前 Tag，不重新调用 generation.execute 或识图。角色确认传原 needsInput.query，已有角色传 characterId，原创人物传 original=true。', parameters: generationResumeSchema, outputSchema: { type: 'object' } }
 });
 
 function failure(code, message) { return Object.assign(new Error(message), { code }); }
@@ -181,6 +185,11 @@ function createPrimaryTools(options = {}) {
     return { artifacts, imageIds: artifacts.map(item => item.imageId), ...clone(details) };
   }
   const handlers = {
+    'generation.resolveTarget': (args, context) => {
+      guardSignal(context);
+      if (!context.feedbackRequest || typeof options.resolveFeedbackTarget !== 'function') throw failure('INPUT_EXPIRED', '没有待确认的修改目标');
+      return options.resolveFeedbackTarget(args, context);
+    },
     'tags.search': async args => {
       if (typeof options.tags?.search !== 'function') throw failure('TOOL_UNAVAILABLE', 'Tag 模块不可用');
       const includeAdult = (options.tags?.searchSettings?.().includeAdult ?? options.tags?.stateSnapshot?.().includeAdult ?? false) === true && args.includeAdult === true;
@@ -380,7 +389,7 @@ function createPrimaryTools(options = {}) {
     const entry = { name, ...clone(DEFINITIONS[name]) };
     if (name === 'agent.generateTags') { entry.parameters = clone(minimalGenerateParameters); entry.description = '文生图：传关键要求和可选参考图。修改：传上一版完整 Tag 和本轮 changes，工具返回合并后的 Tag。不要传蓝图、历史评价或完整角色资料。'; }
     if (name === 'generation.execute') { entry.parameters.required = []; entry.description = '创建任务：普通文生图传已准备好的 positiveTags；如果已通过 characters.search 确认 characterIds，也可以省略 positiveTags，让程序把原始要求与角色身份 Tag 交给文生图子代理后再首轮出图。复刻任务可传目标 sourceImageId。outputType=tags 时只保存并交付 Tag。'; }
-    if (name === 'generation.resume') entry.description = '沿用原 jobId、原图和候选。继续修改时传 action=continue、baseCandidateId 和新 positiveTags；暂停的连接或角色选择仍用原任务恢复。不会自动重新识图。';
+    if (name === 'generation.resume') entry.description = '沿用原 jobId、原图和候选。继续修改时传 action=continue、baseCandidateId 和新 positiveTags；候选解析任务先根据候选信息选择 baseCandidateId；暂停的连接或角色选择仍用原任务恢复。不会自动重新识图。';
     if (getSettings()?.generateNegativeTags !== true && ['agent.generateTags', 'generation.execute', 'generation.resume'].includes(name)) delete entry.parameters.properties.negativeTags;
     if (getSettings()?.comfy?.enabled === false && name === 'generation.execute') {
       entry.parameters.properties.outputType.enum = ['tags'];
