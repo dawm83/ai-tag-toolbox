@@ -136,7 +136,7 @@ git commit -m "V1.4.353：接入版本管理主进程桥"
 - [ ] **Step 7: Commit**
 
 ```powershell
-git add src/index.html src/app-view.js src/app.css src/locales/zh-CN.json src/locales/en-US.json tests/update-ui.test.cjs
+git add src/index.html src/app-view.js src/app.css locales/zh-CN.json locales/en-US.json tests/update-ui.test.cjs
 git commit -m "V1.4.353：新增版本切换面板"
 ```
 
