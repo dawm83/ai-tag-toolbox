@@ -803,7 +803,7 @@ test('candidate comparison shows scores and issues and accepts a manual final ch
   assert.equal(cards[1].classList.contains('selected'), true);
   assert.match(app.window.document.querySelector('.genout').textContent, /from side/);
   assert.equal(cards[0].querySelectorAll('.draw-candidate-actions > .cico').length, 1, 'only continue may remain outside Tag details');
-  assert.equal(cards[0].querySelectorAll('.draw-candidate-tag-copy').length, 2);
+  assert.equal(cards[0].querySelectorAll('.draw-candidate-tag-copy').length, 1);
   cards[0].querySelector('.draw-candidate-choose').click();
   return new Promise(resolve => setTimeout(resolve, 0)).then(() => {
     assert.equal(app.assistant.currentSession().messages[0].result.selectedCandidateId, 'candidate-1');
@@ -1117,6 +1117,7 @@ test('failed replies keep progress in messages without copying it into the Comfy
 test('Tags-only messages render one text code block with a copy-all action', async t => {
   const app = boot({ initialMessages: [{ id: 'tags-result', role: 'assistant', text: 'Tag 已生成。', status: 'done', result: { outputType: 'tags', status: 'completed', prompt: '1girl, blue hair', negative: 'lowres', positiveTags: ['1girl','blue hair'], negativeTags: ['lowres'] } }] });
   t.after(() => app.dom.window.close());
+  app.assistant.setSettings({ generateNegativeTags: true });
   let copied;
   app.window.navigator.clipboard.writeText = async value => { copied = value; };
   app.view.route('ai'); app.view.showAi('talk');
@@ -1185,4 +1186,26 @@ test('primary-selected unscored candidates are not displayed as accepted or zero
   assert.match(delivery.textContent, /主 AI 选择/);
   assert.match(delivery.textContent, /未进行辅助评分/);
   assert.doesNotMatch(delivery.textContent, /硬错误 0|达到上限|已达到验收/);
+});
+
+for (const negativeEnabled of [false, true]) test(`final copy is positive Tags only and the prompt panel has no empty duplicate (negative=${negativeEnabled})`, async t => {
+  const prompt = '1girl, (blue_hair:1.2), standing';
+  const candidate = { id: 'candidate-1', imageId: 'img-1', prompt, negative: 'lowres', selected: true };
+  const app = boot({ initialMessages: [{ id: 'copy-final', role: 'assistant', status: 'done', text: '', result: { jobId: 'job-1', status: 'completed', prompt, negative: 'lowres', selectedCandidateId: candidate.id, candidates: [candidate] } }] });
+  t.after(() => app.dom.window.close());
+  app.assistant.setSettings({ generateNegativeTags: negativeEnabled });
+  let copied;
+  app.window.navigator.clipboard.writeText = async value => { copied = value; };
+  app.view.route('ai'); app.view.showAi('talk');
+  const row = app.window.document.querySelector('[data-message-id="copy-final"]');
+  row.querySelector('.draw-final-copy').click();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(copied, prompt);
+  assert.equal(row.querySelectorAll('.genout').length, 1);
+  assert.equal(row.querySelector('.draw-final-prompt pre').textContent, prompt);
+  assert.equal(row.querySelector('.draw-final-legacy'), null);
+  if (!negativeEnabled) {
+    assert.doesNotMatch(row.textContent, /lowres|负面提示词|负向 Tag/);
+    assert.equal(row.querySelector('.draw-candidate-tag-section.negative'), null);
+  }
 });

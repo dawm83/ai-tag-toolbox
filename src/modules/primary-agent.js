@@ -56,6 +56,7 @@ function createPrimaryAgent(options = {}) {
     if (options.charactersEnabled) guidance.push('已有作品角色需要确认时使用 tags.search 的 attachedData 或 characters.search，按需带 characterIds。原创人物不强制查询。角色库外观只是参考，不自动补服装和配件；不确定的 Tag 可用 tags.search 查询。');
     if (options.favoritesEnabled) guidance.push('收藏查询：items 的 kind 区分 tag/bundle，favoriteLocations 表示收藏位置。contentOmitted=true 时不能把部分文本当完整提示词。');
     if (options.getSettings?.()?.comfy?.enabled !== true) guidance.push('当前绘图不可用，只交付 Tag；不得自行开启绘图。');
+    if (options.getSettings?.()?.generateNegativeTags !== true) guidance.push('用户关闭了负面提示词：只生成、修改和交付正向 Tag，不输出负面词、negativeTags 或负面提示词段落。');
     return [prompt, guidance.join('\n')].filter(Boolean).join('\n\n');
   }
   async function complete(messages, request = {}) {

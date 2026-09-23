@@ -2489,7 +2489,7 @@
       if (message.role !== "assistant" || messageHasRender(message) || !message.result?.prompt) return;
       const panel = doc.createElement("section"); panel.className = "generation-tags-result";
       const positive = str(message.result.prompt);
-      const negative = str(message.result.negative);
+      const negative = settings().generateNegativeTags === true ? str(message.result.negative) : "";
       const output = [positive, negative ? `Negative prompt:\n${negative}` : ""].filter(Boolean).join("\n\n");
       const block = markdownCodeBlock(output, "text");
       block.dataset.copyGenerationTags = "all";
@@ -2578,17 +2578,11 @@
           if (messageHasRender(message) && message.role === "assistant" && (drawPrompt || candidateRows.length)) {
             const final = doc.createElement("pre");
             final.className = "genout";
-            const negative = candidateRows.length
-              ? message.result?.finalNegative || message.result?.negative || ""
-              : message.result?.negative || parsedDraw?.negative || "";
             const resolvedPrompt = drawPrompt || candidatesPrompt(candidateRows, message.result?.finalCandidateId || message.result?.selectedCandidateId) || candidateRows.map(candidate => str(candidate?.prompt)).filter(Boolean).join("\n");
-            const finalText = `【最终提示词】\n${resolvedPrompt}${negative ? `\n\n【负面提示词】\n${negative}` : ""}`;
+            final.textContent = resolvedPrompt;
             const copyFinal = doc.createElement("button"); copyFinal.type = "button"; copyFinal.className = "draw-final-copy btn btn-secondary"; copyFinal.textContent = "📋 复制最终提示词";
-            copyFinal.onclick = async () => { if (await copy(finalText)) notify("已复制最终提示词"); };
+            copyFinal.onclick = async () => { if (await copy(resolvedPrompt)) notify("已复制正向 Tag"); };
             const wrapper = doc.createElement("section"); wrapper.className = "draw-final-prompt"; wrapper.append(copyFinal, final); row.append(wrapper);
-            if (candidateRows.length) {
-              const legacyFinal = final.cloneNode(true); legacyFinal.className = "genout draw-final-legacy"; legacyFinal.textContent = resolvedPrompt + (negative ? `\n\n【负面提示词】\n${negative}` : ""); row.appendChild(legacyFinal);
-            }
           }
           if (Array.isArray(message.toolCalls) && message.toolCalls.length) {
             const toolsDetails = doc.createElement("details");
@@ -2614,14 +2608,11 @@
             setMessageActionIcon(copyButton, "copy", "复制这条消息");
             copyButton.onclick = async () => {
               // 复制规则：用户消息只复制文本（不含图片）；AI 消息复制最终可见
-              // 内容——普通回复复制正文，绘图回复复制「最终提示词 + 负面提示词」。
+              // 内容——普通回复复制正文，绘图回复只复制正向 Tag。
               if (message.role === "assistant") {
-                const negative = message.result?.finalNegative || message.result?.negative || "";
                 const isDrawCopy = messageHasRender(message) && Boolean(drawPrompt);
                 const tagPrompt = isDrawCopy ? drawPrompt : !messageHasRender(message) ? message.result?.prompt : "";
-                const value = tagPrompt
-                  ? `${tagPrompt}${negative ? `\n\n【负面提示词】\n${negative}` : ""}`
-                  : message.text || "";
+                const value = tagPrompt || message.text || "";
                 if (await copy(value)) notify(isDrawCopy ? "已复制绘图最终提示词" : "已复制 AI 回复文本");
               } else {
                 const imgCount = Array.isArray(message.imageIds) ? message.imageIds.length : 0;
@@ -2890,7 +2881,7 @@
     }
     function candidatePromptText(candidate) {
       const prompt = str(candidate?.prompt);
-      const negative = str(candidate?.negative);
+      const negative = settings().generateNegativeTags === true ? str(candidate?.negative) : "";
       return `${prompt}${negative ? `\n\n【负面提示词】\n${negative}` : ""}`;
     }
     function candidatesPrompt(candidates, selectedId = "") {
@@ -3012,13 +3003,6 @@
       const selectedId = str(message.result?.finalCandidateId || message.result?.selectedCandidateId);
       const host = doc.createElement("div");
       host.className = "draw-candidates";
-      const finalCandidate = candidates.find(candidate => candidate?.id === selectedId) || candidates.find(candidate => candidate?.selected || candidate?.evaluation?.recommended) || candidates[0];
-      if (finalCandidate?.prompt) {
-        const final = doc.createElement("pre");
-        final.className = "genout draw-final-candidate";
-        final.textContent = finalCandidate.prompt + (finalCandidate.negative ? `\n\n【负面提示词】\n${finalCandidate.negative}` : "");
-        host.appendChild(final);
-      }
       const outcome = str(message.result?.outcome);
       const recreationMode = str(message.result?.recreationMode);
       const aspectRatioMode = str(message.result?.aspectRatioMode);
@@ -3169,7 +3153,7 @@
         };
         tags.appendChild(tagsSummary);
         addTagSection(localized("ui.ai.positiveTags", "正向 Tag"), candidate.prompt, "positive");
-        addTagSection(localized("ui.ai.negativeTags", "负向 Tag"), candidate.negative, "negative");
+        if (settings().generateNegativeTags === true) addTagSection(localized("ui.ai.negativeTags", "负向 Tag"), candidate.negative, "negative");
         card.appendChild(tags);
         const canContinue = ["awaiting_feedback", "completed"].includes(message.result?.status) && Boolean(message.result?.jobId);
         const running = message.status === "streaming" || ["preparing", "compiling", "rendering", "evaluating", "revising", "selecting", "finishing"].includes(message.result?.status);

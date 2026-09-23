@@ -562,7 +562,7 @@ function createGenerationOrchestrator(options = {}) {
       ...(characterReferences.length ? { characterReferences } : {})
     }, 'prompt_compile');
     job.positiveTags = strings(value?.positiveTags || value?.tags);
-    job.negativeTags = strings(value?.negativeTags);
+    job.negativeTags = getSettings()?.generateNegativeTags === true ? strings(value?.negativeTags) : [];
       if (!job.positiveTags.length) {
         if (job.referenceTags) job.positiveTags = strings(job.referenceTags);
         if (!job.positiveTags.length) throw failure('OUTPUT_INVALID', '文生图 Tag 子代理未返回正向 Tag');
@@ -835,6 +835,7 @@ function createGenerationOrchestrator(options = {}) {
     const context = runContext(job, sourceContext);
     job.needsInput = null;
     job.error = null;
+    if (getSettings()?.generateNegativeTags !== true) job.negativeTags = [];
     try {
       emit(job, context, 'generation.started', { mode: job.mode, outputType: job.outputType, autoRun: job.policy.autoRun, imagesPerRound: job.policy.imagesPerRound, maxAutoRounds: job.policy.maxAutoRounds });
       const prepared = await prepare(job, context);
@@ -864,7 +865,7 @@ function createGenerationOrchestrator(options = {}) {
         const base = pending.baseCandidateId ? activeCandidate(job, pending.baseCandidateId) : null;
         if (base) {
           job.positiveTags = base.positiveTags.slice();
-          job.negativeTags = base.negativeTags.slice();
+          job.negativeTags = getSettings()?.generateNegativeTags === true ? base.negativeTags.slice() : [];
         }
         syncBriefPrompt(job);
         // The user's correction is the only new revision goal. An old review
@@ -950,7 +951,7 @@ function createGenerationOrchestrator(options = {}) {
       agentControlled: input.agentControlled === true,
       agentRoundLimit: policy.autoRun ? policy.maxAutoRounds : 1,
       positiveTags: input.positiveTags,
-      negativeTags: input.negativeTags,
+      negativeTags: getSettings()?.generateNegativeTags === true ? input.negativeTags : [],
       requirements: originalRequirements,
       sourceImageId: text(input.sourceImageId),
       sourceSlot: Number.isInteger(input.sourceSlot) ? input.sourceSlot : null,
@@ -978,7 +979,7 @@ function createGenerationOrchestrator(options = {}) {
     if (active.has(job.jobId)) throw failure('JOB_BUSY', '生成任务仍在执行中');
     if (job.agentControlled && ['awaiting_feedback', 'completed'].includes(job.status) && input.positiveTags === undefined) throw failure('PROMPT_REQUIRED', '修改任务需先准备新的 Tag，再继续原任务');
     if (job.agentControlled && input.positiveTags !== undefined) {
-      const positiveTags = strings(input.positiveTags), negativeTags = strings(input.negativeTags ?? job.negativeTags);
+      const positiveTags = strings(input.positiveTags), negativeTags = getSettings()?.generateNegativeTags === true ? strings(input.negativeTags ?? job.negativeTags) : [];
       if (!positiveTags.length) throw failure('PROMPT_REQUIRED', '请提供非空的正向 Tag');
       if (input.baseCandidateId && !activeCandidate(job, input.baseCandidateId)) throw failure('CANDIDATE_NOT_FOUND', '没有找到基础候选');
       if (job.pendingRender) throw failure('RENDER_PENDING', '旧图仍在处理中，请先恢复原请求');

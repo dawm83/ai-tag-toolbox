@@ -231,6 +231,7 @@ function createPrimaryTools(options = {}) {
     'agent.generateTags': async (args, context) => {
       if (context.caller === 'primary') {
         check(minimalGenerateParameters, args, 'INVALID_INPUT');
+        if (getSettings()?.generateNegativeTags !== true) args = { ...args, negativeTags: [], generateNegativeTags: false };
         const value = unwrap(await subagent('generateTags', args, context));
         if (args.operation !== 'revise') return value;
         const next = applyPromptPatch(args, value, { negativeEnabled: getSettings()?.generateNegativeTags === true });
@@ -367,6 +368,7 @@ function createPrimaryTools(options = {}) {
     if (name === 'agent.generateTags') { entry.parameters = clone(minimalGenerateParameters); entry.description = '文生图：传关键要求和可选参考图。修改：传上一版完整 Tag 和本轮 changes，工具返回合并后的 Tag。不要传蓝图、历史评价或完整角色资料。'; }
     if (name === 'generation.execute') { entry.parameters.required = ['positiveTags']; entry.description = '创建任务：使用提供的 positiveTags 原样出一轮图，再由主 AI 判断；不会自动识图或改词。先按需获取初始 Tag 或调用 agent.generateTags。outputType=tags 时只保存并交付 Tag。'; }
     if (name === 'generation.resume') entry.description = '沿用原 jobId、原图和候选。继续修改时传 action=continue、baseCandidateId 和新 positiveTags；暂停的连接或角色选择仍用原任务恢复。不会自动重新识图。';
+    if (getSettings()?.generateNegativeTags !== true && ['agent.generateTags', 'generation.execute', 'generation.resume'].includes(name)) delete entry.parameters.properties.negativeTags;
     if (getSettings()?.comfy?.enabled === false && name === 'generation.execute') {
       entry.parameters.properties.outputType.enum = ['tags'];
       entry.description = '生成 Tag 与提示词，outputType 必须为 tags。支持角色与参考图；当前绘图关闭，生成 Tag 后直接完成，不需要 ComfyUI 或工作流。';

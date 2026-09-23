@@ -62,7 +62,7 @@ test('the primary tool schema excludes upstream dossiers and rejects side-channe
   const f = setup(t, ({ turn }) => turn === 1 ? call('agent.generateTags', { operation: 'compile', requirements: 'draw', description: 'UNTRUSTED_EXTRA_CONTEXT' }) : { text: '改用最小输入' });
   const schema = f.app.primaryTools.openAiTools().find(row => row.function.name === 'agent_generateTags');
   assert(schema);
-  assert.deepEqual(Object.keys(schema.function.parameters.properties).sort(), ['changes','generateNegativeTags','imageId','negativeTags','operation','positiveTags','requirements'].sort());
+  assert.deepEqual(Object.keys(schema.function.parameters.properties).sort(), ['changes','generateNegativeTags','imageId','operation','positiveTags','requirements'].sort());
   const rejected = await f.app.runtime.runPrimary({ sessionId: f.app.currentSession().id, messages: [{ role: 'user', content: 'draw' }] });
   assert.equal(rejected.ok, true);
   assert.equal(rejected.data.toolCalls[0].error.code, 'INVALID_INPUT');

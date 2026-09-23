@@ -83,6 +83,7 @@ test('provided reference Tags bypass character lookup and reach Tag compilation 
 
 test('workflow failures expose compiled Tags to the primary AI', async () => {
   const generation = createGenerationOrchestrator({
+    getSettings: () => ({ generateNegativeTags: true }),
     runSubAgent: async () => ({ positiveTags: ['portrait'], negativeTags: ['lowres'] }),
     preflight: async () => ({ ready: false, connected: false, error: 'offline' })
   });

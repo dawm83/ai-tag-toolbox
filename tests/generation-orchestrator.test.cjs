@@ -618,7 +618,7 @@ test('exhausting render attempts exposes a failed outcome', async () => {
 test('public generation result is compact while the UI snapshot retains full evaluations', async () => {
   const longText = '详细评价'.repeat(1800);
   const app = harness({
-    settings: { generation: { autoRun: true, maxAutoRounds: 1, maxRenderAttempts: 2, acceptScore: 90 } },
+    settings: { generateNegativeTags: true, generation: { autoRun: true, maxAutoRounds: 1, maxRenderAttempts: 2, acceptScore: 90 } },
     runSubAgent: async (name, request) => {
       if (name === 'generateTags') return ok({ positiveTags: ['1girl', 'blue hair'], negativeTags: ['lowres'] });
       if (name === 'evaluateImages') return ok({ operation: 'review', evaluations: [{ candidateId: request.input.candidateImageIds[0], score: 92, verdict: 'accept', hardErrors: [], issues: [], summary: longText }] });
@@ -743,4 +743,16 @@ test('cancelling during agent preparation cannot publish a completed Tags result
   assert.equal(result.status, 'cancelled');
   assert.notEqual(result.outcome, 'tags_only');
   assert.equal(app.orchestrator.get(result.jobId).status, 'cancelled');
+});
+
+test('disabled negative Tags are discarded before rendering, candidate storage and a resumed round', async () => {
+  const app = harness({ settings: { generateNegativeTags: false } });
+  const first = await app.orchestrator.execute({ requirements: 'portrait', agentControlled: true, positiveTags: ['standing'], negativeTags: ['unrequested_negative'] }, app.context);
+  assert.deepEqual(app.renders[0].negativeTags, []);
+  assert.equal(first.candidates[0].negative, '');
+  assert.deepEqual(first.negativeTags, []);
+  const next = await app.orchestrator.resume({ jobId: first.jobId, action: 'continue', positiveTags: ['sitting'], negativeTags: ['another_negative'] }, app.context);
+  assert.deepEqual(app.renders[1].negativeTags, []);
+  assert.equal(next.candidates[1].negative, '');
+  assert.doesNotMatch(JSON.stringify(app.storage.get('generation_jobs')), /unrequested_negative|another_negative/);
 });
