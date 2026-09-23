@@ -34,6 +34,7 @@ module.exports = {
   ...require('./primary-agent'),
   ...require('./task-router'),
   ...require('./task-policy'),
-  ...require('./task-brief')
+  ...require('./task-brief'),
+  ...require('./version-manager')
 };
 
