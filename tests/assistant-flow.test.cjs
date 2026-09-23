@@ -183,9 +183,15 @@ async function testHighLevelGenerationPersistsCandidatesAndSelection() {
 async function testManualContinuationBypassesPrimaryAndReleasesConversation() {
   const calls = [];
   const candidate = { id: 'candidate-1', imageId: 'img-1', prompt: '1girl', negative: '', evaluation: { status: 'reviewed', score: 70 } };
+  const nextCandidate = { id: 'candidate-2', imageId: 'img-2', prompt: '1girl, low angle', negative: '' };
+  let current = { status: 'awaiting_feedback', jobId: 'job-manual', agentControlled: false, candidates: [candidate] };
   const generation = {
-    resume: async input => { calls.push(input); return { status: 'awaiting_feedback', jobId: 'job-manual', candidates: [candidate], rounds: [{ roundId: 'round-2', candidateIds: ['candidate-1'], recommendedCandidateId: 'candidate-1' }], artifacts: [], imageIds: [], successfulRounds: 2 }; },
-    get: () => null,
+    resume: async input => {
+      calls.push(input);
+      current = { status: 'awaiting_feedback', jobId: 'job-manual', agentControlled: false, candidates: [candidate, nextCandidate], rounds: [{ roundId: 'round-1', candidateIds: ['candidate-1'] }, { roundId: 'round-2', candidateIds: ['candidate-2'], recommendedCandidateId: 'candidate-2' }], artifacts: [{ imageId: 'img-1' }, { imageId: 'img-2' }], imageIds: ['img-1', 'img-2'], successfulRounds: 2 };
+      return current;
+    },
+    get: () => current,
     selectAndFinish: async () => null
   };
   const assistant = modules.createAssistant({ storage: modules.createStorage({ prefix: `manual-continue-${Date.now()}` }), generation, primaryGateway: { complete: async () => ({ text: 'primary should not run' }) } });
@@ -197,6 +203,8 @@ async function testManualContinuationBypassesPrimaryAndReleasesConversation() {
   assert.equal(messages.at(-2).role, 'user');
   assert.equal(messages.at(-2).text, '增强低视角');
   assert.equal(messages.at(-1).result.status, 'awaiting_feedback');
+  assert.deepEqual(messages.at(-1).result.candidates.map(row => row.id), ['candidate-2']);
+  assert.deepEqual(messages.at(-1).result.imageIds, ['img-2']);
   const normal = await assistant.run({ text: '现在可以继续对话' });
   assert.equal(normal.ok, true);
   assistant.destroy();

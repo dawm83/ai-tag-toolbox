@@ -29,6 +29,20 @@ function clone(value) { return value == null ? value : JSON.parse(JSON.stringify
 function id(prefix) { return `${prefix}_${randomUUID()}`; }
 function array(value) { return Array.isArray(value) ? value : []; }
 function ids(value) { return [...new Set(array(value).filter(item => typeof item === 'string' && item.trim()).map(item => item.trim()))]; }
+function candidateIdSet(value) { return new Set(array(value?.candidates).map(candidate => text(candidate?.id || candidate?.candidateId)).filter(Boolean)); }
+function generationDelta(value, previousCandidateIds) {
+  if (!(previousCandidateIds instanceof Set)) return clone(value);
+  const candidates = array(value?.candidates).filter(candidate => !previousCandidateIds.has(text(candidate?.id || candidate?.candidateId)));
+  const candidateIds = new Set(candidates.map(candidate => text(candidate?.id || candidate?.candidateId)).filter(Boolean));
+  const imageIds = ids(candidates.map(candidate => candidate?.imageId || candidate?.artifact?.imageId || candidate?.artifact?.id));
+  const imageIdSet = new Set(imageIds);
+  const rounds = array(value?.rounds).flatMap(round => {
+    const candidateIdsInRound = ids(round?.candidateIds).filter(candidateId => candidateIds.has(candidateId));
+    return candidateIdsInRound.length ? [{ ...clone(round), candidateIds: candidateIdsInRound }] : [];
+  });
+  const artifacts = array(value?.artifacts).filter(artifact => imageIdSet.has(text(artifact?.imageId || artifact?.id))).map(clone);
+  return { ...clone(value), candidates: clone(candidates), rounds, artifacts, imageIds };
+}
 function observe(callback, ...values) { try { callback?.(...values); } catch { /* UI observers are optional. */ } }
 function failure(code, message, requestId, sessionId) { return { ...resultError({ code, message }, requestId), status: code === 'CANCELLED' ? 'cancelled' : 'error', text: message, sessionId }; }
 function transcript(value) {
@@ -280,6 +294,7 @@ function createAssistant(options = {}) {
     const target = input.feedbackJobId
       ? { job: generation.get(input.feedbackJobId), candidateId: input.baseCandidateId }
       : feedbackTarget(session, { text: body, imageIds });
+    const previousCandidateIds = input.feedbackJobId ? candidateIdSet(target?.job) : null;
     if (target?.ambiguous) {
       const note = '有多张候选图，请在要修改的候选图下填写这条修改意见，再点击“继续优化”。';
       append('user', body, {}, session.id);
@@ -323,9 +338,10 @@ function createAssistant(options = {}) {
       if (event?.jobId && (typeof generation?.uiSnapshot === 'function' || typeof generation?.get === 'function')) {
         const generationState = generation.uiSnapshot?.(event.jobId) || generation.get?.(event.jobId);
         if (generationState) {
-          live.result = { ...(object(live.result) ? live.result : {}), ...clone(generationState) };
-          live.artifacts = clone(array(generationState.artifacts));
-          live.imageIds = ids(generationState.imageIds);
+          const visibleState = generationDelta(generationState, previousCandidateIds);
+          live.result = { ...(object(live.result) ? live.result : {}), ...visibleState };
+          live.artifacts = clone(array(visibleState.artifacts));
+          live.imageIds = ids(visibleState.imageIds);
         }
       }
       const output = event?.result?.data || event?.result;
@@ -343,10 +359,11 @@ function createAssistant(options = {}) {
       if (!writable(job)) return { ...failure('CANCELLED', '请求已取消', requestId, session.id), data: cancelledPayload(job) };
       const publicPayload = object(result.data) ? result.data : object(result.partial) ? result.partial : {};
       const payload = hydrateGenerationPayload(publicPayload);
-      applyPayload(job, payload);
+      const visiblePayload = generationDelta(payload, previousCandidateIds);
+      applyPayload(job, visiblePayload);
       const error = result.ok ? null : errorShape(result.error);
       live.status = result.ok ? 'done' : error.code === 'CANCELLED' ? 'cancelled' : error.code === 'TIMEOUT' ? 'timeout' : 'error';
-      live.result = { ...clone(payload), ok: result.ok, error: error || payload.error || null, usage: clone(result.usage) };
+      live.result = { ...clone(visiblePayload), ok: result.ok, error: error || visiblePayload.error || null, usage: clone(result.usage) };
       if (!live.text && error) live.text = error.message;
       session.updatedAt = Date.now(); state.lastError = error?.message || ''; state.status = result.ok ? 'idle' : live.status; await flushPersist(); observe(input.onDelta, live.text, live.reasoning, clone(live));
       return { ...result, ...payload, ok: result.ok, error, data: clone(payload), text: live.text, status: live.status, requestId, sessionId: session.id };
@@ -422,6 +439,7 @@ function createAssistant(options = {}) {
     const found = messageLocation(value, sessionId);
     const jobId = text(found?.message?.result?.jobId);
     const resumeOnly = options.resumeOnly === true;
+    const previousCandidateIds = jobId ? candidateIdSet(generation?.get?.(jobId)) : null;
     const note = resumeOnly ? '恢复原绘图任务' : text(feedback);
     const feedbackTask = routeTask({ text: note });
     const requestTags = !resumeOnly && (feedbackTask.forbidImages || feedbackTask.intent === 'compile_tags' || /只(?:要|需).*?(?:tags?|提示词|标签)/i.test(note));
@@ -452,9 +470,10 @@ function createAssistant(options = {}) {
       live.events.push(clone(event)); if (live.events.length > 256) live.events.shift();
       const generationState = event?.jobId ? (generation?.uiSnapshot?.(event.jobId) || generation?.get?.(event.jobId)) : null;
       if (generationState) {
-        live.result = { ...(object(live.result) ? live.result : {}), ...clone(generationState) };
-        live.artifacts = clone(array(generationState.artifacts));
-        live.imageIds = ids(generationState.imageIds);
+        const visibleState = generationDelta(generationState, previousCandidateIds);
+        live.result = { ...(object(live.result) ? live.result : {}), ...visibleState };
+        live.artifacts = clone(array(visibleState.artifacts));
+        live.imageIds = ids(visibleState.imageIds);
       }
       schedulePersist(); observe(options.onEvent, clone(event));
     };
@@ -464,10 +483,11 @@ function createAssistant(options = {}) {
       if (!writable(job)) return { ...failure('CANCELLED', '请求已取消', requestId, session.id), data: cancelledPayload(job) };
       const publicPayload = object(outcome.data) ? outcome.data : {};
       const payload = hydrateGenerationPayload(publicPayload);
-      applyPayload(job, payload);
+      const visiblePayload = generationDelta(payload, previousCandidateIds);
+      applyPayload(job, visiblePayload);
       const error = outcome.ok ? null : errorShape(outcome.error);
       live.status = outcome.ok ? 'done' : error.code === 'CANCELLED' ? 'cancelled' : 'error';
-      live.result = { ...clone(payload), ok: outcome.ok, error: error || payload.error || null, usage: clone(outcome.usage) };
+      live.result = { ...clone(visiblePayload), ok: outcome.ok, error: error || visiblePayload.error || null, usage: clone(outcome.usage) };
       live.toolCalls = [{ id: requestId, name: 'generation.resume', arguments: args, ok: outcome.ok, result: clone(resumed.data), error }, ...array(publicPayload.toolCalls)];
       live.transcript = [
         { role: 'assistant', content: '', tool_calls: [{ id: requestId, type: 'function', function: { name: 'generation_resume', arguments: JSON.stringify(args) } }] },

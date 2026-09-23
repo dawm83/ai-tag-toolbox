@@ -123,6 +123,10 @@ test('candidate feedback returns to the primary with the original job and select
   assert.equal(f.renders[1].prompt, 'standing, garden, 3girls');
   assert.equal(f.local.length, 0);
   assert.equal(f.children.length, 1);
+  const messages = f.app.currentSession().messages;
+  assert.deepEqual(messages.find(row => row.id === message.id).result.candidates.map(candidate => candidate.id), ['candidate-1']);
+  assert.deepEqual(messages.at(-1).result.candidates.map(candidate => candidate.id), ['candidate-2']);
+  assert.deepEqual(messages.at(-1).result.imageIds, [result.candidates.at(-1).imageId]);
 });
 
 test('confirming an ambiguous character returns its identity to the primary before first rendering', async t => {
