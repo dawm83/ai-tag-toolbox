@@ -1,14 +1,14 @@
 {
-  "version": "1.4.345",
+  "version": "1.4.346",
   "buildEvidenceFile": "build-info.json",
   "evidenceLocation": "Desktop package root, outside resources/app.asar",
-  "desktopDirectory": "C:/Users/admin/Desktop/AI绘画Tag工具箱V1.4.345",
+  "desktopDirectory": "C:/Users/admin/Desktop/AI绘画Tag工具箱V1.4.346",
   "sourceBranch": "codex/drawing-feedback",
   "sourceCommitEvidence": "build-info.json.sourceCommit",
   "scope": "Transparent recreation interaction, user-confirmed primary vision capability, local Tag first baseline and visible comparison loop",
   "checks": {
     "command": "npm run check",
-    "testsPassed": 710,
+    "testsPassed": 712,
     "testsFailed": 0,
     "realElectronWindow": "Pending user acceptance; slow launch tests skipped per AGENTS.md",
     "realAiOrComfyGeneration": false,
