@@ -69,6 +69,37 @@ test('the primary tool schema excludes upstream dossiers and rejects side-channe
   assert.equal(f.children.length, 0);
 });
 
+test('character searches feed the original request and identity Tags into the first Tag compilation', async t => {
+  const tagMessages = [];
+  const f = setup(t, ({ turn, result }) => {
+    if (turn === 1) return call('characters.search', { query: '阿米娅' });
+    if (turn === 2) return call('characters.search', { query: '凯尔希' });
+    if (turn === 3) return call('generation.execute', { mode: 'create', characterIds: ['amiya', 'kaltsit'] });
+    return { text: '首轮已生成。' };
+  }, {}, {
+    characters: {
+      page: ({ query }) => ({ items: [{ id: query === '阿米娅' ? 'amiya' : 'kaltsit' }], total: 1 }),
+      get: id => ({ id, name: id, identityTags: [`${id}_identity`], generalTags: [{ id: `${id}_clothes`, en: `${id}_default_clothes` }], specificTags: [] })
+    },
+    visionGateway: {
+      complete: async messages => {
+        tagMessages.push(structuredClone(messages));
+        return { text: '{"positiveTags":["1girl","amiya_identity","kaltsit_identity"]}' };
+      }
+    }
+  });
+  await f.app.refreshCapabilities();
+  const result = await f.app.run('画一张侧面视角的场景：阿米娅戴兔子耳朵，凯尔希白发猫耳，按原始描述生成');
+  assert.equal(result.ok, true, JSON.stringify(result.error));
+  assert.equal(f.renders.length, 1);
+  const compile = tagMessages.find(messages => JSON.stringify(messages).includes('系统输出协议'));
+  assert(compile, 'the generation Tag subagent should receive the compilation request');
+  assert.match(compile[1].content[0].text, /侧面视角.*阿米娅.*凯尔希/s);
+  assert.match(compile[1].content[0].text, /amiya_identity/);
+  assert.match(compile[1].content[0].text, /kaltsit_identity/);
+  assert.doesNotMatch(compile[1].content[0].text, /default_clothes/);
+});
+
 test('candidate feedback returns to the primary with the original job and selected Tags, without repeating local recognition', async t => {
   let phase = 'create', jobId;
   const f = setup(t, ({ source, result, messages }) => {
@@ -209,4 +240,28 @@ test('the primary can save a public review after selecting in the same response'
   assert.equal(result.candidates[0].primaryReview.summary, '主体已符合要求。');
   assert.equal(result.task.complete, true);
   assert.deepEqual(result.task.allowedTools, ['generation.comment']);
+});
+
+test('ten configured image rounds receive enough primary tool budget for review and resume calls', async t => {
+  let jobId;
+  const f = setup(t, ({ turn, result }) => {
+    if (turn === 1) return call('generation.execute', { requirements: 'ten-round portrait', positiveTags: ['1girl'] });
+    if (!jobId && result?.jobId) jobId = result.jobId;
+    if (turn >= 2 && turn <= 19 && turn % 2 === 0) {
+      const candidateNumber = turn / 2;
+      return call('generation.comment', { jobId: 'model-typed-wrong-job', candidateId: `candidate-${candidateNumber}`, summary: `第 ${candidateNumber} 张需要继续检查。`, issues: [], nextAction: 'revise', nextStep: '继续调整后再画一张。' });
+    }
+    if (turn >= 3 && turn <= 19 && turn % 2 === 1) {
+      const baseNumber = (turn - 1) / 2;
+      return call('generation.resume', { jobId: 'model-typed-wrong-job', action: 'continue', baseCandidateId: `candidate-${baseNumber}`, positiveTags: [`round-${baseNumber + 1}`] });
+    }
+    if (turn === 20) return call('generation.select', { jobId: 'model-typed-wrong-job', candidateId: 'candidate-10' });
+    return { text: '已完成十轮测试。' };
+  }, { limits: { maxToolRounds: 8, maxToolCalls: 32, maxComfyCalls: 3 }, generation: { autoRun: true, maxAutoRounds: 10 } });
+  await f.app.refreshCapabilities();
+  const result = await f.app.run('画一个十轮测试肖像');
+  assert.equal(result.ok, true, JSON.stringify(result.error));
+  assert.equal(f.renders.length, 10);
+  assert.equal(result.candidates.length, 10);
+  assert.equal(result.usage.toolRounds, 20);
 });

@@ -709,6 +709,22 @@ test('agent-controlled generation requires a ready prompt and evaluation is expl
   assert(app.events.some(event => event.type === 'candidate.diff'));
 });
 
+test('agent-controlled character generation compiles the original request with confirmed identity Tags before rendering', async () => {
+  const app = harness({
+    resolveCharacter: async id => ({ id, name: id, identityTags: [`${id}_identity`], generalTags: [{ en: `${id}_appearance` }], specificTags: [] })
+  });
+  const result = await app.orchestrator.execute({
+    originalRequirements: '侧面视角，阿米娅与凯尔希在厕所场景中按用户描述互动',
+    mode: 'create', agentControlled: true, characterIds: ['amiya', 'kaltsit']
+  }, app.context);
+  assert.equal(result.status, 'awaiting_feedback');
+  const compile = app.subagentCalls.find(call => call.name === 'generateTags');
+  assert(compile);
+  assert.match(compile.input.requirements, /侧面视角/);
+  assert.deepEqual(compile.input.characterReferences.map(row => row.identityTags), [['amiya_identity'], ['kaltsit_identity']]);
+  assert.deepEqual(app.renders[0].positiveTags, ['1girl', 'blue hair']);
+});
+
 test('agent callers cannot override the configured render budget or resume without prepared Tags', async () => {
   const app = harness({ settings: { generation: { autoRun: false, maxAutoRounds: 1 } } });
   const first = await app.orchestrator.execute({ requirements: 'portrait', agentControlled: true, positiveTags: ['standing'], autoRun: true, maxAutoRounds: 10 }, app.context);

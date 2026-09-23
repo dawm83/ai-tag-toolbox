@@ -843,6 +843,10 @@ function createGenerationOrchestrator(options = {}) {
       if (prepared !== true) return prepared;
       guard(job, context);
       if (job.agentControlled) {
+        if (!job.positiveTags.length) {
+          const compiled = await compile(job, context);
+          if (compiled !== true) return compiled;
+        }
         if (!job.positiveTags.length) throw failure('PROMPT_REQUIRED', '请先提供可执行 Tag；可直接使用初始 Tag，或调用 agent.generateTags');
         syncBriefPrompt(job, job.successfulRounds);
         if (job.outputType === 'tags') {
@@ -938,7 +942,7 @@ function createGenerationOrchestrator(options = {}) {
     }
   }
   async function execute(input = {}, context = {}) {
-    if (input.agentControlled && !strings(input.positiveTags).length) throw failure('PROMPT_REQUIRED', '请先提供可执行 Tag；可直接使用初始 Tag，或调用 agent.generateTags');
+    if (input.agentControlled && !strings(input.positiveTags).length && !strings(input.characterIds).length && !strings(input.characterQueries).length) throw failure('PROMPT_REQUIRED', '请先提供可执行 Tag、角色信息，或调用 agent.generateTags');
     const originalRequirements = text(input.originalRequirements || input.requirements);
     if (!originalRequirements) throw failure('INVALID_INPUT', '生成任务缺少 originalRequirements');
     let mode = ['create', 'recreate'].includes(input.mode) ? input.mode : 'auto';

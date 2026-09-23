@@ -123,6 +123,26 @@ function createAgentRuntime(options = {}) {
   const limiter = options.usageLimiter || createUsageLimiter();
   const monitor = options.monitor || createCallMonitor({ maxRecords: options.maxCallRecords, filePath: options.callMonitorPath, getSecrets: () => [getSettings()?.primaryApi?.key, getSettings()?.visionApi?.key], onCallRecord: options.onCallRecord });
   const active = new Map();
+  function requestLimits(request = {}) {
+    const settings = getSettings() || {};
+    const limits = object(settings.limits) ? { ...settings.limits } : {};
+    const generation = object(settings.generation) ? settings.generation : {};
+    const intent = text(request.task?.intent);
+    const isGeneration = ['create_image', 'recreate_image', 'auto'].includes(intent) || Boolean(request.task?.feedbackJobId);
+    if (isGeneration && generation.autoRun !== false) {
+      const rounds = Math.max(1, Math.min(10, Math.floor(Number(generation.maxAutoRounds) || 3)));
+      // One image iteration can take a public review, Tag revision and resume
+      // in addition to the render call. Reserve room for character lookup and
+      // the final selection instead of coupling this budget to the default 8.
+      const roundBudget = rounds * 4 + 8;
+      const callBudget = rounds * 6 + 16;
+      const comfyBudget = rounds + 2;
+      limits.maxToolRounds = Math.max(Number(limits.maxToolRounds) || 8, roundBudget);
+      limits.maxToolCalls = Math.max(Number(limits.maxToolCalls) || 32, callBudget);
+      limits.maxComfyCalls = Math.max(Number(limits.maxComfyCalls) || 3, comfyBudget);
+    }
+    return limits;
+  }
   function registryTool(name) { const registry = getTools() || {}; return typeof registry.resolve === 'function' ? registry.resolve(name) : registry[name] || null; }
   function listTools() { return TOOL_NAMES.map(name => { const entry = registryTool(name); return entry ? { name, description: entry.description || '', parameters: clone(entry.parameters || entry.inputSchema || { type: 'object', additionalProperties: false }) } : null; }).filter(Boolean); }
   function schemas() {
@@ -154,7 +174,7 @@ function createAgentRuntime(options = {}) {
     const parent = active.get(parentId);
     const handle = requests.begin(parentId ? undefined : request.requestId, { kind, parentRequestId: parentId, rootRequestId: parent?.rootRequestId, timeoutMs: request.timeoutMs || timeoutMs, signal: request.signal || parent?.signal });
     const id = handle.requestId; const rootId = parent?.rootRequestId || id;
-    if (!parent) limiter.begin(rootId, getSettings()?.limits || {});
+    if (!parent) limiter.begin(rootId, requestLimits(request));
     const context = { requestId: id, parentRequestId: parentId, rootRequestId: rootId, signal: handle.signal, sessionId: request.sessionId || parent?.sessionId, messageId: request.messageId || parent?.messageId, locale: request.locale || parent?.locale || 'zh-CN', settings: parent?.settings || clone(getSettings() || {}), events: [], onEvent: request.onEvent, parentContext: parent || null, partial: null, extendRootTimeout: timeoutMs => requests.extend(rootId, timeoutMs) };
     monitor.begin({ requestId: id, rootRequestId: rootId, parentRequestId: parentId, sessionId: context.sessionId, messageId: context.messageId, kind, input: request.input || {} });
     context.captureInput = input => monitor.update(id, { input });
@@ -323,9 +343,7 @@ function createAgentRuntime(options = {}) {
         context.partial = partial();
         if (terminalError) throw terminalError;
         if (paused) return context.partial;
-        const usage = policy?.isSelected() ? limiter.snapshot(context.rootRequestId) : null;
-        const maxRounds = Number(getSettings()?.limits?.maxToolRounds) || 8;
-        if (policy?.isSelected() && usage && usage.toolRounds >= maxRounds) {
+        if (policy?.isSelected()) {
           const finalData = { ...context.partial, text: responseText.trim(), reasoning: responseReasoning(response), transcript: transcript.map(clone) };
           context.partial = finalData;
           return finalData;

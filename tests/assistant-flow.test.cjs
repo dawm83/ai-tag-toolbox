@@ -166,7 +166,7 @@ async function testHighLevelGenerationPersistsCandidatesAndSelection() {
   assert.equal(result.selectedImageId, 'generated-1');
   assert.equal(result.stopReason, 'primary_selected');
   assert.deepEqual(result.positiveTags, ['1girl', 'blue hair']);
-  assert.equal(result.usage.toolRounds, 3);
+  assert.equal(result.usage.toolRounds, 2);
   assert.equal(result.usage.comfyCalls, 1);
   const message = assistant.currentSession().messages.at(-1);
   assert.equal(message.result.candidates.length, 1);

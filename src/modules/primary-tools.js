@@ -379,7 +379,7 @@ function createPrimaryTools(options = {}) {
   const listPrimary = () => PRIMARY_TOOL_NAMES.filter(name => name !== 'comfy.status' || getSettings()?.comfy?.enabled !== false).map(name => {
     const entry = { name, ...clone(DEFINITIONS[name]) };
     if (name === 'agent.generateTags') { entry.parameters = clone(minimalGenerateParameters); entry.description = '文生图：传关键要求和可选参考图。修改：传上一版完整 Tag 和本轮 changes，工具返回合并后的 Tag。不要传蓝图、历史评价或完整角色资料。'; }
-    if (name === 'generation.execute') { entry.parameters.required = ['positiveTags']; entry.description = '创建任务：使用提供的 positiveTags 原样出一轮图，再由主 AI 判断；不会自动识图或改词。先按需获取初始 Tag 或调用 agent.generateTags。outputType=tags 时只保存并交付 Tag。'; }
+    if (name === 'generation.execute') { entry.parameters.required = []; entry.description = '创建任务：普通文生图传已准备好的 positiveTags；如果已通过 characters.search 确认 characterIds，也可以省略 positiveTags，让程序把原始要求与角色身份 Tag 交给文生图子代理后再首轮出图。复刻任务可传目标 sourceImageId。outputType=tags 时只保存并交付 Tag。'; }
     if (name === 'generation.resume') entry.description = '沿用原 jobId、原图和候选。继续修改时传 action=continue、baseCandidateId 和新 positiveTags；暂停的连接或角色选择仍用原任务恢复。不会自动重新识图。';
     if (getSettings()?.generateNegativeTags !== true && ['agent.generateTags', 'generation.execute', 'generation.resume'].includes(name)) delete entry.parameters.properties.negativeTags;
     if (getSettings()?.comfy?.enabled === false && name === 'generation.execute') {

@@ -110,7 +110,7 @@ function createTaskPolicy(task = {}) {
       answer: '直接回答当前问题，工具教程和举例不等于要求执行工具。',
       translate: '使用 translation.translate 完成翻译，然后回答。',
       recreate_image: '先从当前会话图片中确定唯一目标图；目标图没有可靠内置 Tag 时，对目标图调用一次 vision.processOne(mode=local)，把 Tag 作为首轮依据。若用户只把另一张图作为衣服、姿势或其他属性参考，只提取该属性，不把属性图传 sourceImageId；目标图才可作为 sourceImageId。没有目标图时按普通文生图处理，后续轮次根据结果和图片比较决定修改。',
-      create_image: '没有参考图时直接按用户要求或 agent.generateTags 返回的 Tag 文生图，不调用 conversation 或 vision 识图，也不传 sourceImageId；只有用户明确附加并关联参考图时才取用对应图片。',
+      create_image: '没有参考图时直接按用户要求或 agent.generateTags 返回的 Tag 文生图，不调用 conversation 或 vision 识图，也不传 sourceImageId；原始要求含本地角色名时先 characters.search，再把 characterIds 和原始要求交给 generation.execute；只有用户明确附加并关联参考图时才取用对应图片。',
       auto: '结合上下文判断混合或模糊要求；先判断每张图片是否与当前绘制直接相关，再选择识图、Tag 编译或出图。没有参考图不要调用识图，连接 ComfyUI 本身不代表要求出图。'
     };
     return ['【本轮目标与可用能力】', `任务类型：${labels[snapshot.intent] || snapshot.intent}。`, `允许工具：${allowedNames().join('、') || '无，直接回答'}。`, workflow[snapshot.intent] || '自己选择必要模块。出图使用准备好的 Tag，结果返回后再判断；不必调用所有工具。', '用户原话定义目标，工具结果是证据。', activeJobId ? `当前任务 ${activeJobId}：后续 generation.* 工具的任务号由系统绑定，不要改写任务号。` : '', completed ? '当前已完成或等待用户输入，请整理实际结果。' : '证据和结果足够后结束。'].filter(Boolean).join('\n');
