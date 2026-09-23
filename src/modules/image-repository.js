@@ -594,7 +594,25 @@ function createImageRepository(options = {}) {
     if (!target) return 0;
     let attached = 0;
     for (const message of Array.isArray(target.messages) ? target.messages : []) {
-      for (const imageId of Array.isArray(message?.imageIds) ? message.imageIds : []) {
+      const imageIds = new Set();
+      const addImageId = value => {
+        const id = text(value);
+        if (id) imageIds.add(id);
+      };
+      const addArtifact = value => {
+        if (!object(value)) return;
+        addImageId(value.imageId || value.id);
+      };
+      for (const imageId of Array.isArray(message?.imageIds) ? message.imageIds : []) addImageId(imageId);
+      for (const artifact of Array.isArray(message?.artifacts) ? message.artifacts : []) addArtifact(artifact);
+      const result = object(message?.result) ? message.result : null;
+      for (const imageId of Array.isArray(result?.imageIds) ? result.imageIds : []) addImageId(imageId);
+      for (const artifact of Array.isArray(result?.artifacts) ? result.artifacts : []) addArtifact(artifact);
+      for (const candidate of Array.isArray(result?.candidates) ? result.candidates : []) {
+        addImageId(candidate?.imageId || candidate?.artifact?.imageId || candidate?.artifact?.id);
+      }
+      addImageId(result?.selectedImageId || result?.finalImageId);
+      for (const imageId of imageIds) {
         const id = text(imageId);
         if (!id || !image(id)) continue;
         const exists = [...conversations.values()].some(item => item.sessionId === text(sessionId) && item.imageId === id && !item.deleted);

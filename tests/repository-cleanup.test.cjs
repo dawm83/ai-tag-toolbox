@@ -61,6 +61,28 @@ test('clearing conversation images removes conversation references and orphaned 
   assert.equal(repository.reconcileSessionMessages('session-1'), 0);
 });
 
+test('restores generated candidates into their conversation when only the saved generation result has image IDs', () => {
+  const f = fixture();
+  f.values.set('img-2', { id: 'img-2', filename: 'generated.png', source: 'comfy' });
+  f.sessions[0].messages = [{
+    id: 'assistant-1',
+    role: 'assistant',
+    imageIds: [],
+    artifacts: [{ imageId: 'img-2' }],
+    result: {
+      imageIds: ['img-2'],
+      artifacts: [{ imageId: 'img-2' }],
+      candidates: [{ id: 'candidate-1', imageId: 'img-2' }]
+    }
+  }];
+
+  const repository = createImageRepository({ images: f.images, storage: f.storage, sessions: () => f.sessions });
+
+  assert.deepEqual(repository.listConversation('session-1').items.map(item => item.imageId), ['img-2']);
+  assert.equal(f.writes.get('conversation_image_refs')[0].sessionId, 'session-1');
+  assert.equal(f.writes.get('conversation_image_refs')[0].source, 'message');
+});
+
 test('gallery listing returns lightweight metadata when the image store provides it', () => {
   const f = fixture();
   f.images.get = id => id === 'img-1'
