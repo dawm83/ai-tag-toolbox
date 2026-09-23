@@ -1243,7 +1243,7 @@
       host.replaceChildren();
       if (!rows.length) { const empty = doc.createElement("div"); empty.className = "repo-empty"; empty.textContent = localized("ui.ai.repositoryEmpty", "No conversation images"); host.appendChild(empty); renderPendingImageStrip(); return; }
       rows.forEach(item => {
-        const asset = images?.get?.(item.imageId) || {};
+        const asset = fullImageFor(item.imageId) || images?.get?.(item.imageId) || {};
         const card = doc.createElement("article");
         card.className = "conversation-image-card";
         card.dataset.refId = item.refId;

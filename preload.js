@@ -393,7 +393,7 @@ contextBridge.exposeInMainWorld('AppModules', {
     profiles: comfy.profiles
   } : null,
   locales: localePacks,
-  version: '1.4.342'
+  version: '1.4.351'
 });
 
 

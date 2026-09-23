@@ -23,7 +23,7 @@ function boot(options = {}) {
   window.confirm = () => true;
 
   const session = { id: 's1', title: '测试会话', messages: options.initialMessages ? structuredClone(options.initialMessages) : [] };
-  const images = new Map([['img-1', { id: 'img-1', dataUrl: 'data:image/png;base64,AA==' }], ['img-2', { id: 'img-2', dataUrl: 'data:image/png;base64,AQ==' }]]);
+  const images = options.images || new Map([['img-1', { id: 'img-1', dataUrl: 'data:image/png;base64,AA==' }], ['img-2', { id: 'img-2', dataUrl: 'data:image/png;base64,AQ==' }]]);
   const gallery = [{ imageId: 'img-1', filename: 'one.png', dataUrl: 'data:image/png;base64,AA==' }];
   let runCount = 0;
   let conversationItems = options.conversationItems ? options.conversationItems.slice() : [];
@@ -827,6 +827,21 @@ test('manual candidate feedback continues only the selected image', async () => 
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.deepEqual(app.continuationCalls[0], { messageId: 'a1', candidateId: 'candidate-1', feedback: '保留人物，增强低视角' });
   app.dom.window.close();
+});
+
+test('conversation repository loads persisted image bytes through preview after restart', t => {
+  const app = boot({
+    images: new Map([['img-2', { id: 'img-2', filename: 'ComfyUI_00020_.png', status: 'ready' }]]),
+    imageStore: {
+      get: () => ({ id: 'img-2', filename: 'ComfyUI_00020_.png', status: 'ready' }),
+      preview: () => ({ imageId: 'img-2', thumbnailDataUrl: 'data:image/png;base64,RESTORED' })
+    },
+    conversationItems: [{ refId: 'r2', imageId: 'img-2', sessionId: 's1', slotNo: 20, source: 'comfy', sent: true }]
+  });
+  t.after(() => app.dom.window.close());
+  app.view.route('ai'); app.view.showAi('talk');
+  const image = app.window.document.querySelector('#talkImageRepository .conversation-image-thumb');
+  assert.equal(image.src, 'data:image/png;base64,RESTORED');
 });
 
 test('primary model image capability can be selected explicitly', t => {
