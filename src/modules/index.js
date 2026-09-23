@@ -36,5 +36,7 @@ module.exports = {
   ...require('./task-policy'),
   ...require('./task-brief'),
   ...require('./version-manager')
+  ,...require('./update-service')
+  ,...require('./update-host')
 };
 

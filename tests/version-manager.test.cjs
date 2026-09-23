@@ -64,12 +64,14 @@ test('normalizes state paths and rejects an unsafe installed directory', () => {
 
 test('transitions pending, committed and rollback state without losing installed slots', () => {
   const base = normalizeState({ activeVersion: '1.4.353', installed: [{ version: '1.4.353' }, { version: '1.4.354' }] });
-  const pending = transitionState(base, { type: 'prepare', targetVersion: '1.4.354' });
+  const pending = transitionState(base, { type: 'prepare', targetVersion: '1.4.354', pendingDirectory: '.staging/V1.4.354' });
   assert.equal(pending.pendingVersion, '1.4.354');
   assert.equal(pending.previousVersion, '1.4.353');
+  assert.equal(pending.pendingDirectory, '.staging/V1.4.354');
   const committed = transitionState(pending, { type: 'commit' });
   assert.equal(committed.activeVersion, '1.4.354');
   assert.equal(committed.pendingVersion, '');
+  assert.equal(committed.pendingDirectory, '');
   const rolledBack = transitionState(committed, { type: 'rollback', error: { code: 'LAUNCH_FAILED' } });
   assert.equal(rolledBack.activeVersion, '1.4.353');
   assert.equal(rolledBack.lastError.code, 'LAUNCH_FAILED');

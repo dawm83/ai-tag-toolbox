@@ -102,6 +102,10 @@ function normalizeRelease(record) {
 }
 
 function safeVersion(value) { return parseVersion(value)?.raw || ''; }
+function safePendingDirectory(value) {
+  const normalized = text(value).replace(/\\/g, '/');
+  return /^\.staging\/V\d+\.\d+\.\d+(?:-[a-z0-9]+)?$/i.test(normalized) ? normalized : '';
+}
 function installedRows(value) {
   const seen = new Set();
   return rows(value).map(item => {
@@ -131,6 +135,7 @@ function normalizeState(value = {}, installRoot = '') {
     activeVersion,
     previousVersion,
     pendingVersion,
+    pendingDirectory: safePendingDirectory(source.pendingDirectory),
     installed,
     lastError: object(source.lastError) ? clone(source.lastError) : null
   };
@@ -143,15 +148,15 @@ function transitionState(value, action = {}) {
   if (type === 'prepare') {
     const targetVersion = safeVersion(action.targetVersion);
     if (!targetVersion) throw failure('INVALID_VERSION', '切换目标版本无效');
-    return { ...state, previousVersion: state.activeVersion, pendingVersion: targetVersion, lastError: null };
+    return { ...state, previousVersion: state.activeVersion, pendingVersion: targetVersion, pendingDirectory: safePendingDirectory(action.pendingDirectory), lastError: null };
   }
   if (type === 'commit') {
     const targetVersion = safeVersion(action.targetVersion || state.pendingVersion);
     if (!targetVersion) throw failure('INVALID_VERSION', '没有待切换版本');
-    return { ...state, activeVersion: targetVersion, previousVersion: state.activeVersion || state.previousVersion, pendingVersion: '', lastError: null };
+    return { ...state, activeVersion: targetVersion, previousVersion: state.activeVersion || state.previousVersion, pendingVersion: '', pendingDirectory: '', lastError: null };
   }
   const fallback = state.previousVersion || state.activeVersion;
-  return { ...state, activeVersion: fallback, pendingVersion: '', lastError: object(action.error) ? clone(action.error) : { code: 'UPDATE_ROLLED_BACK', message: '版本切换已回退' } };
+  return { ...state, activeVersion: fallback, pendingVersion: '', pendingDirectory: '', lastError: object(action.error) ? clone(action.error) : { code: 'UPDATE_ROLLED_BACK', message: '版本切换已回退' } };
 }
 
 module.exports = {
