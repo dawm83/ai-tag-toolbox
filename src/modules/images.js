@@ -288,6 +288,7 @@ function parsePngMetadata(input) {
 }
 
 function normaliseInput(input, meta = {}, sequence = 1) {
+  const metadata = isObject(meta) ? meta : {};
   const source = typeof input === 'string' ? { dataUrl: input } : (isObject(input) ? input : {});
   const sourceAddress = text(source.dataUrl || source.url);
   const suppliedBytes = bytesFrom(source.bytes || source.buffer || source.data);
@@ -303,17 +304,17 @@ function normaliseInput(input, meta = {}, sequence = 1) {
     : suppliedBytes && sourceAddress && !parsedBytes
       ? dataUrlFromBytes(rawBytes, mime === 'image/*' ? 'image/png' : mime)
       : sourceAddress || dataUrlFromBytes(rawBytes, mime === 'image/*' ? 'image/png' : mime);
-  const filename = text(source.filename || source.fileName || meta.filename || meta.fileName);
+  const filename = text(source.filename || source.fileName || metadata.filename || metadata.fileName);
   const id = text(source.id || source.imageId, makeId(sequence, `${filename}|${dataUrl.slice(0, 96)}`));
   return {
     id,
     dataUrl,
-    thumbnailDataUrl: text(source.thumbnailDataUrl || source.thumbnail || meta.thumbnailDataUrl),
+    thumbnailDataUrl: text(source.thumbnailDataUrl || source.thumbnail || metadata.thumbnailDataUrl),
     filename,
     name: filename,
-    displayName: text(source.displayName || source.name || meta.displayName || meta.name, filename),
+    displayName: text(source.displayName || source.name || metadata.displayName || metadata.name, filename),
     mime,
-    source: text(source.source || meta.source, 'unknown'),
+    source: text(source.source || metadata.source, 'unknown'),
     width: Number.isFinite(Number(source.width)) ? Math.max(0, Number(source.width)) : 0,
     height: Number.isFinite(Number(source.height)) ? Math.max(0, Number(source.height)) : 0,
     bytes: rawBytes,
@@ -386,7 +387,8 @@ function createImages(options = {}) {
   }
 
   function add(input, meta = {}) {
-    const item = normaliseInput(input, meta, ++sequence);
+    const metadata = isObject(meta) ? meta : {};
+    const item = normaliseInput(input, metadata, ++sequence);
     if (!item.metadata && item.bytes) item.metadata = parsePngMetadata(item.bytes);
     if (!item.blobId && item.bytes && blobStore) {
       item.blobId = `image:${item.id}`;
@@ -394,7 +396,7 @@ function createImages(options = {}) {
     }
     persistBytes(item);
     items.set(item.id, item);
-    const bucket = text(meta.collection || meta.bucket || sourceCollection(input));
+    const bucket = text(metadata.collection || metadata.bucket || sourceCollection(input));
     if (bucket) addTo(bucket, item.id);
     persistIndex();
     return publicImage(item);

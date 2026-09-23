@@ -104,7 +104,7 @@ function boot(options = {}) {
     save: value => { comfyProfile = structuredClone(value); return structuredClone(comfyProfile); },
     setActive: () => structuredClone(comfyProfile), remove: () => false
   };
-  const modules = { catalog: options.catalog, formatTagOutput: options.formatTagOutput, assistant, favorites: options.favorites, joinFavoriteBlocks: options.joinFavoriteBlocks, characters: options.characters, runtime: { ...options.runtime }, prompts, tags, images: { get: id => images.get(id), preview: id => images.get(id) }, imageRepository: repository, preferences: options.preferences || { get: (_k, fallback) => fallback, set: () => {} }, translation: options.translation || { findReferences: () => [] }, comfy, locales: options.locales || { 'zh-CN': {} }, version: '1.4.34' };
+  const modules = { catalog: options.catalog, formatTagOutput: options.formatTagOutput, assistant, favorites: options.favorites, joinFavoriteBlocks: options.joinFavoriteBlocks, characters: options.characters, runtime: { ...options.runtime }, prompts, tags, images: { get: id => images.get(id), preview: id => images.get(id) }, imageStore: options.imageStore || null, imageRepository: repository, preferences: options.preferences || { get: (_k, fallback) => fallback, set: () => {} }, translation: options.translation || { findReferences: () => [] }, comfy, locales: options.locales || { 'zh-CN': {} }, version: '1.4.34' };
 
   for (const file of ['views/tag-location-view.js', 'views/tag-editor-view.js', 'views/settings-view.js', 'views/comfy-view.js', 'views/prompt-view.js', 'views/agent-status-view.js', 'views/call-monitor-view.js', 'modules/translation-alignment.js', 'views/translation-view.js', 'views/favorites-view.js', 'app-view.js']) window.eval(source(file));
   if (options.favoritesView) window.AppViews.favorites = { createFavoritesView: () => options.favoritesView };
@@ -850,6 +850,26 @@ test('candidate feedback remains separate from Tags and identifies its target', 
   assert.equal(shell.querySelector('textarea').getAttribute('aria-label'), '对第 1 次渲染的修改意见');
   assert.equal(shell.previousElementSibling.classList.contains('draw-candidate-tags'), true);
   app.dom.window.close();
+});
+
+test('pasting an image clipboard item into the conversation adds it to the send draft', async t => {
+  const added = [];
+  const app = boot({ imageStore: {
+    add: value => { const item = { id: 'pasted-image', ...value }; added.push(item); return item; }
+  } });
+  t.after(() => app.dom.window.close());
+  app.view.route('ai'); app.view.showAi('talk');
+  const input = app.window.document.querySelector('#talkIn');
+  input.focus();
+  const file = new app.window.File([Uint8Array.from([137, 80, 78, 71])], '截图.png', { type: 'image/png' });
+  const event = new app.window.Event('paste', { bubbles: true, cancelable: true });
+  Object.defineProperty(event, 'clipboardData', { value: { files: [], items: [{ kind: 'file', type: 'image/png', getAsFile: () => file }] } });
+  input.dispatchEvent(event);
+  await new Promise(resolve => setTimeout(resolve, 40));
+  assert.equal(event.defaultPrevented, true);
+  assert.equal(added.length, 1);
+  assert.equal(added[0].filename, '截图.png');
+  assert.ok(app.window.document.querySelector('#talkPendingStrip').style.display !== 'none');
 });
 
 test('decision-required candidates show an explicit AI decision status', () => {

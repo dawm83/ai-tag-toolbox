@@ -1691,6 +1691,17 @@
       }
       return null;
     }
+    function clipboardImageFiles(event) {
+      const clipboard = event?.clipboardData;
+      const files = [...(clipboard?.files || [])].filter(file => file?.type?.startsWith("image/"));
+      for (const item of [...(clipboard?.items || [])]) {
+        if (item?.kind !== "file" || !item.type?.startsWith("image/") || typeof item.getAsFile !== "function") continue;
+        const file = item.getAsFile();
+        if (!file || files.some(existing => existing === file || (existing.name === file.name && existing.size === file.size && existing.lastModified === file.lastModified))) continue;
+        files.push(file);
+      }
+      return files;
+    }
     async function addSendDraftImages(files) {
       let added = 0;
       for (const file of files || []) {
@@ -4286,9 +4297,7 @@
         Promise.resolve(addFilesForContext(files, context, event.target)).catch(error => notify(error?.message || String(error)));
       });
       listen(document, "paste", (event) => {
-        const files = [...(event.clipboardData?.files || [])].filter((file) =>
-          file.type?.startsWith("image/"),
-        );
+        const files = clipboardImageFiles(event);
         if (files.length) {
           const context = imageContextFromEvent(event, { useActive: true });
           if (!context) return;

@@ -144,7 +144,7 @@ function safeImageAdd(input, meta = {}) {
   delete source.src;
   if (dataUrl) source.dataUrl = dataUrl;
   else delete source.dataUrl;
-  return images?.add?.(source, safeImageMeta(meta)) || null;
+  return images?.add?.(source, safeImageMeta(meta) || {}) || null;
 }
 function safeImageGet(value) { const id = safeImageId(value); return id ? images?.get?.(id) || null : null; }
 function safeImageMeta(value) { const id = safeImageId(value); return id ? images?.getMeta?.(id) || null : null; }

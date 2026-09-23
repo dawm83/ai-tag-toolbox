@@ -10,6 +10,14 @@ const { createImages } = require('../src/modules/images');
 
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
+test('adding an image with no metadata object works for pasted files', () => {
+  const images = createImages();
+  const item = images.add({ dataUrl: 'data:image/png;base64,AA==' }, null);
+  assert.ok(item?.id);
+  assert.equal(item.displayName, '');
+  assert.equal(images.get(item.id).dataUrl, 'data:image/png;base64,AA==');
+});
+
 for (const action of ['remove', 'clear']) test(`${action} immediately after add leaves no late blob`, async () => {
   const storage = createStorage();
   const images = createImages({ storage });
