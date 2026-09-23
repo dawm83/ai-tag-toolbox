@@ -61,7 +61,7 @@ const DEFINITIONS = Object.freeze({
   'comfy.validateWorkflow': { description: '检查用户当前 API 工作流是否可用。', parameters: schema({}), outputSchema: workflowSchema },
   'comfy.render': { description: '按正向 Tag 和可选负向 Tag 出图；内部复刻任务可传当前会话的 sourceImageId。', parameters: schema({ pendingRender: pendingRenderSchema, positiveTags: { ...tagArray, minItems: 1 }, negativeTags: tagArray, sourceImageId: nonempty, denoise: { type: 'number', minimum: 0, maximum: 1 }, controlStrength: { type: 'number', minimum: 0, maximum: 2 }, batchCount: { type: 'integer', minimum: 1, maximum: 10 } }, ['positiveTags']), outputSchema: renderSchema },
   'generation.execute': { description: '生成 Tag 或图片：仅 Tag 时传 outputType=tags，普通文生图不传 sourceImageId；复刻/改图时只把明确的目标图传 sourceImageId，衣服或姿势属性参考图只转成 Tag，不作为工作流原图。程序返回候选与实际提示词。用户已提供完整角色 Tag 时放入 referenceTags，不能再把角色名拆成 characterQueries 查询。', parameters: generationExecuteSchema, outputSchema: { type: 'object' } },
-  'generation.resume': { description: '恢复暂停任务，或修订 completed/awaiting_feedback 的原任务：修改时传原 jobId、action=continue、feedback 和明确的 baseCandidateId；仅 Tag 任务可省略候选，用户只要 Tag 时传 outputType=tags。沿用原要求、原图与当前 Tag，不重新调用 generation.execute 或识图。角色确认传原 needsInput.query，已有角色传 characterId，原创人物传 original=true。', parameters: generationResumeSchema, outputSchema: { type: 'object' } }
+  'generation.resume': { description: '恢复暂停任务，或修订 completed/awaiting_feedback 的原任务：系统会绑定当前任务 jobId；修改时传 action=continue、feedback 和明确的 baseCandidateId。仅 Tag 任务可省略候选，用户只要 Tag 时传 outputType=tags。沿用原要求、原图与当前 Tag，不重新调用 generation.execute 或识图。角色确认传原 needsInput.query，已有角色传 characterId，原创人物传 original=true。', parameters: generationResumeSchema, outputSchema: { type: 'object' } }
 });
 
 function failure(code, message) { return Object.assign(new Error(message), { code }); }

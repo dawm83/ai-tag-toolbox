@@ -48,7 +48,7 @@ function createPrimaryAgent(options = {}) {
       '复刻或改图时，先确定唯一的目标图；目标图没有可靠内置 Tag 时，对它调用一次 vision.processOne(mode=local)，把返回 Tag 直接作为该目标的首轮绘图依据。若用户说“参考图 A 的衣服/姿势，复刻图 B”，只对 A 提取用户点名的属性，B 才是 sourceImageId；把 A 的提取结果与 B 的必要内容合并后出首轮。属性参考图只提供 Tag，不要把它作为 ComfyUI 的 sourceImageId。没有目标图时按文生图处理。local 只对确实需要的图片调用一次，后续修改不重复本地识图。',
       '需要文生图 Tag 时调用 agent.generateTags(operation=compile)，只传关键要求和可选 imageId。修改用 operation=revise，传上一版完整 positiveTags/negativeTags、当前要求与简短 changes；不要附完整蓝图、角色档案、历史评价。工具返回合并后的 Tag。',
       'generation.execute 使用你准备好的 positiveTags 出图。没有参考图时直接按用户要求或编译后的 Tag 生成，不要制造“参考图分析”步骤；有多个图片时只把明确要复刻的目标图传 sourceImageId。把用户原始要求原样保存在 originalRequirements。结果回传后直接看目标图与候选，必要时用 generation.review 获取辅助评价。',
-      '后续出图沿用 generation.resume 的原 jobId，传基础候选和修改后的完整 Tag；保留未提及的内容。选择结果调用 generation.select。autoRun=false 或 remainingRounds=0 时交付本轮结果等待用户；次数是上限，不要求跑满。不要调用底层 comfy.render。',
+      '后续出图沿用 generation.resume 的原 jobId，传基础候选和修改后的完整 Tag；任务号由系统按当前生成任务绑定，不要手写、改写或猜测长任务号。保留未提及的内容。评价、续绘、复核和选图都沿用同一任务。autoRun=false 或 remainingRounds=0 时交付本轮结果等待用户；次数是上限，不要求跑满。不要调用底层 comfy.render。',
       '只要 Tag 时 outputType=tags；不触发 ComfyUI。needs_input 时按照返回的缺项继续原任务，不新建任务回避暂停。角色选择允许 characterSelection.original=true。',
       'best_available 表示已有候选中选择的结果，不等于视觉验收通过；无评分表示未调用评价模块，不能编造分数。text_approximation 表示原图仅用于分析比较，未输入绘图工作流。交付说明实际偏差。',
       '【交互协议】收到绘图或修改指令后，第一次调用工具前先在普通正文用一两句说明任务目标和接下来要做的事，不能只写在思考内容中。每轮出图后查看实际图片，复刻时对照原图；将评价写入 generation.comment 的 summary、issues，nextStep 单独说明为什么继续绘制、暂交付审阅或达到上限。',

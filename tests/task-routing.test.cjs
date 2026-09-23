@@ -193,6 +193,16 @@ test('plain text generation removes an accidental source image and never require
   assert.equal(policy.allowedNames().includes('vision.processOne'), false);
 });
 
+test('generation follow-up tools use the job returned by execute even when the model mistypes it', () => {
+  const { createTaskPolicy } = require('../src/modules/task-policy');
+  const policy = createTaskPolicy({ intent: 'create_image', originalRequest: '画一个女孩' });
+  assert.equal(policy.completionFor('generation.execute', { jobId: 'job-correct-123', status: 'awaiting_feedback', decisionRequired: true }), false);
+  assert.equal(policy.prepareCall('generation.comment', { jobId: 'job-wrong-123', candidateId: 'candidate-1' }).jobId, 'job-correct-123');
+  assert.equal(policy.prepareCall('generation.review', { jobId: 'job-wrong-123', candidateId: 'candidate-1' }).jobId, 'job-correct-123');
+  assert.equal(policy.prepareCall('generation.resume', { jobId: 'job-wrong-123', action: 'continue' }).jobId, 'job-correct-123');
+  assert.equal(policy.prepareCall('generation.select', { jobId: 'job-wrong-123', candidateId: 'candidate-1' }).jobId, 'job-correct-123');
+});
+
 test('recreate policy keeps Tag compilation and review closed until the baseline job exists', () => {
   const { createTaskPolicy } = require('../src/modules/task-policy');
   const policy = createTaskPolicy({ intent: 'recreate_image', originalRequest: '复刻这张图', imageIds: ['source-1'] });

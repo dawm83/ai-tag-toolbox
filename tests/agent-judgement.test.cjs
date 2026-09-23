@@ -120,10 +120,10 @@ test('primary publishes its task before rendering and saves candidate feedback f
   const review = { summary: '人物清楚，但姿势需要调整。', issues: [{ expected: '站立', observed: '坐姿', suggestedChange: '改为站立，保留背景' }], nextAction: 'revise', nextStep: '我会再画一张，修正人物姿势。' };
   const f = setup(t, ({ turn, result }) => {
     if (turn === 1) return { ...call('generation.execute', { requirements: '画一个花园中的角色', positiveTags: ['1girl', 'garden'] }), text: '我会画一个花园中的角色，先准备提示词并生成第一张图。', reasoning: 'PRIVATE_REASONING' };
-    if (turn === 2) { jobId = result.jobId; return call('generation.comment', { jobId, candidateId: 'candidate-1', ...review }); }
+    if (turn === 2) { jobId = result.jobId; return call('generation.comment', { jobId: 'job-typo-from-model', candidateId: 'candidate-1', ...review }); }
     if (turn === 3) {
       assert.equal(result.candidates[0].primaryReview.summary, review.summary);
-      return call('generation.select', { jobId, candidateId: 'candidate-1' });
+      return call('generation.select', { jobId: 'job-typo-from-model', candidateId: 'candidate-1' });
     }
     return { text: '先交付这张图供你审阅。' };
   });
