@@ -2503,9 +2503,9 @@
     function publicMessages(message) {
       return (message.events || message.activity || []).filter(event => event.type === "assistant.message" && str(event.summary));
     }
-    function publicBody(message) {
+    function publicBody(message, legacyDrawResult = false) {
       const statements = publicMessages(message);
-      return statements.length ? statements.filter(item => item.phase === "start").map(item => item.summary).join("\n\n") : message.text || "";
+      return statements.length ? statements.filter(item => item.phase === "start").map(item => item.summary).join("\n\n") : legacyDrawResult ? "" : message.text || "";
     }
     function renderPublicReplies(row, message) {
       const replies = publicMessages(message).filter(item => item.phase !== "start");
@@ -2558,7 +2558,7 @@
               ? (message.result?.finalPrompt || candidatesPrompt(candidateRows, message.result?.finalCandidateId || message.result?.selectedCandidateId) || message.result?.prompt)
               : message.result?.prompt || parsedDraw?.prompt
             : "";
-          const bodyText = publicBody(message);
+          const bodyText = publicBody(message, drawReply && (candidateRows.length || drawPrompt));
           renderRichMessage(body, bodyText);
           if (!bodyText && message.status === "streaming" && !message.reasoning)
             body.textContent = "🤔 AI 正在思考…";
@@ -2678,7 +2678,7 @@
           ? (message.result?.finalPrompt || ((message.result?.finalCandidateId || message.result?.selectedCandidateId) ? message.result?.prompt : ""))
           : message.result?.prompt || parsedDraw?.prompt
         : "";
-      const bodyText = publicBody(message);
+      const bodyText = publicBody(message, messageHasRender(message) && message.role === "assistant" && (candidateRows.length || drawPrompt));
       updateStreamingBody(body, bodyText);
       renderPublicReplies(row, message);
       renderGenerationTags(row, message);

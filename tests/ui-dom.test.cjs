@@ -1191,7 +1191,7 @@ test('primary-selected unscored candidates are not displayed as accepted or zero
 for (const negativeEnabled of [false, true]) test(`final copy is positive Tags only and the prompt panel has no empty duplicate (negative=${negativeEnabled})`, async t => {
   const prompt = '1girl, (blue_hair:1.2), standing';
   const candidate = { id: 'candidate-1', imageId: 'img-1', prompt, negative: 'lowres', selected: true };
-  const app = boot({ initialMessages: [{ id: 'copy-final', role: 'assistant', status: 'done', text: '', result: { jobId: 'job-1', status: 'completed', prompt, negative: 'lowres', selectedCandidateId: candidate.id, candidates: [candidate] } }] });
+  const app = boot({ initialMessages: [{ id: 'copy-final', role: 'assistant', status: 'done', text: `【最终提示词】\n${prompt}\n\n【负面提示词】\nlowres`, result: { jobId: 'job-1', status: 'completed', prompt, negative: 'lowres', selectedCandidateId: candidate.id, candidates: [candidate] } }] });
   t.after(() => app.dom.window.close());
   app.assistant.setSettings({ generateNegativeTags: negativeEnabled });
   let copied;
