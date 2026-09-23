@@ -844,6 +844,22 @@ test('conversation repository loads persisted image bytes through preview after 
   assert.equal(image.src, 'data:image/png;base64,RESTORED');
 });
 
+test('selecting a restored conversation image loads its preview into the send draft', t => {
+  const app = boot({
+    images: new Map([['img-2', { id: 'img-2', filename: 'ComfyUI_00020_.png', status: 'ready' }]]),
+    imageStore: {
+      get: () => ({ id: 'img-2', filename: 'ComfyUI_00020_.png', status: 'ready' }),
+      preview: () => ({ imageId: 'img-2', thumbnailDataUrl: 'data:image/png;base64,RESTORED' })
+    },
+    conversationItems: [{ refId: 'r2', imageId: 'img-2', sessionId: 's1', slotNo: 20, source: 'comfy', sent: true }]
+  });
+  t.after(() => app.dom.window.close());
+  app.view.route('ai'); app.view.showAi('talk');
+  app.window.document.querySelector('#talkImageRepository .conversation-image-card').click();
+  const image = app.window.document.querySelector('#talkImgRow img');
+  assert.equal(image.src, 'data:image/png;base64,RESTORED');
+});
+
 test('primary model image capability can be selected explicitly', t => {
   const app = boot(); t.after(() => app.dom.window.close());
   const select = app.window.document.querySelector('#primaryVisionMode');

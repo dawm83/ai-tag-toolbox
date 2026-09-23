@@ -1217,7 +1217,7 @@
       const clearBtn = $("#talkPendingClear");
       if (clearBtn) clearBtn.style.display = drafts.length ? "" : "none";
       drafts.forEach((draft, index) => {
-        const asset = images?.get?.(draft.imageId) || {};
+        const asset = fullImageFor(draft.imageId) || images?.get?.(draft.imageId) || {};
         const wrap = doc.createElement("div");
         wrap.className = "pending-image-card";
         wrap.dataset.imageId = draft.imageId;
