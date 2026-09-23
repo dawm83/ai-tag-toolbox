@@ -141,11 +141,11 @@ const primaryTools = modules.createPrimaryTools({
 });
 assert.deepEqual(primaryTools.names(), [
   'tags.search', 'characters.search', 'conversation.listImages', 'conversation.viewImages', 'vision.processOne', 'translation.translate',
-  'agent.generateTags', 'comfy.status', 'comfy.validateWorkflow', 'comfy.render', 'generation.execute', 'generation.resume', 'generation.review', 'generation.select'
+  'agent.generateTags', 'comfy.status', 'comfy.validateWorkflow', 'comfy.render', 'generation.execute', 'generation.resume', 'generation.review', 'generation.select', 'generation.comment'
 ]);
 assert.deepEqual(primaryTools.primaryNames(), [
   'tags.search', 'characters.search', 'conversation.listImages', 'conversation.viewImages', 'vision.processOne', 'translation.translate',
-  'agent.generateTags', 'comfy.status', 'generation.execute', 'generation.resume', 'generation.review', 'generation.select'
+  'agent.generateTags', 'comfy.status', 'generation.execute', 'generation.resume', 'generation.review', 'generation.select', 'generation.comment'
 ]);
 assert.equal(primaryTools.resolve('files.read'), null);
 const render = await primaryTools.call('comfy.render', { positiveTags: ['1girl'], negativeTags: ['lowres'] }, { sessionId: 's1' });

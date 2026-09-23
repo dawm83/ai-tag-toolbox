@@ -7,8 +7,8 @@ const { compactVisionResult } = require('./vision-payload');
 const { fitDimensionsToAspectRatio } = require('./images');
 const { hasWritableDimensionBindings } = require('./comfy-workflow');
 const { applyPromptPatch } = require('./prompt-patch');
-const TOOL_NAMES = Object.freeze(['tags.search', 'characters.search', 'conversation.listImages', 'conversation.viewImages', 'vision.processOne', 'translation.translate', 'agent.generateTags', 'comfy.status', 'comfy.validateWorkflow', 'comfy.render', 'generation.execute', 'generation.resume', 'generation.review', 'generation.select']);
-const PRIMARY_TOOL_NAMES = Object.freeze(['tags.search', 'characters.search', 'conversation.listImages', 'conversation.viewImages', 'vision.processOne', 'translation.translate', 'agent.generateTags', 'comfy.status', 'generation.execute', 'generation.resume', 'generation.review', 'generation.select']);
+const TOOL_NAMES = Object.freeze(['tags.search', 'characters.search', 'conversation.listImages', 'conversation.viewImages', 'vision.processOne', 'translation.translate', 'agent.generateTags', 'comfy.status', 'comfy.validateWorkflow', 'comfy.render', 'generation.execute', 'generation.resume', 'generation.review', 'generation.select', 'generation.comment']);
+const PRIMARY_TOOL_NAMES = Object.freeze(['tags.search', 'characters.search', 'conversation.listImages', 'conversation.viewImages', 'vision.processOne', 'translation.translate', 'agent.generateTags', 'comfy.status', 'generation.execute', 'generation.resume', 'generation.review', 'generation.select', 'generation.comment']);
 const NATIVE_NAMES = new Map(TOOL_NAMES.map(name => [name.replace('.', '_'), name]));
 function text(value) { return typeof value === 'string' ? value.trim() : ''; }
 function object(value) { return value !== null && typeof value === 'object' && !Array.isArray(value); }
@@ -40,6 +40,14 @@ for (const params of [generationExecuteSchema, generationResumeSchema]) {
   params.properties.negativeTags = tagArray;
 }
 const DEFINITIONS = Object.freeze({
+  'generation.comment': {
+    description: '主 AI 查看候选后，写入给用户看的简短评价、问题/修改建议，以及下一步（revise 继续改图、deliver 暂交付审阅、limit 达到次数上限）。按界面语言填写，不写思维链或 Tag。记录会出现在图片卡并供下轮读取；不调用子代理、不出图。可与本轮的修改或选图工具先后调用。',
+    parameters: schema({
+      jobId: nonempty, candidateId: nonempty, summary: nonempty,
+      issues: { type: 'array', maxItems: 6, items: schema({ expected: string, observed: nonempty, suggestedChange: nonempty }, ['observed', 'suggestedChange']) },
+      nextAction: { type: 'string', enum: ['revise', 'deliver', 'limit'] }, nextStep: nonempty
+    }, ['jobId', 'candidateId', 'summary', 'issues', 'nextAction', 'nextStep']), outputSchema: { type: 'object' }
+  },
   'generation.review': { description: '需要第二视觉意见或主模型不能看图时，评价指定任务的一张候选，返回简短差异。此工具不会修改 Tag 或继续出图。', parameters: schema({ jobId: nonempty, candidateId: nonempty }, ['jobId', 'candidateId']), outputSchema: { type: 'object' } },
   'generation.select': { description: '主 AI 综合用户目标、自己看到的图片和工具意见后选择最终候选。没有评价记录时不伪造评分；选择后结束本轮。', parameters: schema({ jobId: nonempty, candidateId: nonempty }, ['jobId', 'candidateId']), outputSchema: { type: 'object' } },
   'tags.search': { description: '查询本站标签及释义；Tag 含义、拼写或是否属于本站词库不确定时调用。命中角色名时附带角色出处和外貌 Tag。items 按稳定 id 去重，kind 区分 tag 和 bundle，favoriteLocations 汇总收藏位置；content 是完整原文，contentOmitted=true 表示内容未返回，不得用部分文本代替。', parameters: schema({ query: { type: 'string', maxLength: 1000 }, category: string, includeAdult: { type: 'boolean' }, limit: { type: 'integer', minimum: 1,maximum: 200 } }, ['query']), outputSchema: schema({ items: { type: 'array', maxItems: 200, items: tagSchema } }, ['items']) },
@@ -346,6 +354,11 @@ function createPrimaryTools(options = {}) {
       const candidate = value?.candidates?.find(row => row.candidateId === args.candidateId);
       context.onEvent?.({ type: 'candidate.diff', stage: 'compare', candidateId: args.candidateId, summary: candidate?.summary || '对照完成', details: { issues: candidate?.issues || [], score: candidate?.score ?? null } });
       return value;
+    },
+    'generation.comment': async (args, context) => {
+      const { generation } = await scopedJob(args.jobId, context);
+      generation.comment(args, context);
+      return generation.publicResult(args.jobId);
     },
     'generation.select': async (args, context) => {
       const { generation, job } = await scopedJob(args.jobId, context);

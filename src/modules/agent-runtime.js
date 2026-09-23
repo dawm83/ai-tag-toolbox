@@ -8,7 +8,7 @@ const { assertValid } = require('./schema');
 const { createCallMonitor } = require('./call-monitor');
 const { createTaskPolicy } = require('./task-policy');
 
-const TOOL_NAMES = Object.freeze(['tags.search', 'characters.search', 'conversation.listImages', 'conversation.viewImages', 'vision.processOne', 'translation.translate', 'agent.generateTags', 'comfy.status', 'comfy.validateWorkflow', 'comfy.render', 'generation.execute', 'generation.resume', 'generation.review', 'generation.select']);
+const TOOL_NAMES = Object.freeze(['tags.search', 'characters.search', 'conversation.listImages', 'conversation.viewImages', 'vision.processOne', 'translation.translate', 'agent.generateTags', 'comfy.status', 'comfy.validateWorkflow', 'comfy.render', 'generation.execute', 'generation.resume', 'generation.review', 'generation.select', 'generation.comment']);
 const NATIVE_NAMES = new Map(TOOL_NAMES.map(name => [name.replace('.', '_'), name]));
 function text(value, fallback = '') { const output = value == null ? '' : String(value).trim(); return output || fallback; }
 function object(value) { return value !== null && typeof value === 'object' && !Array.isArray(value); }
@@ -155,7 +155,7 @@ function createAgentRuntime(options = {}) {
     const handle = requests.begin(parentId ? undefined : request.requestId, { kind, parentRequestId: parentId, rootRequestId: parent?.rootRequestId, timeoutMs: request.timeoutMs || timeoutMs, signal: request.signal || parent?.signal });
     const id = handle.requestId; const rootId = parent?.rootRequestId || id;
     if (!parent) limiter.begin(rootId, getSettings()?.limits || {});
-    const context = { requestId: id, parentRequestId: parentId, rootRequestId: rootId, signal: handle.signal, sessionId: request.sessionId || parent?.sessionId, messageId: request.messageId || parent?.messageId, settings: parent?.settings || clone(getSettings() || {}), events: [], onEvent: request.onEvent, parentContext: parent || null, partial: null, extendRootTimeout: timeoutMs => requests.extend(rootId, timeoutMs) };
+    const context = { requestId: id, parentRequestId: parentId, rootRequestId: rootId, signal: handle.signal, sessionId: request.sessionId || parent?.sessionId, messageId: request.messageId || parent?.messageId, locale: request.locale || parent?.locale || 'zh-CN', settings: parent?.settings || clone(getSettings() || {}), events: [], onEvent: request.onEvent, parentContext: parent || null, partial: null, extendRootTimeout: timeoutMs => requests.extend(rootId, timeoutMs) };
     monitor.begin({ requestId: id, rootRequestId: rootId, parentRequestId: parentId, sessionId: context.sessionId, messageId: context.messageId, kind, input: request.input || {} });
     context.captureInput = input => monitor.update(id, { input });
     active.set(id, context);
@@ -240,6 +240,7 @@ function createAgentRuntime(options = {}) {
       const partial = () => ({ ...(generationResult ? clone(generationResult) : {}), ...taskResult(), text: '', reasoning: '', toolCalls: toolCalls.slice(), events: context.events.slice(), artifacts: artifacts.map(clone), imageIds: [...new Set(artifacts.map(item => item.imageId).filter(Boolean))], transcript: transcript.map(clone) });
       const retryAttempts = new Map();
       const retryTraces = new Map();
+      let taskAnnounced = false;
       context.partial = partial();
       if (policy) emit(context, 'task.routed', { intent: request.task.intent, imageIds: request.task.imageIds || [] });
       // 流式增量不逐片写入任务事件：缓冲后节流合并，避免刷满 256 条上限。
@@ -261,6 +262,20 @@ function createAgentRuntime(options = {}) {
         const response = await race(() => client.complete(messages, { ...primaryConfig, sessionId: context.sessionId }), context.signal);
         unwrap(response); limiter.add(context.rootRequestId, response?.usage, 'primary'); const calls = responseCalls(response).map(call => normalizeCall(call, usedIds, allowedPrimaryNames));
         const responseText = outputText(response);
+        const drawingTask = ['create_image', 'recreate_image', 'compile_tags'].includes(request.task?.intent) || Boolean(generationResult) || calls.some(call => call.name.startsWith('generation.'));
+        if (drawingTask) {
+          let publicText = responseText.trim();
+          if (!taskAnnounced && !publicText && calls.length) {
+            const recreate = request.task?.intent === 'recreate_image';
+            publicText = context.locale === 'en-US'
+              ? (recreate ? 'I will recreate the reference image, first checking its Tags and generating a baseline for comparison.' : 'I will work from your request, prepare the Tags, then check the result before deciding the next step.')
+              : (recreate ? '我会按你的要求复刻参考图，先读取原图 Tag，生成第一张图后再对照差异。' : '我会根据你的要求准备提示词，再检查结果并说明下一步。');
+          }
+          if (publicText) {
+            emit(context, 'assistant.message', { phase: !taskAnnounced ? 'start' : calls.length ? 'progress' : 'final', round, summary: publicText });
+            taskAnnounced = true;
+          }
+        }
         if (!calls.length) {
           if (!responseText.trim()) throw reject('OUTPUT_INVALID', '主 AI 返回为空');
           const finalMessage = attachResponseReasoning({ role: 'assistant', content: responseText }, response);
@@ -308,6 +323,13 @@ function createAgentRuntime(options = {}) {
         context.partial = partial();
         if (terminalError) throw terminalError;
         if (paused) return context.partial;
+        const usage = policy?.isSelected() ? limiter.snapshot(context.rootRequestId) : null;
+        const maxRounds = Number(getSettings()?.limits?.maxToolRounds) || 8;
+        if (policy?.isSelected() && usage && usage.toolRounds >= maxRounds) {
+          const finalData = { ...context.partial, text: responseText.trim(), reasoning: responseReasoning(response), transcript: transcript.map(clone) };
+          context.partial = finalData;
+          return finalData;
+        }
       }
     });
   }

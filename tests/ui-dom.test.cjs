@@ -854,7 +854,7 @@ test('candidate feedback remains separate from Tags and identifies its target', 
 
 test('decision-required candidates show an explicit AI decision status', () => {
   const candidate = { id: 'candidate-1', iteration: 1, roundId: 'round-1', roundIndex: 1, imageId: 'img-1', prompt: '1girl', negative: '', evaluation: { status: 'pending' } };
-  const app = boot({ initialMessages: [{ id: 'a1', role: 'assistant', text: '', status: 'done', result: { status: 'awaiting_feedback', decisionRequired: true, jobId: 'job-1', candidates: [candidate] } }] });
+  const app = boot({ initialMessages: [{ id: 'a1', role: 'assistant', text: '', status: 'streaming', result: { status: 'awaiting_feedback', decisionRequired: true, jobId: 'job-1', candidates: [candidate] } }] });
   app.view.route('ai'); app.view.showAi('talk'); app.view.renderTalk();
   assert.match(app.window.document.querySelector('.draw-candidate-decision').textContent, /主 AI 正在判断|主 AI 判断/);
   assert.equal(app.window.document.querySelector('.draw-candidate-feedback-shell').hidden, true);
@@ -1208,4 +1208,35 @@ for (const negativeEnabled of [false, true]) test(`final copy is positive Tags o
     assert.doesNotMatch(row.textContent, /lowres|负面提示词|负向 Tag/);
     assert.equal(row.querySelector('.draw-candidate-tag-section.negative'), null);
   }
+});
+
+test('drawing shows the task introduction, primary evaluation and a separate next step instead of hiding public text', t => {
+  const primaryReview = { summary: '人数正确，姿势尚需调整。', issues: [{ expected: '站立', observed: '坐姿', suggestedChange: '移除坐姿，改为站立' }], nextAction: 'revise', nextStep: '我会再画一张，修正姿势。' };
+  const events = [{ type: 'assistant.message', phase: 'start', summary: '我会复刻参考图，先用本地 Tag 生成一张基线图。' }, { type: 'assistant.message', phase: 'final', summary: '本轮先请你查看姿势的差异。' }];
+  const app = boot({ initialMessages: [{ id: 'visible-feedback', role: 'assistant', status: 'done', text: '本轮先请你查看姿势的差异。', reasoning: 'INTERNAL_NOTE', events, result: { status: 'awaiting_feedback', jobId: 'j1', candidates: [{ id: 'candidate-1', imageId: 'img-1', prompt: 'standing', primaryReview }] } }] });
+  t.after(() => app.dom.window.close());
+  app.view.route('ai'); app.view.showAi('talk');
+  const row = app.window.document.querySelector('[data-message-id="visible-feedback"]');
+  assert.match(row.querySelector('.body').textContent, /我会复刻参考图/);
+  const card = row.querySelector('.draw-candidate');
+  const review = card.querySelector('.draw-primary-review');
+  assert(review);
+  assert.match(review.textContent, /人数正确|坐姿/);
+  assert.match(review.textContent, /移除坐姿，改为站立/);
+  assert.equal(review.closest('details'), null);
+  const next = card.querySelector('.draw-candidate-next-step');
+  assert.equal(next.textContent, primaryReview.nextStep);
+  assert.equal(next.closest('.draw-primary-review'), null);
+  assert.match(row.querySelector('.generation-public-replies').textContent, /本轮先请你/);
+  assert.doesNotMatch(row.querySelector('.generation-public-replies').textContent, /INTERNAL_NOTE/);
+});
+
+test('public narration does not hide a later failed request or leave feedback hidden after the primary stops', t => {
+  const app = boot({ initialMessages: [{ id: 'error-after-plan', role: 'assistant', status: 'error', text: '读取图片失败', events: [{ type: 'assistant.message', phase: 'start', summary: '我会先比较图片。' }], result: { status: 'awaiting_feedback', decisionRequired: true, jobId: 'j1', error: { message: '图片读取失败，请重试' }, candidates: [{ id: 'candidate-1', imageId: 'img-1', prompt: 'portrait' }] } }] });
+  t.after(() => app.dom.window.close());
+  app.view.route('ai'); app.view.showAi('talk');
+  const row = app.window.document.querySelector('[data-message-id="error-after-plan"]');
+  assert.match(row.textContent, /图片读取失败，请重试/);
+  assert.equal(row.querySelector('.draw-candidate-decision'), null);
+  assert.equal(row.querySelector('.draw-candidate-feedback-shell').hidden, false);
 });

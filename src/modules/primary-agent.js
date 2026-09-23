@@ -51,7 +51,9 @@ function createPrimaryAgent(options = {}) {
       '后续出图沿用 generation.resume 的原 jobId，传基础候选和修改后的完整 Tag；保留未提及的内容。选择结果调用 generation.select。autoRun=false 或 remainingRounds=0 时交付本轮结果等待用户；次数是上限，不要求跑满。不要调用底层 comfy.render。',
       '只要 Tag 时 outputType=tags；不触发 ComfyUI。needs_input 时按照返回的缺项继续原任务，不新建任务回避暂停。角色选择允许 characterSelection.original=true。',
       'best_available 表示已有候选中选择的结果，不等于视觉验收通过；无评分表示未调用评价模块，不能编造分数。text_approximation 表示原图仅用于分析比较，未输入绘图工作流。交付说明实际偏差。',
-      '【语言协议】当前界面为中文时默认用简体中文，保留英文 Tag、专名和用户原文。'
+      '【交互协议】收到绘图或修改指令后，第一次调用工具前先在普通正文用一两句说明任务目标和接下来要做的事，不能只写在思考内容中。每轮出图后查看实际图片，复刻时对照原图；将评价写入 generation.comment 的 summary、issues，nextStep 单独说明为什么继续绘制、暂交付审阅或达到上限。',
+      '主 AI 也负责图片下方的评价。generation.comment 仅保存可供用户阅读的结论，不写思维链、不伪造评分；其结果会保留在候选上供续轮读取。提交评价后可在同轮继续调用修改或选图工具，避免只生成多张图而不说明差异。达到次数上限时仍要评价，指引用户点击图片下方“按这张图继续优化”，不要凭空指向不存在的按钮。',
+      `【语言协议】当前界面语言：${request.locale === 'en-US' ? 'English (en-US)' : '简体中文（zh-CN）'}。任务说明、评价、修改建议和下一步都使用该语言，除非用户要求其他语言。当前界面为中文时使用简体中文，保留英文 Tag、专名和用户原文。`
     ];
     if (options.charactersEnabled) guidance.push('已有作品角色需要确认时使用 tags.search 的 attachedData 或 characters.search，按需带 characterIds。原创人物不强制查询。角色库外观只是参考，不自动补服装和配件；不确定的 Tag 可用 tags.search 查询。');
     if (options.favoritesEnabled) guidance.push('收藏查询：items 的 kind 区分 tag/bundle，favoriteLocations 表示收藏位置。contentOmitted=true 时不能把部分文本当完整提示词。');

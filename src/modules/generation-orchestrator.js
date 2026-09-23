@@ -380,7 +380,8 @@ function createGenerationOrchestrator(options = {}) {
         verdict: text(candidate.evaluation?.verdict),
         hardErrorCount: hardErrorCount(candidate),
         summary: text(candidate.evaluation?.summary).slice(0, 240),
-        issues: residualIssues(candidate).map(compactIssue)
+        issues: residualIssues(candidate).map(compactIssue),
+        ...(candidate.primaryReview ? { primaryReview: clone(candidate.primaryReview) } : {})
       })),
       residualIssues: (job.residualIssues || []).slice(0, 6).map(compactIssue),
       needsInput: job.needsInput ? clone(job.needsInput) : null,
@@ -1088,6 +1089,28 @@ function createGenerationOrchestrator(options = {}) {
   function get(jobId) {
     return uiSnapshot(jobId);
   }
+  function comment(input, context = {}) {
+    const job = jobs.get(text(input.jobId));
+    if (!job) throw failure('JOB_NOT_FOUND', '没有找到生成任务');
+    if (!context.sessionId || job.sessionId !== context.sessionId) throw failure('SESSION_UNAVAILABLE', '当前会话无权评价该任务');
+    if (context.signal?.aborted || job.status === 'cancelled') throw context.signal?.reason || failure('CANCELLED', '任务已取消');
+    if (!['awaiting_feedback', 'completed'].includes(job.status) || active.has(job.jobId)) throw failure('JOB_BUSY', '请等待当前任务结束后再评价');
+    const candidate = activeCandidate(job, input.candidateId);
+    if (!candidate) throw failure('CANDIDATE_NOT_FOUND', '没有找到要评价的候选图');
+    if (!text(input.summary) || !text(input.nextStep) || !['revise', 'deliver', 'limit'].includes(input.nextAction)) throw failure('INVALID_INPUT', '需要评价摘要、下一步和对应操作');
+    const remaining = Math.max(0, (job.agentRoundLimit ?? job.policy.maxAutoRounds) - job.successfulRounds);
+    const limited = input.nextAction === 'revise' && remaining === 0;
+    const english = context.locale === 'en-US';
+    candidate.primaryReview = {
+      summary: text(input.summary).slice(0, 1000),
+      issues: (Array.isArray(input.issues) ? input.issues : []).slice(0, 6).map(issue => ({ expected: text(issue.expected).slice(0, 500), observed: text(issue.observed).slice(0, 500), suggestedChange: text(issue.suggestedChange).slice(0, 500) })),
+      nextAction: limited ? 'limit' : input.nextAction,
+      nextStep: limited ? (english ? 'This run has reached its image limit. Use “Refine this image” below to continue with your feedback.' : '本轮已达到允许的出图次数。需要继续调整时，请在这张图下填写修改意见，点击“按这张图继续优化”。') : text(input.nextStep).slice(0, 1000),
+      updatedAt: Date.now()
+    };
+    emit(job, context, 'candidate.comment', { stage: 'compare', candidateId: candidate.id, imageId: candidate.imageId, summary: candidate.primaryReview.summary, primaryReview: candidate.primaryReview });
+    return result(job);
+  }
   function beginFeedback(jobId, candidateId, feedback, context = {}) {
     const job = jobs.get(text(jobId));
     if (!job || !job.agentControlled) throw failure('JOB_NOT_FOUND', '没有找到模型管理的任务');
@@ -1101,6 +1124,7 @@ function createGenerationOrchestrator(options = {}) {
     persist(job);
     return { jobId, baseCandidateId: base?.id || '', originalRequirements: job.originalRequirements, sourceImageId: job.sourceImageId,
       positiveTags: base?.positiveTags || job.positiveTags, negativeTags: base?.negativeTags || job.negativeTags, feedback: text(feedback),
+      ...(base?.primaryReview ? { primaryReview: clone(base.primaryReview) } : {}),
       viewImageIds: [job.sourceImageId, base?.imageId].filter(Boolean), outputType: job.outputType };
   }
   function list() {
@@ -1145,7 +1169,7 @@ function createGenerationOrchestrator(options = {}) {
     return result(job);
   }
 
-  return Object.freeze({ execute, resume, review, beginFeedback, cancel, get, list, uiSnapshot, publicResult, selectCandidate, selectAndFinish });
+  return Object.freeze({ execute, resume, review, comment, beginFeedback, cancel, get, list, uiSnapshot, publicResult, selectCandidate, selectAndFinish });
 }
 
 module.exports = {

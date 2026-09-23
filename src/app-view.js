@@ -2230,6 +2230,7 @@
       return {
         text,
         imageIds,
+        locale: ui.locale,
         primaryVision: config.primaryVisionMode === "supported" || (config.primaryVisionMode !== "unsupported" && modelIsVision(config.model)),
         nsfwEnabled: Boolean(tagSnapshot().adult),
         includeAdult: Boolean(tagSnapshot().adult),
@@ -2499,6 +2500,31 @@
       }
       row.append(panel);
     }
+    function publicMessages(message) {
+      return (message.events || message.activity || []).filter(event => event.type === "assistant.message" && str(event.summary));
+    }
+    function publicBody(message) {
+      const statements = publicMessages(message);
+      return statements.length ? statements.filter(item => item.phase === "start").map(item => item.summary).join("\n\n") : message.text || "";
+    }
+    function renderPublicReplies(row, message) {
+      const replies = publicMessages(message).filter(item => item.phase !== "start");
+      const error = message.result?.error?.message || (['error', 'timeout', 'cancelled'].includes(message.status) ? message.text : '');
+      if (error && !replies.some(item => item.summary === error)) replies.push({ summary: error, error: true });
+      let panel = $(".generation-public-replies", row);
+      if (!replies.length) { panel?.remove(); return; }
+      if (!panel) {
+        panel = doc.createElement("section"); panel.className = "generation-public-replies";
+        panel.setAttribute("aria-live", "polite");
+        row.insertBefore(panel, $(".draw-final-prompt", row) || null);
+      }
+      panel.replaceChildren();
+      for (const reply of replies) {
+        const text = doc.createElement("p"); text.textContent = reply.summary;
+        if (reply.error) text.className = 'generation-public-error';
+        panel.appendChild(text);
+      }
+    }
     function renderTalk() {
       const host = $("#talkConv");
       if (!host) return;
@@ -2524,7 +2550,7 @@
           body.className = "body";
           const candidateRows = messageHasRender(message) && (Array.isArray(message.candidates) ? message.candidates : message.result?.candidates || []);
           const drawReply = messageHasRender(message) && message.role === "assistant";
-          const parsedDraw = drawReply && !message.result?.prompt && message.text
+          const parsedDraw = drawReply && !message.result?.prompt && message.text && !publicMessages(message).length
             ? assistant?.parseReply?.(message.text)
             : null;
           const drawPrompt = drawReply
@@ -2532,7 +2558,7 @@
               ? (message.result?.finalPrompt || candidatesPrompt(candidateRows, message.result?.finalCandidateId || message.result?.selectedCandidateId) || message.result?.prompt)
               : message.result?.prompt || parsedDraw?.prompt
             : "";
-          const bodyText = drawReply && (candidateRows.length || drawPrompt) ? "" : message.text || "";
+          const bodyText = publicBody(message);
           renderRichMessage(body, bodyText);
           if (!bodyText && message.status === "streaming" && !message.reasoning)
             body.textContent = "🤔 AI 正在思考…";
@@ -2558,6 +2584,7 @@
           }
           renderActivityTimeline(row, message);
           const hasCandidates = messageHasRender(message) && renderCandidateCards(row, message);
+          renderPublicReplies(row, message);
           if (!hasCandidates && Array.isArray(message.imageIds) && message.imageIds.length) {
             const gallery = doc.createElement("div");
             gallery.className = "imgs";
@@ -2643,7 +2670,7 @@
       const body = $(".body", row);
       if (!body) return renderTalk();
       const candidateRows = messageHasRender(message) && (Array.isArray(message.candidates) ? message.candidates : message.result?.candidates || []);
-      const parsedDraw = messageHasRender(message) && !message.result?.prompt && message.text
+      const parsedDraw = messageHasRender(message) && !message.result?.prompt && message.text && !publicMessages(message).length
         ? assistant?.parseReply?.(message.text)
         : null;
       const drawPrompt = messageHasRender(message)
@@ -2651,8 +2678,9 @@
           ? (message.result?.finalPrompt || ((message.result?.finalCandidateId || message.result?.selectedCandidateId) ? message.result?.prompt : ""))
           : message.result?.prompt || parsedDraw?.prompt
         : "";
-      const bodyText = messageHasRender(message) && message.role !== "error" && (candidateRows.length || drawPrompt) ? "" : message.text || "";
+      const bodyText = publicBody(message);
       updateStreamingBody(body, bodyText);
+      renderPublicReplies(row, message);
       renderGenerationTags(row, message);
       if (!bodyText && !message.reasoning) body.textContent = "🤔 AI 正在思考…";
       if (!bodyText && message.status === "done" && candidateRows.length && !drawPrompt)
@@ -2993,6 +3021,9 @@
       if (!row || !messageHasRender(message)) return;
       $(".draw-candidates", row)?.remove();
       renderCandidateCards(row, message);
+      const candidates = $(".draw-candidates", row);
+      const below = $(".generation-public-replies", row) || $(".draw-final-prompt", row);
+      if (candidates && below) row.insertBefore(candidates, below);
       talkScroll();
     }
     function renderCandidateCards(row, message) {
@@ -3116,6 +3147,27 @@
           });
           card.appendChild(wrap);
         }
+        if (candidate.primaryReview) {
+          const review = doc.createElement("section"); review.className = "draw-primary-review";
+          const label = doc.createElement("strong"); label.textContent = localized("ui.ai.primaryReviewTitle", "主 AI 评价");
+          const summary = doc.createElement("p"); summary.textContent = candidate.primaryReview.summary || "";
+          review.append(label, summary);
+          const issues = doc.createElement("ul");
+          for (const issue of (candidate.primaryReview.issues || []).slice(0, 6)) {
+            const li = doc.createElement("li");
+            const observation = doc.createElement("span"); observation.textContent = [issue.expected ? `${localized("ui.ai.reviewExpected", "目标")}：${issue.expected}` : '', issue.observed ? `${localized("ui.ai.reviewObserved", "当前")}：${issue.observed}` : ''].filter(Boolean).join("；");
+            const change = doc.createElement("p"); change.textContent = `${localized("ui.ai.reviewSuggestion", "建议")}：${issue.suggestedChange || ''}`;
+            li.append(observation, change); issues.appendChild(li);
+          }
+          if (issues.childElementCount) review.appendChild(issues);
+          card.appendChild(review);
+          if (candidate.primaryReview.nextStep) {
+            const next = doc.createElement("p"); next.className = "draw-candidate-next-step";
+            next.dataset.action = candidate.primaryReview.nextAction || '';
+            next.textContent = candidate.primaryReview.nextStep;
+            card.appendChild(next);
+          }
+        }
         if (candidate.evaluation?.summary) {
           const evaluation = doc.createElement("p");
           evaluation.className = "draw-candidate-evaluation";
@@ -3157,7 +3209,7 @@
         card.appendChild(tags);
         const canContinue = ["awaiting_feedback", "completed"].includes(message.result?.status) && Boolean(message.result?.jobId);
         const running = message.status === "streaming" || ["preparing", "compiling", "rendering", "evaluating", "revising", "selecting", "finishing"].includes(message.result?.status);
-        if (message.result?.decisionRequired === true) {
+        if (running && message.result?.decisionRequired === true) {
           const decision = doc.createElement("div");
           decision.className = "draw-candidate-decision";
           decision.textContent = localized("ui.ai.primaryDecisionPending", "主 AI 正在判断下一步");
@@ -3165,7 +3217,7 @@
         }
         const feedbackShell = doc.createElement("section");
         feedbackShell.className = "draw-candidate-feedback-shell";
-        feedbackShell.hidden = running || !canContinue || message.result?.decisionRequired === true;
+        feedbackShell.hidden = running || !canContinue;
         const feedbackTitle = doc.createElement("div");
         feedbackTitle.className = "draw-candidate-feedback-title";
         const feedbackLabel = doc.createElement("strong");
@@ -3208,7 +3260,7 @@
           continueButton.disabled = true;
           setTalkBusy(true, label); put("#talkStatus", "正在按点评继续优化…");
           try {
-            const pending = assistant?.continueGeneration?.(message.id, candidate.id, value, { onEvent: handleTalkToolEvent });
+            const pending = assistant?.continueGeneration?.(message.id, candidate.id, value, { locale: ui.locale, onEvent: handleTalkToolEvent });
             renderTalk();
             const result = await pending;
             if (result?.ok === false) notify(result.error?.message || "继续优化失败");
@@ -3249,6 +3301,8 @@
       toolProgress("#talkStatus", event);
       updateActivityTimeline();
       const type = event?.type || "";
+      if (type === "assistant.message") updateStreamingTalk();
+      if (type === "candidate.comment") updateStreamingCandidates();
       if (type === "generation.started") put("#talkStatus", event.outputType === "tags" ? "正在准备 Tag 生成任务…" : "正在准备绘图任务…");
       if (type === "source.inspected") put("#talkStatus", "参考原图分析完成");
       if (type === "prompt.compiled") put("#talkStatus", "Tag 已生成");

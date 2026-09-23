@@ -335,7 +335,7 @@ function createAssistant(options = {}) {
     try {
       const task = routeTask({ text: body, imageIds });
       if (feedbackContext) { task.intent = 'auto'; task.feedbackJobId = feedbackContext.jobId; task.baseCandidateId = feedbackContext.baseCandidateId; task.forbidImages ||= feedbackContext.outputType === 'tags'; }
-      const result = await runtime.runPrimary({ requestId, sessionId: session.id, messageId: live.id, task, generationContext: feedbackContext ? generation.publicResult(feedbackContext.jobId) : null, messages: [...previous, current], config: publicRequestConfig(config), signal: controller.signal,
+      const result = await runtime.runPrimary({ requestId, sessionId: session.id, messageId: live.id, locale: input.locale || read('app.locale', 'zh-CN'), task, generationContext: feedbackContext ? generation.publicResult(feedbackContext.jobId) : null, messages: [...previous, current], config: publicRequestConfig(config), signal: controller.signal,
         onDelta: (delta, reasoning = '') => { if (!writable(job)) return; if (typeof delta === 'string') live.text += delta; if (typeof reasoning === 'string') live.reasoning += reasoning; schedulePersist(); observe(input.onDelta, live.text, live.reasoning, clone(live)); },
         onEvent,
         onToolCall: traces => { if (!writable(job)) return; for (const trace of array(traces)) { const index = live.toolCalls.findIndex(row => row.id === trace.id); if (index < 0) live.toolCalls.push(clone(trace)); else live.toolCalls[index] = clone(trace); } schedulePersist(); }
@@ -398,10 +398,11 @@ function createAssistant(options = {}) {
     return clone(found.message.result);
   }
   async function resumeWithJudgement(args, job, options, onEvent) {
-    const resumed = await runtime.callTool('generation.resume', args, { requestId: job.id, sessionId: job.sessionId, messageId: job.live.id, signal: job.controller.signal, onEvent });
+    const resumed = await runtime.callTool('generation.resume', args, { requestId: job.id, sessionId: job.sessionId, messageId: job.live.id, locale: options.locale || read('app.locale', 'zh-CN'), signal: job.controller.signal, onEvent });
     if (!resumed.ok || !resumed.data?.agentControlled || !resumed.data.decisionRequired || !writable(job)) return { outcome: resumed, resumed };
     const current = resumed.data;
     const decision = await runtime.runPrimary({ requestId: id('primary'), sessionId: job.sessionId, messageId: job.live.id,
+      locale: options.locale || read('app.locale', 'zh-CN'),
       task: { intent: 'auto', originalRequest: current.originalRequirements, feedbackJobId: current.jobId, forbidImages: current.outputType === 'tags' },
       generationContext: current,
       messages: [...history(job.session), { role: 'user', imageIds: current.viewImageIds || [], content: '继续原任务。确认信息或连接已恢复，请结合以下实际结果选择下一步；尚未出图时先准备确认后的 Tag：' + JSON.stringify(current) }],

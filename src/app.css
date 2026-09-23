@@ -602,6 +602,15 @@ body.aiview #catList,body.aiview #addTagBtn{display:none}
 .draw-candidate>a{display:block;border-radius:9px;overflow:hidden}
 .draw-candidate>a>img{display:block;width:100%;height:clamp(150px,22vw,260px);object-fit:contain;border-radius:9px;background:var(--bg);border:1px solid var(--border);cursor:zoom-in}
 .draw-candidate-evaluation{margin:8px 0 0;color:var(--muted);font-size:11.5px;line-height:1.55;white-space:pre-wrap;word-break:break-word}
+.draw-primary-review{margin:10px 0;padding:10px;border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:12px;line-height:1.6;background:var(--well);overflow-wrap:anywhere}
+.draw-primary-review p{margin:5px 0;white-space:pre-wrap}
+.draw-primary-review ul{margin:6px 0 0;padding-left:17px}
+.draw-primary-review li+li{margin-top:8px}
+.draw-candidate-next-step{margin:10px 0;padding:9px 10px;border-left:3px solid var(--pri);background:var(--pri-bg);color:var(--text);font-size:12px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}
+.draw-candidate-next-step[data-action="limit"]{border-color:#d97706}
+.generation-public-replies{margin:10px 0;color:var(--text);font-size:13px;line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere}
+.generation-public-replies p{margin:8px 0}
+.generation-public-error{color:var(--neg)}
 .draw-candidate-issues{margin:6px 0 0;padding:6px 0 0;border-top:1px dashed var(--border2);color:var(--muted);font-size:11px;line-height:1.5}
 .draw-candidate-issues strong{display:block;margin-bottom:2px;color:var(--text);font-size:11px}
 .draw-candidate-issues ul{margin:0;padding-left:17px}

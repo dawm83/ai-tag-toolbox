@@ -59,6 +59,7 @@ function normaliseCandidate(value = {}, index = 0) {
     evaluation: source.evaluation && typeof source.evaluation === 'object'
       ? clone(source.evaluation)
       : { status: 'pending', summary: '', recommended: false },
+    ...(source.primaryReview && typeof source.primaryReview === 'object' ? { primaryReview: clone(source.primaryReview) } : {}),
     selected: source.selected === true,
     selectionSource: text(source.selectionSource),
     createdAt: Number(source.createdAt) || Date.now()

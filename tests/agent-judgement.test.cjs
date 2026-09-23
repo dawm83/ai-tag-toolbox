@@ -113,3 +113,100 @@ test('confirming an ambiguous character returns its identity to the primary befo
   assert.equal(f.children.length, 0);
   assert.equal(f.primary.length, 3);
 });
+
+test('primary publishes its task before rendering and saves candidate feedback for both the UI and following decisions', async t => {
+  const publicEvents = [];
+  let jobId;
+  const review = { summary: '人物清楚，但姿势需要调整。', issues: [{ expected: '站立', observed: '坐姿', suggestedChange: '改为站立，保留背景' }], nextAction: 'revise', nextStep: '我会再画一张，修正人物姿势。' };
+  const f = setup(t, ({ turn, result }) => {
+    if (turn === 1) return { ...call('generation.execute', { requirements: '画一个花园中的角色', positiveTags: ['1girl', 'garden'] }), text: '我会画一个花园中的角色，先准备提示词并生成第一张图。', reasoning: 'PRIVATE_REASONING' };
+    if (turn === 2) { jobId = result.jobId; return call('generation.comment', { jobId, candidateId: 'candidate-1', ...review }); }
+    if (turn === 3) {
+      assert.equal(result.candidates[0].primaryReview.summary, review.summary);
+      return call('generation.select', { jobId, candidateId: 'candidate-1' });
+    }
+    return { text: '先交付这张图供你审阅。' };
+  });
+  await f.app.refreshCapabilities();
+  const result = await f.app.run({ text: '画一个花园中的角色', onEvent: event => publicEvents.push(event) });
+  assert.equal(result.ok, true, JSON.stringify(result.error));
+  assert.equal(result.candidates[0].primaryReview.nextStep, review.nextStep);
+  const firstPublic = publicEvents.findIndex(e => e.type === 'assistant.message');
+  assert(firstPublic >= 0);
+  assert(firstPublic < publicEvents.findIndex(e => e.type === 'candidate.rendering'));
+  assert.match(publicEvents[firstPublic].summary, /花园.*先准备/);
+  assert.doesNotMatch(JSON.stringify(publicEvents.filter(e => e.type === 'assistant.message')), /PRIVATE_REASONING/);
+  assert.equal(f.children.length, 0, 'a primary comment does not launch an auxiliary evaluator');
+  const restored = createAssistant({ storage: f.storage, images: f.images });
+  t.after(() => restored.destroy());
+  assert.equal(restored.generation.get(jobId).candidates[0].primaryReview.summary, review.summary);
+  assert.equal(restored.currentSession().messages.at(-1).result.candidates[0].primaryReview.issues[0].observed, '坐姿');
+  const denied = await restored.primaryTools.call('generation.comment', { jobId, candidateId: 'candidate-1', ...review }, { sessionId: 'foreign-session' });
+  assert.equal(denied.ok, false);
+  assert.equal(denied.error.code, 'SESSION_UNAVAILABLE');
+});
+
+test('English task announcements and exhausted-budget feedback follow the UI locale', async t => {
+  let jobId;
+  const f = setup(t, ({ turn, config, result, messages }) => {
+    assert.match(messages[0].content, /English \(en-US\)/);
+    if (turn === 1) return call('generation.execute', { requirements: 'Draw a portrait', positiveTags: ['portrait'] });
+    if (turn === 2) { jobId = result.jobId; return call('generation.comment', { jobId, candidateId: 'candidate-1', summary: 'The pose still differs.', issues: [{ observed: 'Seated pose', suggestedChange: 'Use a standing pose' }], nextAction: 'revise', nextStep: 'I will render again now.' }); }
+    return { text: 'Please review this candidate.' };
+  }, { generation: { autoRun: true, maxAutoRounds: 1 } });
+  f.storage.set('app.locale', 'en-US');
+  await f.app.refreshCapabilities();
+  const result = await f.app.run('Draw a portrait');
+  assert.equal(result.ok, true, JSON.stringify(result.error));
+  assert.match(result.events.find(e => e.type === 'assistant.message').summary, /^I will/);
+  const review = result.candidates[0].primaryReview;
+  assert.equal(review.nextAction, 'limit');
+  assert.match(review.nextStep, /image limit.*Refine this image/);
+  assert.doesNotMatch(review.nextStep, /render again now/);
+  assert.equal(f.renders.length, 1);
+  const before = JSON.stringify(f.app.generation.get(jobId));
+  const rejected = await f.app.primaryTools.call('generation.comment', { jobId, candidateId: 'missing', summary: 'wrong candidate', issues: [], nextAction: 'deliver', nextStep: 'done' }, { sessionId: f.app.currentSession().id });
+  assert.equal(rejected.error.code, 'CANDIDATE_NOT_FOUND');
+  assert.equal(JSON.stringify(f.app.generation.get(jobId)), before);
+});
+
+test('three images with a public review each finish within the default tool budget', async t => {
+  let jobId;
+  const f = setup(t, ({ turn, source, result }) => {
+    if (turn === 1) return call('vision.processOne', { imageId: source.id, mode: 'local' });
+    if (turn === 2) return call('generation.execute', { sourceImageId: source.id, positiveTags: result.tags });
+    if (!jobId && result?.jobId) jobId = result.jobId;
+    if ([3, 5, 7].includes(turn)) return call('generation.comment', { jobId, candidateId: `candidate-${(turn - 1) / 2}`, summary: '构图清楚，检查姿势差异。', issues: [], nextAction: turn === 7 ? 'deliver' : 'revise', nextStep: turn === 7 ? '这张图的构图已符合要求，先交付给你审阅。' : '我会调整姿势再绘制一张。' });
+    if (turn === 4) return call('generation.resume', { jobId, action: 'continue', baseCandidateId: 'candidate-1', positiveTags: ['3girls', 'standing', 'garden'] });
+    if (turn === 6) return call('generation.resume', { jobId, action: 'continue', baseCandidateId: 'candidate-2', positiveTags: ['4girls', 'standing', 'garden'] });
+    if (turn === 8) return call('generation.select', { jobId, candidateId: 'candidate-3' });
+    throw new Error('The saved delivery sentence is already sufficient; no extra model request is needed.');
+  }, { limits: {}, generation: { autoRun: true, maxAutoRounds: 3 } });
+  await f.app.refreshCapabilities();
+  const result = await f.app.run({ text: '复刻这张图', imageIds: [f.source.id] });
+  assert.equal(result.ok, true, JSON.stringify(result.error));
+  assert.equal(result.selectedCandidateId, 'candidate-3');
+  assert.equal(result.usage.toolRounds, 8);
+  assert.equal(f.renders.length, 3);
+  assert.equal(f.primary.length, 8);
+  assert.equal(result.candidates.filter(c => c.primaryReview).length, 3);
+  assert.match(result.candidates.at(-1).primaryReview.nextStep, /交付给你审阅/);
+});
+
+test('the primary can save a public review after selecting in the same response', async t => {
+  const f = setup(t, ({ turn, result }) => {
+    if (turn === 1) return call('generation.execute', { positiveTags: ['portrait'] });
+    if (turn === 2) return { toolCalls: [
+      ...call('generation.select', { jobId: result.jobId, candidateId: 'candidate-1' }).toolCalls,
+      ...call('generation.comment', { jobId: result.jobId, candidateId: 'candidate-1', summary: '主体已符合要求。', issues: [], nextAction: 'deliver', nextStep: '先交付这张图供你审阅。' }).toolCalls
+    ] };
+    return { text: '先交付这张图供你审阅。' };
+  });
+  await f.app.refreshCapabilities();
+  const result = await f.app.run('画一个人像');
+  assert.equal(result.ok, true, JSON.stringify(result.error));
+  assert.equal(result.toolCalls.find(c => c.name === 'generation.comment').ok, true);
+  assert.equal(result.candidates[0].primaryReview.summary, '主体已符合要求。');
+  assert.equal(result.task.complete, true);
+  assert.deepEqual(result.task.allowedTools, ['generation.comment']);
+});

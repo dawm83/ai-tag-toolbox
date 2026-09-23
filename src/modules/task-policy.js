@@ -4,11 +4,11 @@ function text(value, fallback = '') { const output = value == null ? '' : String
 function clone(value) { return value == null ? value : JSON.parse(JSON.stringify(value)); }
 function names(values) { return [...new Set((Array.isArray(values) ? values : []).map(value => text(value)).filter(Boolean))]; }
 
-const PRIMARY_TOOLS = Object.freeze(['tags.search', 'characters.search', 'conversation.listImages', 'conversation.viewImages', 'vision.processOne', 'translation.translate', 'agent.generateTags', 'comfy.status', 'generation.execute', 'generation.resume', 'generation.review', 'generation.select']);
+const PRIMARY_TOOLS = Object.freeze(['tags.search', 'characters.search', 'conversation.listImages', 'conversation.viewImages', 'vision.processOne', 'translation.translate', 'agent.generateTags', 'comfy.status', 'generation.execute', 'generation.resume', 'generation.review', 'generation.select', 'generation.comment']);
 const ROUTED = Object.freeze({
   search_tags: { allowed: ['tags.search'], completion: ['tags.search'] },
   analyze_image: { allowed: ['conversation.listImages', 'conversation.viewImages', 'vision.processOne'], completion: [] },
-  compile_tags: { allowed: PRIMARY_TOOLS.filter(name => !['comfy.status', 'generation.review', 'generation.select', 'translation.translate'].includes(name)), completion: ['generation.execute', 'generation.resume'] },
+  compile_tags: { allowed: PRIMARY_TOOLS.filter(name => !['comfy.status', 'generation.review', 'generation.select', 'generation.comment', 'translation.translate'].includes(name)), completion: ['generation.execute', 'generation.resume'] },
   translate: { allowed: ['translation.translate'], completion: ['translation.translate'] },
   answer: { allowed: [], completion: [] },
   create_image: { allowed: PRIMARY_TOOLS, completion: ['generation.execute', 'generation.resume', 'generation.select'] },
@@ -28,13 +28,14 @@ function createTaskPolicy(task = {}) {
   const route = ROUTED[snapshot.intent] || ROUTED.auto;
   let completed = false;
   let waiting = false;
+  let selected = false;
   let activeJobId = text(task.feedbackJobId);
   function allowedNames() {
-    if (completed) return [];
+    if (completed) return selected ? ['generation.comment'] : [];
     return route.allowed.filter(name => {
       if (snapshot.forbidImages && name === 'comfy.status') return false;
       if (activeJobId && name === 'generation.execute') return false;
-      if (snapshot.intent === 'recreate_image' && !activeJobId && ['agent.generateTags', 'generation.review', 'generation.select'].includes(name)) return false;
+      if (snapshot.intent === 'recreate_image' && !activeJobId && ['agent.generateTags', 'generation.review', 'generation.select', 'generation.comment'].includes(name)) return false;
       return true;
     });
   }
@@ -76,7 +77,7 @@ function createTaskPolicy(task = {}) {
   function completionFor(name, data) {
     if (name === 'generation.execute' && data?.jobId) activeJobId = data.jobId;
     if (data?.decisionRequired) return false;
-    if (name === 'generation.select') { completed = true; return true; }
+    if (name === 'generation.select') { selected = true; completed = true; return true; }
     if (!route.completion.includes(name)) return false;
     if (name === 'generation.execute' || name === 'generation.resume') {
       completed = ['completed', 'awaiting_feedback', 'needs_input', 'failed', 'cancelled'].includes(data?.status);
@@ -107,6 +108,7 @@ function createTaskPolicy(task = {}) {
   return Object.freeze({
     allows, allowedNames, prepareCall, completionFor, policyError, prompt,
     isComplete: () => completed,
+    isSelected: () => selected,
     isWaiting: () => waiting,
     filterTools: schemas => schemas.filter(row => allows(String(row.function?.name || row.name).replace('_', '.'))).map(row => {
       const copy = clone(row);
@@ -116,7 +118,7 @@ function createTaskPolicy(task = {}) {
       }
       return copy;
     }),
-    snapshot: () => ({ ...clone(snapshot), allowedTools: allowedNames(), complete: completed, waiting })
+    snapshot: () => ({ ...clone(snapshot), allowedTools: allowedNames(), complete: completed, waiting, selected })
   });
 }
 
