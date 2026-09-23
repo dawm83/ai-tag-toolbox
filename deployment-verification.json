@@ -8,7 +8,7 @@
   "scope": "Transparent recreation interaction, user-confirmed primary vision capability, local Tag first baseline and visible comparison loop",
   "checks": {
     "command": "npm run check",
-    "testsPassed": 717,
+    "testsPassed": 718,
     "testsFailed": 0,
     "realElectronWindow": "Pending user acceptance; slow launch tests skipped per AGENTS.md",
     "realAiOrComfyGeneration": false,
