@@ -172,13 +172,25 @@ test('image analysis forwards the original question, reads the selected image, a
   assert(toolNames(requests[1]).includes('vision_processOne'));
 });
 
-test('recreate policy explicitly prioritizes one local Tag pass before the first render', () => {
+test('recreate policy chooses local Tags by image role instead of forcing every image through reference flow', () => {
   const { createTaskPolicy } = require('../src/modules/task-policy');
   const policy = createTaskPolicy({ intent: 'recreate_image', originalRequest: '复刻这张图', imageIds: ['source-1'] });
   const text = policy.prompt();
-  assert.match(text, /首轮必须先调用 vision\.processOne\(mode=local\)/);
-  assert.match(text, /原样交给 generation\.execute/);
-  assert.match(text, /local 只运行一次/);
+  assert.match(text, /确定唯一目标图/);
+  assert.match(text, /属性图/);
+  assert.match(text, /local/);
+  assert.match(text, /sourceImageId/);
+});
+
+test('plain text generation removes an accidental source image and never requires image recognition', () => {
+  const { createTaskPolicy } = require('../src/modules/task-policy');
+  const policy = createTaskPolicy({ intent: 'create_image', originalRequest: '画一个蓝发女孩', imageIds: [] });
+  const prepared = policy.prepareCall('generation.execute', { sourceImageId: 'stale-image', sourceSlot: 2, mode: 'recreate', positiveTags: ['1girl'] });
+  assert.equal(prepared.mode, 'create');
+  assert.equal(prepared.sourceImageId, undefined);
+  assert.equal(prepared.sourceSlot, undefined);
+  assert.match(policy.prompt(), /没有参考图时直接按用户要求/);
+  assert.equal(policy.allowedNames().includes('vision.processOne'), false);
 });
 
 test('recreate policy keeps Tag compilation and review closed until the baseline job exists', () => {

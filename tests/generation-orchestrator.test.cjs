@@ -676,6 +676,7 @@ test('agent-controlled recreation renders supplied baseline once and returns the
   assert.equal(visible.decisionRequired, true);
   assert.deepEqual(visible.viewImageIds, ['source-1', 'img-1']);
   assert(app.events.some(event => event.type === 'baseline.prompt'));
+  assert.match(app.events.find(event => event.type === 'baseline.prompt').summary, /参考图相关 Tag/);
   assert(app.events.some(event => event.type === 'candidate.ready'));
   assert(app.events.some(event => event.type === 'generation.awaiting_feedback' && event.decisionRequired === true));
 });

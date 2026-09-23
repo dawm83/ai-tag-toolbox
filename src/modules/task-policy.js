@@ -33,6 +33,7 @@ function createTaskPolicy(task = {}) {
   function allowedNames() {
     if (completed) return selected ? ['generation.comment'] : [];
     return route.allowed.filter(name => {
+      if (snapshot.imageIds.length === 0 && ['create_image', 'recreate_image', 'compile_tags'].includes(snapshot.intent) && ['conversation.listImages', 'conversation.viewImages', 'vision.processOne'].includes(name)) return false;
       if (snapshot.forbidImages && name === 'comfy.status') return false;
       if (activeJobId && name === 'generation.execute') return false;
       if (snapshot.intent === 'recreate_image' && !activeJobId && ['agent.generateTags', 'generation.review', 'generation.select', 'generation.comment'].includes(name)) return false;
@@ -67,6 +68,10 @@ function createTaskPolicy(task = {}) {
       next.requirements = snapshot.originalRequest;
       next.originalRequirements = snapshot.originalRequest;
       if (snapshot.intent === 'create_image') next.mode = 'create';
+      if (snapshot.intent === 'create_image' && snapshot.imageIds.length === 0) {
+        delete next.sourceImageId;
+        delete next.sourceSlot;
+      }
       if (snapshot.intent === 'recreate_image') {
         next.mode = 'recreate';
         if (!next.sourceImageId && !next.sourceSlot && snapshot.imageIds.length === 1) next.sourceImageId = snapshot.imageIds[0];
@@ -100,8 +105,9 @@ function createTaskPolicy(task = {}) {
       compile_tags: '只交付 Tag。按需查看参考图或用 agent.generateTags 编译/修改；generation.execute(outputType=tags) 可保存本次 Tag，续改沿用 generation.resume。',
       answer: '直接回答当前问题，工具教程和举例不等于要求执行工具。',
       translate: '使用 translation.translate 完成翻译，然后回答。',
-      recreate_image: '有参考图且没有可靠内置 Tag 时，首轮必须先调用 vision.processOne(mode=local)，把返回 Tag 原样交给 generation.execute；不要先用 AI 描述或 generateTags 改写。local 只运行一次，后续轮次根据首轮结果和图片比较决定修改。',
-      auto: '结合上下文判断混合或模糊要求；只调用必要工具，连接 ComfyUI 本身不代表要求出图。'
+      recreate_image: '先从当前会话图片中确定唯一目标图；目标图没有可靠内置 Tag 时，对目标图调用一次 vision.processOne(mode=local)，把 Tag 作为首轮依据。若用户只把另一张图作为衣服、姿势或其他属性参考，只提取该属性，不把属性图传 sourceImageId；目标图才可作为 sourceImageId。没有目标图时按普通文生图处理，后续轮次根据结果和图片比较决定修改。',
+      create_image: '没有参考图时直接按用户要求或 agent.generateTags 返回的 Tag 文生图，不调用 conversation 或 vision 识图，也不传 sourceImageId；只有用户明确附加并关联参考图时才取用对应图片。',
+      auto: '结合上下文判断混合或模糊要求；先判断每张图片是否与当前绘制直接相关，再选择识图、Tag 编译或出图。没有参考图不要调用识图，连接 ComfyUI 本身不代表要求出图。'
     };
     return ['【本轮目标与可用能力】', `任务类型：${labels[snapshot.intent] || snapshot.intent}。`, `允许工具：${allowedNames().join('、') || '无，直接回答'}。`, workflow[snapshot.intent] || '自己选择必要模块。出图使用准备好的 Tag，结果返回后再判断；不必调用所有工具。', '用户原话定义目标，工具结果是证据。', activeJobId ? `当前任务 ${activeJobId}：后续用 generation.resume 保留同一任务。` : '', completed ? '当前已完成或等待用户输入，请整理实际结果。' : '证据和结果足够后结束。'].filter(Boolean).join('\n');
   }

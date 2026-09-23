@@ -134,7 +134,7 @@ async function testHighLevelGenerationPersistsCandidatesAndSelection() {
     },
     primaryApi: { base: 'https://example.test/v1', model: 'primary-model' },
     primaryGateway: { complete: async (messages, config) => {
-      assert.equal(config.tools.some(row => row.function.name === 'vision_processOne'), primaryRound < 2);
+      assert.equal(config.tools.some(row => row.function.name === 'vision_processOne'), false, 'plain text generation must not expose image recognition tools');
       assert.equal(config.tools.some(row => row.function.name === 'generation_execute'), primaryRound === 0);
       if (primaryRound++ === 0) return { toolCalls: [{ id: 'generate', name: 'generation_execute', arguments: { requirements: '蓝发女孩', mode: 'create', strategy: 'auto', positiveTags: ['1girl', 'blue hair'] } }] };
       if (primaryRound === 2) { const job = JSON.parse(messages.findLast(row => row.role === 'tool').content); return { toolCalls: [{ id: 'select', name: 'generation_select', arguments: { jobId: job.jobId, candidateId: 'candidate-1' } }] }; }

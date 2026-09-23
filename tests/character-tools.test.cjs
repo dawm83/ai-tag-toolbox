@@ -73,9 +73,9 @@ test('stored primary prompt receives the character contract without modifying th
   assert.match(primary.getPrompt(), /text_approximation/);
   assert.match(primary.getPrompt(), /语言协议/);
   assert.match(primary.getPrompt(), /当前界面为中文/);
-  assert.match(primary.getPrompt(), /首轮有硬性顺序.*必须先调用 vision\.processOne\(mode=local\)/s);
-  assert.match(primary.getPrompt(), /generation\.execute 的 positiveTags/);
-  assert.match(primary.getPrompt(), /禁止先让 AI 视觉描述或 generateTags 重写/s);
+  assert.match(primary.getPrompt(), /先自己判断每张图的作用|判断每张图的角色/);
+  assert.match(primary.getPrompt(), /generation\.execute/);
+  assert.match(primary.getPrompt(), /目标图.*首轮/);
   assert.equal(prompts.composePrimary(), '我的自定义提示词：请调用 comfy.render');
 });
 

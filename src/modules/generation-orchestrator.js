@@ -851,7 +851,10 @@ function createGenerationOrchestrator(options = {}) {
         } else {
           const ready = await checkPreflight(job, context);
           if (ready !== true) return ready;
-          emit(job, context, 'baseline.prompt', { stage: 'baseline', summary: `首轮使用 ${job.positiveTags.length} 个初始 Tag 出图`, details: { tagCount: job.positiveTags.length, source: job.sourceImageId ? 'reference' : 'user' } });
+          const baselineSummary = job.sourceImageId
+            ? `正在按参考图相关 Tag 生成首轮候选（${job.positiveTags.length} 个）`
+            : `正在按当前绘图 Tag 生成候选（${job.positiveTags.length} 个）`;
+          emit(job, context, 'baseline.prompt', { stage: 'baseline', summary: baselineSummary, details: { tagCount: job.positiveTags.length, source: job.sourceImageId ? 'reference' : 'user' } });
           await renderRound(job, context);
           guard(job, context);
           job.stopReason = job.policy.autoRun ? 'awaiting_agent' : 'awaiting_feedback';

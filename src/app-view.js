@@ -3317,6 +3317,7 @@
       if (type === "generation.started") put("#talkStatus", event.outputType === "tags" ? "正在准备 Tag 生成任务…" : "正在准备绘图任务…");
       if (type === "source.inspected") put("#talkStatus", "参考原图分析完成");
       if (type === "prompt.compiled") put("#talkStatus", "Tag 已生成");
+      if (type === "baseline.prompt") put("#talkStatus", event.details?.source === "reference" ? "正在按参考图相关 Tag 生成首轮候选…" : "正在按当前绘图 Tag 生成候选…");
       if (type === "candidate.rendering") put("#talkStatus", `正在生成第 ${Number(event.iteration) || 1} 张候选（尝试 ${Number(event.attempt) || 1}）…`);
       if (type === "candidate.ready" || type === "candidate-ready") {
         if (event.candidate?.id && event.candidate?.previewUrl) ui.candidatePreviews[event.candidate.id] = event.candidate.previewUrl;
