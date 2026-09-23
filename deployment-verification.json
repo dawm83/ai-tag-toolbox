@@ -1,14 +1,14 @@
 {
-  "version": "1.4.344",
+  "version": "1.4.345",
   "buildEvidenceFile": "build-info.json",
   "evidenceLocation": "Desktop package root, outside resources/app.asar",
-  "desktopDirectory": "C:/Users/admin/Desktop/AI绘画Tag工具箱V1.4.344",
+  "desktopDirectory": "C:/Users/admin/Desktop/AI绘画Tag工具箱V1.4.345",
   "sourceBranch": "codex/drawing-feedback",
   "sourceCommitEvidence": "build-info.json.sourceCommit",
   "scope": "Transparent recreation interaction, user-confirmed primary vision capability, local Tag first baseline and visible comparison loop",
   "checks": {
     "command": "npm run check",
-    "testsPassed": 701,
+    "testsPassed": 710,
     "testsFailed": 0,
     "realElectronWindow": "Pending user acceptance; slow launch tests skipped per AGENTS.md",
     "realAiOrComfyGeneration": false,
@@ -16,7 +16,7 @@
   },
   "knownLimits": [
     "Real provider image support, image understanding and generation quality require user acceptance.",
-    "Legacy saved jobs retain their original resume behavior; new tasks use primary-controlled decisions.",
+    "Legacy saved jobs retain their original resume behavior; new tasks use primary-controlled decisions and visible primary reviews.",
     "Configured reference-image workflows may still bind source images; the delivered recreationMode records the actual render path.",
     "Existing ComfyUI disconnect preference behavior is unchanged."
   ],
