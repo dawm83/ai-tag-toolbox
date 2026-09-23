@@ -695,6 +695,19 @@ test('agent-controlled rounds preserve the job, reject duplicate prompts and sto
   assert.equal(solo.renders.length, 1);
 });
 
+test('a new user feedback turn gets a fresh configured budget instead of an exhausted-limit review', async () => {
+  const app = harness({ settings: { generation: { autoRun: true, maxAutoRounds: 2 } } });
+  const first = await app.orchestrator.execute({ requirements: 'portrait', agentControlled: true, positiveTags: ['standing'] }, app.context);
+  app.orchestrator.beginFeedback(first.jobId, 'candidate-1', '换成博丽灵梦', app.context);
+  const resumed = await app.orchestrator.resume({ jobId: first.jobId, action: 'continue', baseCandidateId: 'candidate-1', positiveTags: ['reimu'], feedback: '换成博丽灵梦' }, app.context);
+  const candidateId = resumed.candidates.at(-1).id;
+  const reviewed = app.orchestrator.comment({ jobId: first.jobId, candidateId, summary: '角色已替换，但还可以继续检查细节。', issues: [{ observed: '蝴蝶结偏小', suggestedChange: '放大蝴蝶结' }], nextAction: 'revise', nextStep: '我会继续调整细节。' }, app.context);
+  const review = reviewed.candidates.find(candidate => candidate.id === candidateId).primaryReview;
+  assert.equal(review.nextAction, 'revise');
+  assert.equal(review.nextStep, '我会继续调整细节。');
+  assert.equal(app.orchestrator.publicResult(first.jobId).remainingRounds, 1);
+});
+
 test('agent-controlled generation requires a ready prompt and evaluation is explicit and session-scoped', async () => {
   const app = harness({ reviewScores: [96] });
   await assert.rejects(app.orchestrator.execute({ requirements: 'draw', agentControlled: true }, app.context), e => e.code === 'PROMPT_REQUIRED');

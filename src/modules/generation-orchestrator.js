@@ -1125,8 +1125,9 @@ function createGenerationOrchestrator(options = {}) {
     if (active.has(jobId) || job.pendingRender) throw failure('JOB_BUSY', '请先恢复当前绘图请求');
     const base = activeCandidate(job, candidateId);
     if (job.outputType !== 'tags' && !base) throw failure('CANDIDATE_NOT_FOUND', '请明确要修改的候选');
-    job.agentRoundLimit = job.successfulRounds + 1;
-    job.policy.maxRenderAttempts = job.renderAttempts + 1;
+    const feedbackBudget = Math.max(1, Math.round(Number(job.policy.maxAutoRounds) || 1));
+    job.agentRoundLimit = job.successfulRounds + feedbackBudget;
+    job.policy.maxRenderAttempts = job.renderAttempts + feedbackBudget;
     job.policy.autoRun = false;
     persist(job);
     return { jobId, baseCandidateId: base?.id || '', originalRequirements: job.originalRequirements, sourceImageId: job.sourceImageId,
