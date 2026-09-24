@@ -4,11 +4,12 @@ const { app, BrowserWindow, shell, ipcMain } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { spawn } = require('node:child_process');
-const { createUpdateService, createUpdateHost, registerUpdateIpc } = require('./src/modules');
+const { createUpdateService, createUpdateHost, registerUpdateIpc } = require(path.join(__dirname, 'src', 'modules'));
 
 function argumentValue(name, fallback = '') {
   const prefix = `${name}=`;
-  return process.argv.find(value => value.startsWith(prefix))?.slice(prefix.length) || fallback;
+  const argv = Array.isArray(process.argv) ? process.argv : [];
+  return argv.find(value => value.startsWith(prefix))?.slice(prefix.length) || fallback;
 }
 
 function installRoot() { return path.resolve(argumentValue('--update-root', app.isPackaged ? path.dirname(process.execPath) : __dirname)); }
@@ -66,7 +67,7 @@ function createWindow() {
     height: 900,
     minWidth: 980,
     minHeight: 680,
-    title: 'AI 绘画 Tag 工具箱 V1.4.353',
+    title: 'AI 绘画 Tag 工具箱 V1.4.354',
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -119,12 +120,13 @@ function createWindow() {
   return win;
 }
 
-if (process.argv.includes('--run-update-host')) {
+if ((Array.isArray(process.argv) ? process.argv : []).includes('--run-update-host')) {
   app.whenReady().then(runUpdateHost).catch(() => app.quit());
 } else {
   let updateIpcDispose = null;
   let updateHostRequested = false;
   function registerUpdateBridge(win) {
+    if (!ipcMain || typeof ipcMain.handle !== 'function') return;
     const rootDir = installRoot();
     const service = createUpdateService({ rootDir });
     updateIpcDispose = registerUpdateIpc({
