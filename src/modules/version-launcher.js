@@ -24,7 +24,7 @@ async function launchActiveVersion(options = {}) {
     await fs.promises.writeFile(temporary, JSON.stringify(state, null, 2) + '\n', 'utf8'); await fs.promises.rename(temporary, filename);
   });
   const exists = options.exists || (filename => fs.existsSync(filename));
-  const startProcess = options.startProcess || ((executable, args) => { const child = spawn(executable, args, { cwd: path.dirname(executable), detached: true, stdio: 'ignore', windowsHide: true }); child.unref(); return child; });
+  const startProcess = options.startProcess || ((executable, args) => { const child = spawn(executable, args, { cwd: path.dirname(executable), detached: true, stdio: 'ignore', windowsHide: false }); child.unref(); return child; });
   const listLegacy = options.listLegacy || (async () => fs.promises.readdir(rootDir, { withFileTypes: true }));
   const resolveLegacyExecutable = async () => {
     const rows = await listLegacy().catch(() => []);

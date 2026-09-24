@@ -55,11 +55,27 @@ test('falls back when the active slot executable is missing', async () => {
   assert.equal(writes[0].lastError.code, 'VERSION_MISSING');
 });
 
-test('keeps the launcher alive after handing off to the business process', async () => {
-  const result = await require('../src/modules/version-launcher').launchActiveVersion({
+test('launches the business GUI without the Windows hidden-window flag', async () => {
+  const fs = require('node:fs'), path = require('node:path'), vm = require('node:vm');
+  const { EventEmitter } = require('node:events');
+  const calls = [], module = { exports: {} };
+  const filename = path.resolve(__dirname, '../src/modules/version-launcher.js');
+  const moduleRequire = require('node:module').createRequire(filename);
+  vm.runInNewContext(fs.readFileSync(filename, 'utf8'), {
+    module, setTimeout,
+    require: name => name === 'node:child_process' ? { spawn(executable, args, options) {
+      calls.push({ executable, args, options });
+      const child = new EventEmitter(); child.unref = () => {};
+      return child;
+    } } : moduleRequire(name)
+  });
+  await module.exports.launchActiveVersion({
     rootDir: 'C:\\Install',
     readState: async () => ({ activeVersion: '1.4.354', previousVersion: '1.4.354', installed: [{ version: '1.4.354' }] }),
-    writeState: async () => {}, exists: async () => true, startProcess: async () => {}, waitForReady: async () => true, random: () => 'nonce'
+    writeState: async () => {}, exists: async () => true, waitForReady: async () => true, random: () => 'nonce'
   });
-  assert.equal(result.ok, true);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].executable, 'C:\\Install\\versions\\V1.4.354\\AI绘画Tag工具箱V1.4.354.exe');
+  assert.equal(calls[0].options.windowsHide, false);
+  assert.equal(calls[0].options.detached, true);
 });
