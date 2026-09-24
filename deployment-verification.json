@@ -1,8 +1,8 @@
 {
-  "version": "1.4.354",
+  "version": "1.4.355",
   "buildEvidenceFile": "build-info.json",
   "evidenceLocation": "Desktop package root, outside resources/app.asar",
-  "desktopDirectory": "C:/Users/admin/Desktop/AI绘画Tag工具箱V1.4.354",
+  "desktopDirectory": "C:/Users/admin/Desktop/AI绘画Tag工具箱V1.4.355",
   "sourceBranch": "codex/drawing-feedback",
   "sourceCommitEvidence": "build-info.json.sourceCommit",
   "scope": "GitHub Release version discovery, verified download, structured version slots, stable launcher, rollback, and shared user data",
