@@ -63,6 +63,7 @@
       comfyFollow: { "#talkConv": true },
       talkRendered: false,
       comfyCapabilities: null,
+      versionManager: { rows: [], currentVersion: modules.version == null ? '' : String(modules.version), open: false, busy: false, progress: null, error: '', offEvent: null },
       started: false,
     };
     const talkVisionFold = { builtin: null, model: null, description: false };
@@ -3701,6 +3702,7 @@
       const localizedTitle = localized("ui.document.title", doc.title);
       if (localizedTitle) doc.title = localizedTitle.replace(/V1\.4\.1/g, `V${modules.version || "1.4.92"}`);
       put("#brandSub", `V${modules.version || "1.4.92"}`);
+      updateVersionBadge();
       decorateWorkspaceControls();
       if (options.render === false) return;
       syncNavigationStates();
@@ -3716,6 +3718,77 @@
       if (ui.route === "gallery") renderGallery();
       if (ui.aiTab === "prompt") renderPrompt();
     }
+
+    function updateVersionParts(value) {
+      const match = str(value).replace(/^v/i, '').match(/^(\d+)\.(\d+)\.(\d+)$/);
+      return match ? match.slice(1).map(Number) : [0, 0, 0];
+    }
+    function updateCompare(left, right) {
+      const a = updateVersionParts(left), b = updateVersionParts(right);
+      for (let index = 0; index < a.length; index += 1) if (a[index] !== b[index]) return a[index] > b[index] ? 1 : -1;
+      return 0;
+    }
+    function updateFormat(key, fallback, values = {}) { return formatText(localized(`ui.updates.${key}`, fallback), values); }
+    function updateVersionBadge() {
+      const current = ui.versionManager.currentVersion || str(modules.version);
+      const newer = ui.versionManager.rows.some(row => row.installable && !row.current && updateCompare(row.version, current) > 0);
+      const badge = $("#brandSub");
+      badge?.classList.toggle("version-update-available", newer);
+      if (badge) badge.title = newer ? updateFormat("available", "有新版本可用") : updateFormat("title", "查看版本和更新");
+    }
+    function renderVersionManager() {
+      const modal = $("#versionModal"), list = $("#versionList"), state = ui.versionManager;
+      if (!modal || !list) return;
+      put("#versionCurrent", updateFormat("current", "当前版本：{version}", { version: `V${state.currentVersion || modules.version || "未知"}` }));
+      const status = $("#versionStatus");
+      if (status) { status.textContent = state.error || state.status || ""; status.classList.toggle("error", Boolean(state.error)); }
+      const progress = $("#versionProgress");
+      if (progress) { progress.hidden = !state.progress; progress.value = state.progress?.total ? Math.min(100, state.progress.received / state.progress.total * 100) : 0; }
+      list.replaceChildren();
+      if (!state.rows.length) { const empty = doc.createElement("p"); empty.className = "hint"; empty.textContent = updateFormat("none", "没有可用版本"); list.append(empty); updateVersionBadge(); return; }
+      for (const row of state.rows) {
+        const item = doc.createElement("div"); item.className = `version-row${row.current ? " current" : ""}`; item.dataset.updateVersion = row.version;
+        const info = doc.createElement("div");
+        const title = doc.createElement("div"); title.className = "version-row-title"; title.textContent = `${row.name || ""} V${row.version} ${row.current ? `· ${updateFormat("using", "正在使用")}` : ""}`.trim();
+        const meta = doc.createElement("div"); meta.className = "version-row-meta"; meta.textContent = [row.channel === "prerelease" ? updateFormat("prerelease", "测试版") : updateFormat("stable", "稳定版"), row.installed ? updateFormat("installed", "已安装") : "", row.publishedAt || ""].filter(Boolean).join(" · ");
+        info.append(title, meta);
+        const actions = doc.createElement("div"); actions.className = "version-row-actions";
+        if (!row.current) {
+          const button = doc.createElement("button"); button.type = "button"; button.className = "abtn btn btn-secondary"; button.dataset.updateAction = "install"; button.textContent = row.installed ? updateFormat("switch", "切换") : updateFormat("install", "下载并切换"); button.disabled = state.busy || (!row.installed && !row.installable); actions.append(button);
+        }
+        item.append(info, actions); list.append(item);
+      }
+      updateVersionBadge();
+    }
+    async function refreshVersionList() {
+      const updates = modules.updates; if (!updates) return;
+      ui.versionManager.busy = true; ui.versionManager.error = ""; ui.versionManager.status = updateFormat("checking", "正在检查 GitHub Releases…"); renderVersionManager();
+      try {
+        const state = await updates.getState?.() || {};
+        ui.versionManager.currentVersion = str(state.activeVersion, str(modules.version));
+        ui.versionManager.rows = await updates.listReleases?.() || [];
+        ui.versionManager.status = "";
+      } catch (error) { ui.versionManager.error = error?.message || updateFormat("offline", "无法连接 GitHub，仍可切换已安装版本。"); }
+      finally { ui.versionManager.busy = false; renderVersionManager(); }
+    }
+    async function installVersion(version) {
+      const updates = modules.updates, row = ui.versionManager.rows.find(item => item.version === version);
+      if (!updates || !row || row.current || ui.versionManager.busy) return;
+      ui.versionManager.busy = true; ui.versionManager.error = ""; ui.versionManager.status = row.installed ? updateFormat("restarting", "版本已准备好，程序即将重启。") : updateFormat("checking", "正在准备版本…"); renderVersionManager();
+      try {
+        if (row.installed) await updates.switchInstalled(version);
+        else {
+          const staged = await updates.download(version);
+          await updates.applyStaged(version, staged.stagedDirectory);
+        }
+        ui.versionManager.status = updateFormat("restarting", "版本已准备好，程序即将重启。");
+      } catch (error) { ui.versionManager.error = updateFormat("failed", "版本切换失败：{message}", { message: error?.message || String(error) }); ui.versionManager.busy = false; renderVersionManager(); }
+    }
+    function openVersionManager() {
+      if (!modules.updates) return notify("当前版本不支持版本管理");
+      ui.versionManager.open = true; $("#versionModal")?.classList.add("show"); refreshVersionList();
+    }
+    function closeVersionManager() { if (ui.versionManager.busy) return; ui.versionManager.open = false; $("#versionModal")?.classList.remove("show"); }
 
     function toggleThemeMenu(event) {
       event?.stopPropagation?.();
@@ -3761,6 +3834,20 @@
     }
 
     function bind() {
+      listen($("#brandSub"), "click", openVersionManager);
+      listen($("#brandSub"), "keydown", event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openVersionManager(); } });
+      listen($("#versionModalClose"), "click", closeVersionManager);
+      listen($("#versionModal"), "click", event => {
+        if (event.target === $("#versionModal")) { closeVersionManager(); return; }
+        const button = event.target.closest("[data-update-action=install]");
+        const row = button?.closest("[data-update-version]");
+        if (row) void installVersion(row.dataset.updateVersion);
+      });
+      if (modules.updates?.onEvent) ui.versionManager.offEvent = modules.updates.onEvent(event => {
+        if (event?.type !== "progress") return;
+        ui.versionManager.progress = event;
+        renderVersionManager();
+      });
       listen($("#searchPrecision"), "change", (event) => {
         ui.searchPrecision = normaliseSearchPrecision(event.target.value);
         event.target.value = ui.searchPrecision;
@@ -4419,6 +4506,7 @@
       async flushSettings() { flushSettingsSave(); await views.comfy?.flush?.(); },
       dispose() {
         removeListeners.splice(0).forEach(remove => remove());
+        ui.versionManager.offEvent?.();
         ui.unsubscribeCatalog?.(); ui.unsubscribeStorage?.();
         clearTimeout(ui.searchTimer); clearTimeout(notify.timer);
         tagEditor?.dispose(); tagLocation?.dispose();

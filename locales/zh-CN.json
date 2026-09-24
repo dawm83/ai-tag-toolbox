@@ -31,6 +31,22 @@
       "collapse": "折叠",
       "expand": "展开"
     },
+    "updates": {
+      "title": "版本管理",
+      "current": "当前版本：{version}",
+      "checking": "正在检查 GitHub Releases…",
+      "offline": "无法连接 GitHub，仍可切换已安装版本。",
+      "stable": "稳定版",
+      "prerelease": "测试版",
+      "installed": "已安装",
+      "using": "正在使用",
+      "install": "下载并切换",
+      "switch": "切换",
+      "none": "没有可用版本",
+      "progress": "正在下载：{received} / {total}",
+      "restarting": "版本已准备好，程序即将重启。",
+      "failed": "版本切换失败：{message}"
+    },
     "header": {
       "brand": "AI 绘画 Tag 工具箱",
       "menu": "分类菜单",

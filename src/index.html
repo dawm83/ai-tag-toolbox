@@ -25,7 +25,7 @@
           <button class="hbtn btn btn-icon btn-nav" id="menuBtn" data-i18n-title="ui.header.menu">☰</button>
           <div class="brand">
             <span class="logo" aria-hidden="true"><svg class="workspace-icon" viewBox="0 0 24 24"><use href="../assets/icons/workspace.svg#palette"></use></svg></span><span data-i18n="ui.header.brand">AI 绘画 Tag 工具箱</span
-            ><small id="brandSub" data-i18n="ui.common.loading"></small>
+            ><small id="brandSub" class="brand-version" role="button" tabindex="0" aria-label="版本管理" data-i18n="ui.common.loading"></small>
           </div>
         </div>
         <div class="header-leading" id="headerLeading">
@@ -725,6 +725,17 @@
           <button class="abtn ghost btn btn-ghost" id="cfmNo">取消</button>
           <button class="abtn pri danger btn btn-danger" id="cfmYes">确定</button>
         </div>
+      </div>
+    </div>
+
+    <div class="modal" id="versionModal" role="dialog" aria-modal="true" aria-labelledby="versionModalTitle" aria-hidden="true">
+      <div class="box version-box">
+        <button class="hbtn close btn btn-icon" id="versionModalClose" type="button" aria-label="关闭">✕</button>
+        <h3 id="versionModalTitle" data-i18n="ui.updates.title">版本管理</h3>
+        <p class="hint" id="versionCurrent"></p>
+        <p class="version-status" id="versionStatus" role="status"></p>
+        <progress id="versionProgress" max="100" value="0" hidden></progress>
+        <div id="versionList" class="version-list"></div>
       </div>
     </div>
 

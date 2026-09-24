@@ -104,7 +104,7 @@ function boot(options = {}) {
     save: value => { comfyProfile = structuredClone(value); return structuredClone(comfyProfile); },
     setActive: () => structuredClone(comfyProfile), remove: () => false
   };
-  const modules = { catalog: options.catalog, formatTagOutput: options.formatTagOutput, assistant, favorites: options.favorites, joinFavoriteBlocks: options.joinFavoriteBlocks, characters: options.characters, runtime: { ...options.runtime }, prompts, tags, images: { get: id => images.get(id), preview: id => images.get(id) }, imageStore: options.imageStore || null, imageRepository: repository, preferences: options.preferences || { get: (_k, fallback) => fallback, set: () => {} }, translation: options.translation || { findReferences: () => [] }, comfy, locales: options.locales || { 'zh-CN': {} }, version: '1.4.34' };
+  const modules = { catalog: options.catalog, formatTagOutput: options.formatTagOutput, assistant, favorites: options.favorites, joinFavoriteBlocks: options.joinFavoriteBlocks, characters: options.characters, runtime: { ...options.runtime }, prompts, tags, images: { get: id => images.get(id), preview: id => images.get(id) }, imageStore: options.imageStore || null, imageRepository: repository, preferences: options.preferences || { get: (_k, fallback) => fallback, set: () => {} }, translation: options.translation || { findReferences: () => [] }, comfy, updates: options.updates || null, locales: options.locales || { 'zh-CN': {} }, version: '1.4.34' };
 
   for (const file of ['views/tag-location-view.js', 'views/tag-editor-view.js', 'views/settings-view.js', 'views/comfy-view.js', 'views/prompt-view.js', 'views/agent-status-view.js', 'views/call-monitor-view.js', 'modules/translation-alignment.js', 'views/translation-view.js', 'views/favorites-view.js', 'app-view.js']) window.eval(source(file));
   if (options.favoritesView) window.AppViews.favorites = { createFavoritesView: () => options.favoritesView };
@@ -1292,4 +1292,27 @@ test('public narration does not hide a later failed request or leave feedback hi
   assert.match(row.textContent, /图片读取失败，请重试/);
   assert.equal(row.querySelector('.draw-candidate-decision'), null);
   assert.equal(row.querySelector('.draw-candidate-feedback-shell').hidden, false);
+});
+
+test('clicking the version opens the release switch panel and marks a newer release', async t => {
+  const calls = [];
+  const updates = {
+    getState: async () => ({ activeVersion: '1.4.353', installed: [{ version: '1.4.353' }] }),
+    listReleases: async () => [{ version: '1.4.354', name: '测试版', channel: 'prerelease', installable: true, installed: false, current: false, assets: { zip: { size: 1024 } } }, { version: '1.4.353', name: '当前', channel: 'installed', installable: false, installed: true, current: true, assets: {} }],
+    onEvent: () => () => {},
+    download: async version => { calls.push(['download', version]); return { version, stagedDirectory: '.staging/V1.4.354-test' }; },
+    applyStaged: async (version, directory) => { calls.push(['apply', version, directory]); return { pendingVersion: version }; },
+    switchInstalled: async version => { calls.push(['switch', version]); return { pendingVersion: version }; },
+    cancel: async () => {}
+  };
+  const app = boot({ updates });
+  t.after(() => app.dom.window.close());
+  app.window.document.querySelector('#brandSub').click();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(app.window.document.querySelector('#versionModal').classList.contains('show'), true);
+  assert.match(app.window.document.querySelector('#versionList').textContent, /1\.4\.354/);
+  assert(app.window.document.querySelector('#brandSub').classList.contains('version-update-available'));
+  app.window.document.querySelector('[data-update-version="1.4.354"] [data-update-action="install"]').click();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(calls, [['download', '1.4.354'], ['apply', '1.4.354', '.staging/V1.4.354-test']]);
 });

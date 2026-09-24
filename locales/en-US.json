@@ -31,6 +31,22 @@
       "collapse": "Collapse",
       "expand": "Expand"
     },
+    "updates": {
+      "title": "Version manager",
+      "current": "Current version: {version}",
+      "checking": "Checking GitHub Releases…",
+      "offline": "GitHub is unavailable; installed versions can still be switched.",
+      "stable": "Stable",
+      "prerelease": "Pre-release",
+      "installed": "Installed",
+      "using": "In use",
+      "install": "Download & switch",
+      "switch": "Switch",
+      "none": "No versions available",
+      "progress": "Downloading: {received} / {total}",
+      "restarting": "The version is ready. The app will restart.",
+      "failed": "Version switch failed: {message}"
+    },
     "header": {
       "brand": "AI Tag Toolbox",
       "menu": "Category menu",
