@@ -38,6 +38,28 @@ function githubAssetHost(value) {
   catch { return false; }
 }
 
+async function copyUserDataSnapshot(source, destination, backupRoot) {
+  const temporary = `${destination}.staging-${crypto.randomUUID()}`;
+  const sourceRoot = path.resolve(source);
+  const excludedRoot = path.resolve(backupRoot);
+  try {
+    await fs.promises.cp(sourceRoot, temporary, {
+      recursive: true,
+      errorOnExist: true,
+      force: false,
+      filter: entry => {
+        const resolved = path.resolve(entry);
+        return resolved !== excludedRoot && !resolved.startsWith(`${excludedRoot}${path.sep}`);
+      }
+    });
+    await fs.promises.mkdir(path.dirname(destination), { recursive: true });
+    await fs.promises.rename(temporary, destination);
+  } catch (error) {
+    await fs.promises.rm(temporary, { recursive: true, force: true }).catch(() => {});
+    throw error;
+  }
+}
+
 function openHttpsResponse(url, headers, redirectCount = 0) {
   return new Promise((resolve, reject) => {
     let parsed;
@@ -137,7 +159,7 @@ function createUpdateService(options = {}) {
   const statePath = path.resolve(text(options.statePath, path.join(rootDir, 'version-state.json')));
   const downloadDir = path.resolve(text(options.downloadDir, path.join(process.env.LOCALAPPDATA || os.tmpdir(), 'AI绘画Tag工具箱', 'downloads')));
   const userDataDir = path.resolve(text(options.userDataDir, path.join(process.env.APPDATA || path.dirname(process.execPath), 'ai-tag-toolbox-rewrite')));
-  const backupRoot = path.resolve(text(options.backupRoot, path.join(process.env.LOCALAPPDATA || os.tmpdir(), 'AI绘画Tag工具箱', 'data-backups')));
+  const backupRoot = path.resolve(text(options.backupRoot, path.join(userDataDir, 'backups')));
   const dataSchema = Number(options.dataSchema) || 1;
   const fetchJson = options.fetchJson || defaultFetchJson;
   const downloadFile = options.downloadFile || defaultDownloadFile;
@@ -218,7 +240,7 @@ function createUpdateService(options = {}) {
     if (fs.existsSync(userDataDir)) {
       await mkdir(backupDirectory);
       if (options.backupData) await options.backupData(userDataDir, backupDirectory);
-      else await fs.promises.cp(userDataDir, backupDirectory, { recursive: true, errorOnExist: true, force: false, filter: source => path.resolve(source) !== path.resolve(backupRoot) });
+      else await copyUserDataSnapshot(userDataDir, backupDirectory, backupRoot);
       await fs.promises.writeFile(path.join(backupDirectory, 'version-backup.json'), JSON.stringify({ fromVersion: state.activeVersion, toVersion: target, createdAt: new Date().toISOString(), dataSchema }, null, 2) + '\n', 'utf8');
     }
     const next = transitionState(state, { type: 'prepare', targetVersion: target, pendingDirectory: staged });
