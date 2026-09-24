@@ -136,6 +136,8 @@ function normalizeState(value = {}, installRoot = '') {
     previousVersion,
     pendingVersion,
     pendingDirectory: safePendingDirectory(source.pendingDirectory),
+    launchAttempt: object(source.launchAttempt) && text(source.launchAttempt.nonce) ? clone(source.launchAttempt) : null,
+    launchReady: object(source.launchReady) && text(source.launchReady.nonce) ? clone(source.launchReady) : null,
     installed,
     lastError: object(source.lastError) ? clone(source.lastError) : null
   };

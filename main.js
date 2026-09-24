@@ -13,6 +13,22 @@ function argumentValue(name, fallback = '') {
 
 function installRoot() { return path.resolve(argumentValue('--update-root', app.isPackaged ? path.dirname(process.execPath) : __dirname)); }
 
+async function markLaunchReady(win) {
+  const root = argumentValue('--update-root');
+  if (!root || !win || win.isDestroyed()) return;
+  try {
+    const statePath = path.join(root, 'version-state.json');
+    const state = JSON.parse(await fs.promises.readFile(statePath, 'utf8'));
+    const attempt = state.launchAttempt;
+    if (!attempt?.nonce) return;
+    const version = require('./package.json').version;
+    const next = { ...state, launchAttempt: null, launchReady: { nonce: attempt.nonce, version, readyAt: new Date().toISOString() } };
+    const temporary = `${statePath}.${process.pid}.tmp`;
+    await fs.promises.writeFile(temporary, JSON.stringify(next, null, 2) + '\n', 'utf8');
+    await fs.promises.rename(temporary, statePath);
+  } catch { /* launcher timeout handles rollback */ }
+}
+
 async function runUpdateHost() {
   const rootDir = installRoot();
   const host = createUpdateHost({ rootDir });
@@ -71,6 +87,7 @@ function createWindow() {
   win.on('maximize', syncMaximizedLayout);
   win.on('unmaximize', syncMaximizedLayout);
   win.webContents.on('dom-ready', syncMaximizedLayout);
+  win.webContents.once('did-finish-load', () => { void markLaunchReady(win); });
   // The sponsor page opens in the user's default browser. Other target=_blank
   // links (for example generated image previews) keep their existing Electron
   // behavior, while non-http URLs are never forwarded to the system browser.
