@@ -42,16 +42,20 @@ async function copyUserDataSnapshot(source, destination, backupRoot) {
   const temporary = `${destination}.staging-${crypto.randomUUID()}`;
   const sourceRoot = path.resolve(source);
   const excludedRoot = path.resolve(backupRoot);
+  async function copyDirectory(from, to) {
+    await fs.promises.mkdir(to, { recursive: true });
+    for (const entry of await fs.promises.readdir(from, { withFileTypes: true })) {
+      const childSource = path.join(from, entry.name);
+      const childDestination = path.join(to, entry.name);
+      const resolved = path.resolve(childSource);
+      if (resolved === excludedRoot || resolved.startsWith(`${excludedRoot}${path.sep}`)) continue;
+      if (entry.isDirectory()) await copyDirectory(childSource, childDestination);
+      else if (entry.isSymbolicLink()) throw failure('DATA_BACKUP_FAILED', '用户数据备份不接受符号链接');
+      else if (entry.isFile()) await fs.promises.copyFile(childSource, childDestination, fs.constants.COPYFILE_EXCL);
+    }
+  }
   try {
-    await fs.promises.cp(sourceRoot, temporary, {
-      recursive: true,
-      errorOnExist: true,
-      force: false,
-      filter: entry => {
-        const resolved = path.resolve(entry);
-        return resolved !== excludedRoot && !resolved.startsWith(`${excludedRoot}${path.sep}`);
-      }
-    });
+    await copyDirectory(sourceRoot, temporary);
     await fs.promises.mkdir(path.dirname(destination), { recursive: true });
     await fs.promises.rename(temporary, destination);
   } catch (error) {
@@ -238,8 +242,10 @@ function createUpdateService(options = {}) {
     if (!installed && !/^\.staging[\\/]V\d+\.\d+\.\d+(?:-[a-z0-9]+)?$/i.test(staged)) throw failure('VERSION_NOT_READY', '目标版本尚未安装或准备完成');
     const backupDirectory = path.join(backupRoot, `version-switch-${state.activeVersion || 'unknown'}-to-${target}-${new Date().toISOString().replace(/[:.]/g, '-')}-${random()}`);
     if (fs.existsSync(userDataDir)) {
-      await mkdir(backupDirectory);
-      if (options.backupData) await options.backupData(userDataDir, backupDirectory);
+      if (options.backupData) {
+        await mkdir(backupDirectory);
+        await options.backupData(userDataDir, backupDirectory);
+      }
       else await copyUserDataSnapshot(userDataDir, backupDirectory, backupRoot);
       await fs.promises.writeFile(path.join(backupDirectory, 'version-backup.json'), JSON.stringify({ fromVersion: state.activeVersion, toVersion: target, createdAt: new Date().toISOString(), dataSchema }, null, 2) + '\n', 'utf8');
     }

@@ -2,6 +2,9 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const { createUpdateService } = require('../src/modules/update-service');
 
 function fixture() {
@@ -57,6 +60,26 @@ test('prepares an installed or staged switch and leaves rollback state available
   assert.equal(pending.pendingVersion, '1.4.354');
   assert.equal(pending.pendingDirectory, '.staging/V1.4.354-test');
   assert.equal(pending.previousVersion, '1.4.353');
+});
+
+test('stores a non-recursive shared-data snapshot under the user data root', async t => {
+  const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'ai-tag-update-backup-'));
+  t.after(() => fs.promises.rm(root, { recursive: true, force: true }));
+  const userDataDir = path.join(root, 'user-data');
+  await fs.promises.mkdir(path.join(userDataDir, 'backups'), { recursive: true });
+  await fs.promises.writeFile(path.join(userDataDir, 'settings.json'), '{"ok":true}');
+  const state = { protocol: 1, activeVersion: '1.4.353', previousVersion: '1.4.353', installed: [{ version: '1.4.353', source: 'migration' }] };
+  const service = createUpdateService({
+    rootDir: path.join(root, 'install'), userDataDir, backupRoot: path.join(userDataDir, 'backups'),
+    readState: async () => structuredClone(state), writeState: async () => {}, random: () => 'snapshot'
+  });
+  await service.switchInstalled('1.4.353');
+  const backups = await fs.promises.readdir(path.join(userDataDir, 'backups'));
+  assert.equal(backups.length, 1);
+  const snapshot = path.join(userDataDir, 'backups', backups[0]);
+  assert.equal(await fs.promises.readFile(path.join(snapshot, 'settings.json'), 'utf8'), '{"ok":true}');
+  assert.equal(JSON.parse(await fs.promises.readFile(path.join(snapshot, 'version-backup.json'), 'utf8')).fromVersion, '1.4.353');
+  assert.equal((await fs.promises.readdir(snapshot)).includes('backups'), false);
 });
 
 test('rejects checksum mismatch before extraction', async () => {

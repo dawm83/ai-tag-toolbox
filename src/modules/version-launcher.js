@@ -53,7 +53,13 @@ async function launchActiveVersion(options = {}) {
   }
   const launch = async (versionValue, fallbackUsed, baseState = initial) => {
     const executable = resolveActiveExecutable(rootDir, { activeVersion: versionValue });
-    if (!await exists(executable)) throw failure('VERSION_MISSING', `版本槽位 V${versionValue} 不存在`);
+    if (!await exists(executable)) {
+      const error = failure('VERSION_MISSING', `版本槽位 V${versionValue} 不存在`);
+      if (fallbackUsed || !baseState.previousVersion || baseState.previousVersion === versionValue) throw error;
+      const rollback = { ...baseState, activeVersion: baseState.previousVersion, pendingVersion: '', pendingDirectory: '', launchAttempt: null, launchReady: null, lastError: { code: error.code, message: `${error.message}，已回退` } };
+      await writeState(rollback);
+      return launch(rollback.activeVersion, true, rollback);
+    }
     const nonce = (options.random || (() => crypto.randomUUID()))();
     await writeState({ ...baseState, activeVersion: versionValue, launchAttempt: { nonce, version: versionValue, startedAt: new Date().toISOString() }, launchReady: null });
     await startProcess(executable, ['--launched-by-version-host', `--update-root=${rootDir}`]);

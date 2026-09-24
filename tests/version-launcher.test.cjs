@@ -38,3 +38,19 @@ test('launches a legacy versioned executable when the state file is missing', as
   assert.equal(result.legacy, true);
   assert.deepEqual(started, [['C:\\Install\\AI绘画Tag工具箱V1.4.353.exe', ['--legacy-version-host']]]);
 });
+
+test('falls back when the active slot executable is missing', async () => {
+  const started = [], writes = [];
+  const result = await require('../src/modules/version-launcher').launchActiveVersion({
+    rootDir: 'C:\\Install',
+    readState: async () => ({ activeVersion: '1.4.354', previousVersion: '1.4.353', installed: [{ version: '1.4.353' }, { version: '1.4.354' }] }),
+    writeState: async state => writes.push(state),
+    exists: async filename => String(filename).includes('1.4.353'),
+    startProcess: async executable => started.push(executable),
+    waitForReady: async () => true,
+    random: () => 'nonce'
+  });
+  assert.equal(result.version, '1.4.353');
+  assert.deepEqual(started, ['C:\\Install\\versions\\V1.4.353\\AI绘画Tag工具箱V1.4.353.exe']);
+  assert.equal(writes[0].lastError.code, 'VERSION_MISSING');
+});
