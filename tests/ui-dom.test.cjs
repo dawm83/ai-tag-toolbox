@@ -1320,7 +1320,7 @@ test('clicking the version opens the release switch panel and marks a newer rele
 test('version panel explains that the app is up to date when no newer release exists', async t => {
   const updates = {
     getState: async () => ({ activeVersion: '1.4.355', installed: [{ version: '1.4.355' }] }),
-    listReleases: async () => [{ version: '1.4.355', name: '当前', channel: 'installed', installable: false, installed: true, current: true, assets: {} }],
+    listReleases: async () => [{ version: '1.4.355', name: '当前', channel: 'prerelease', installable: true, installed: true, current: true, assets: {} }],
     onEvent: () => () => {}
   };
   const app = boot({ updates });
@@ -1329,4 +1329,40 @@ test('version panel explains that the app is up to date when no newer release ex
   await new Promise(resolve => setImmediate(resolve));
   assert.match(app.window.document.querySelector('#versionStatus').textContent, /已是最新版本/);
   assert.doesNotMatch(app.window.document.querySelector('#versionStatus').textContent, /Error invoking|socket disconnected/);
+});
+
+for (const language of ['zh-CN', 'en-US']) test(`version lookup failure keeps installed choices and hides Electron error text (${language})`, async t => {
+  const app = boot({
+    preferences: { get: (key, fallback) => key === 'app.locale' ? language : fallback, set: () => {} },
+    locales: { 'zh-CN': require('../locales/zh-CN.json'), 'en-US': require('../locales/en-US.json') },
+    updates: {
+      getState: async () => ({ activeVersion: '1.4.355', installed: [{ version: '1.4.355' }, { version: '1.4.354' }] }),
+      listReleases: async () => { throw new Error("Error invoking remote method 'updates:list': Error: 暂时无法连接 GitHub，请检查网络后重试。"); },
+      onEvent: () => () => {}
+    }
+  });
+  t.after(() => app.dom.window.close());
+  app.window.document.querySelector('#brandSub').click();
+  await new Promise(resolve => setImmediate(resolve));
+  const status = app.window.document.querySelector('#versionStatus');
+  assert.equal(status.textContent, require(`../locales/${language}.json`).ui.updates.offline);
+  assert.equal(status.classList.contains('error'), true);
+  assert.doesNotMatch(status.textContent, /Error invoking|updates:list|socket/);
+  const localSwitch = app.window.document.querySelector('[data-update-version="1.4.354"] [data-update-action="install"]');
+  assert.ok(localSwitch, 'installed versions must remain available without GitHub');
+  assert.equal(localSwitch.disabled, false);
+});
+
+test('no published update package is explained separately from a network error', async t => {
+  const app = boot({ updates: {
+    getState: async () => ({ activeVersion: '1.4.355', installed: [{ version: '1.4.355' }] }),
+    listReleases: async () => [], onEvent: () => () => {}
+  } });
+  t.after(() => app.dom.window.close());
+  app.window.document.querySelector('#brandSub').click();
+  await new Promise(resolve => setImmediate(resolve));
+  const status = app.window.document.querySelector('#versionStatus');
+  assert.match(status.textContent, /暂未发布.*在线更新/);
+  assert.equal(status.classList.contains('error'), false);
+  assert.ok(app.window.document.querySelector('[data-update-version="1.4.355"]'));
 });

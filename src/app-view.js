@@ -3745,12 +3745,15 @@
       const progress = $("#versionProgress");
       if (progress) { progress.hidden = !state.progress; progress.value = state.progress?.total ? Math.min(100, state.progress.received / state.progress.total * 100) : 0; }
       list.replaceChildren();
-      if (!state.rows.length) { const empty = doc.createElement("p"); empty.className = "hint"; empty.textContent = updateFormat("none", "没有可用版本"); list.append(empty); updateVersionBadge(); return; }
+      if (!state.rows.length) {
+        if (!state.error && !state.busy) { const empty = doc.createElement("p"); empty.className = "hint"; empty.textContent = updateFormat("none", "没有可用版本"); list.append(empty); }
+        updateVersionBadge(); return;
+      }
       for (const row of state.rows) {
         const item = doc.createElement("div"); item.className = `version-row${row.current ? " current" : ""}`; item.dataset.updateVersion = row.version;
         const info = doc.createElement("div");
         const title = doc.createElement("div"); title.className = "version-row-title"; title.textContent = `${row.name || ""} V${row.version} ${row.current ? `· ${updateFormat("using", "正在使用")}` : ""}`.trim();
-        const meta = doc.createElement("div"); meta.className = "version-row-meta"; meta.textContent = [row.channel === "prerelease" ? updateFormat("prerelease", "测试版") : updateFormat("stable", "稳定版"), row.installed ? updateFormat("installed", "已安装") : "", row.publishedAt || ""].filter(Boolean).join(" · ");
+        const meta = doc.createElement("div"); meta.className = "version-row-meta"; meta.textContent = [row.channel === "installed" ? updateFormat("local", "本地版本") : row.channel === "prerelease" ? updateFormat("prerelease", "测试版") : updateFormat("stable", "稳定版"), row.installed ? updateFormat("installed", "已安装") : "", row.publishedAt || ""].filter(Boolean).join(" · ");
         info.append(title, meta);
         const actions = doc.createElement("div"); actions.className = "version-row-actions";
         if (!row.current) {
@@ -3766,15 +3769,18 @@
       try {
         const state = await updates.getState?.() || {};
         ui.versionManager.currentVersion = str(state.activeVersion, str(modules.version));
-        ui.versionManager.rows = await updates.listReleases?.() || [];
+        const installed = (state.installed || []).map(row => ({ version: row.version, channel: "installed", installed: true, current: row.version === ui.versionManager.currentVersion, installable: false, assets: {} }));
+        ui.versionManager.rows = installed;
+        renderVersionManager();
+        const releases = await updates.listReleases?.() || [];
+        ui.versionManager.rows = [...releases, ...installed.filter(row => !releases.some(release => release.version === row.version))];
         const newer = ui.versionManager.rows.some(row => row.installable && !row.current && updateCompare(row.version, ui.versionManager.currentVersion) > 0);
-        ui.versionManager.status = newer ? "" : updateFormat("upToDate", "当前没有可用更新版本，已是最新版本。");
-      } catch (error) {
-        const message = String(error?.message || error || "");
-        const offline = error?.code === "UPDATE_OFFLINE" || error?.code === "ECONNRESET" || /network socket|socket disconnected|secure TLS|ECONNRESET|ETIMEDOUT|ENETUNREACH|网络连接/i.test(message);
-        ui.versionManager.error = offline
-          ? updateFormat("offline", "暂时无法连接 GitHub，请检查网络后重试。")
-          : error?.message || updateFormat("offline", "无法连接 GitHub，仍可切换已安装版本。");
+        ui.versionManager.status = newer ? "" : releases.some(row => row.installable)
+          ? updateFormat("upToDate", "当前没有可用更新版本，已是最新版本。")
+          : updateFormat("unpublished", "暂未发布支持在线更新的版本，当前版本可以继续使用。");
+      } catch {
+        ui.versionManager.status = "";
+        ui.versionManager.error = updateFormat("offline", "暂时无法连接 GitHub，未能检查更新。请检查网络或代理后重试；仍可切换已安装版本。");
       }
       finally { ui.versionManager.busy = false; renderVersionManager(); }
     }
