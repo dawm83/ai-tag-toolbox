@@ -5,14 +5,14 @@
   "desktopDirectory": "C:/Users/admin/Desktop/AI绘画Tag工具箱V1.4.354",
   "sourceBranch": "codex/drawing-feedback",
   "sourceCommitEvidence": "build-info.json.sourceCommit",
-  "scope": "Transparent recreation interaction, fresh feedback-round iteration budgets, primary-controlled candidate target resolution, user-confirmed primary vision capability, local Tag first baseline and visible comparison loop",
+  "scope": "GitHub Release version discovery, verified download, structured version slots, stable launcher, rollback, and shared user data",
   "checks": {
     "command": "npm run check",
-    "testsPassed": 752,
+    "testsPassed": 755,
     "testsFailed": 0,
     "realElectronWindow": "Pending user acceptance; slow launch tests skipped per AGENTS.md",
     "realAiOrComfyGeneration": false,
-    "desktopIntegrity": "Verify all maintained sources against both mirrors and app.asar; preserve runtime dependencies, model files and versioned executable"
+    "desktopIntegrity": "Verified structured root, launcher and business ASAR entrypoints, 346 source files, 22 model files, three native modules, version state, source mirrors and executable hashes"
   },
   "knownLimits": [
     "Real provider image support, image understanding and generation quality require user acceptance.",
