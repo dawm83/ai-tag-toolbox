@@ -33,10 +33,35 @@ function relativeSlot(version) { return path.join('versions', `V${version}`); }
 function stagingSlot(version, token) { return path.join('.staging', `V${version}-${token}`); }
 function safeVersion(value) { const match = text(value).replace(/^v/i, '').match(/^\d+\.\d+\.\d+$/); return match ? match[0] : ''; }
 function checksum(value) { return text(value).match(/\b[a-f0-9]{64}\b/i)?.[0].toLowerCase() || ''; }
+function githubAssetHost(value) {
+  try { const parsed = new URL(String(value)); return parsed.protocol === 'https:' && ['github.com', 'release-assets.githubusercontent.com', 'objects.githubusercontent.com'].includes(parsed.hostname.toLowerCase()); }
+  catch { return false; }
+}
+
+function openHttpsResponse(url, headers, redirectCount = 0) {
+  return new Promise((resolve, reject) => {
+    let parsed;
+    try { parsed = new URL(String(url)); } catch { reject(failure('URL_INVALID', '下载地址无效')); return; }
+    if (parsed.protocol !== 'https:' || !['github.com', 'api.github.com', 'release-assets.githubusercontent.com', 'objects.githubusercontent.com'].includes(parsed.hostname.toLowerCase())) {
+      reject(failure('URL_REJECTED', '更新只允许从固定 GitHub 地址下载')); return;
+    }
+    const request = https.get(parsed, { headers }, response => {
+      if ([301, 302, 303, 307, 308].includes(response.statusCode || 0)) {
+        const next = response.headers.location && new URL(response.headers.location, parsed).toString();
+        response.resume();
+        if (!next || redirectCount >= 5 || !githubAssetHost(next)) { reject(failure('REDIRECT_REJECTED', '更新下载重定向地址不受允许')); return; }
+        openHttpsResponse(next, headers, redirectCount + 1).then(resolve, reject); return;
+      }
+      resolve(response);
+    });
+    request.setTimeout?.(60_000, () => request.destroy(failure('NETWORK_TIMEOUT', '连接 GitHub 超时')));
+    request.on('error', reject);
+  });
+}
 
 function requestBuffer(url, options = {}) {
   return new Promise((resolve, reject) => {
-    const request = https.get(url, { headers: { 'User-Agent': 'AI-Tag-Toolbox-Updater', Accept: 'application/vnd.github+json' } }, response => {
+    openHttpsResponse(url, { 'User-Agent': 'AI-Tag-Toolbox-Updater', Accept: 'application/vnd.github+json' }).then(response => {
       if ((response.statusCode || 0) < 200 || (response.statusCode || 0) >= 300) {
         response.resume(); reject(failure('HTTP_ERROR', `更新服务返回 HTTP ${response.statusCode || 0}`)); return;
       }
@@ -44,9 +69,8 @@ function requestBuffer(url, options = {}) {
       response.on('data', chunk => chunks.push(chunk));
       response.on('end', () => resolve(Buffer.concat(chunks)));
       response.on('error', reject);
-    });
-    request.on('error', reject);
-    options.signal?.addEventListener?.('abort', () => { request.destroy(); reject(options.signal.reason || failure('CANCELLED', '下载已取消')); }, { once: true });
+    }, reject);
+    options.signal?.addEventListener?.('abort', () => reject(options.signal.reason || failure('CANCELLED', '下载已取消')), { once: true });
   });
 }
 
@@ -59,7 +83,7 @@ async function defaultDownloadFile(url, destination, options = {}) {
   await fs.promises.mkdir(path.dirname(destination), { recursive: true });
   return new Promise((resolve, reject) => {
     const output = fs.createWriteStream(destination, { flags: 'wx' });
-    const request = https.get(url, { headers: { 'User-Agent': 'AI-Tag-Toolbox-Updater', Accept: 'application/octet-stream' } }, response => {
+    openHttpsResponse(url, { 'User-Agent': 'AI-Tag-Toolbox-Updater', Accept: 'application/octet-stream' }).then(response => {
       if ((response.statusCode || 0) < 200 || (response.statusCode || 0) >= 300) {
         response.resume(); output.close(); reject(failure('HTTP_ERROR', `下载返回 HTTP ${response.statusCode || 0}`)); return;
       }
@@ -68,9 +92,8 @@ async function defaultDownloadFile(url, destination, options = {}) {
       response.pipe(output);
       output.on('finish', () => output.close(() => resolve(destination)));
       response.on('error', error => { output.destroy(); reject(error); });
-    });
-    request.on('error', error => { output.destroy(); reject(error); });
-    options.signal?.addEventListener?.('abort', () => { request.destroy(); output.destroy(); reject(options.signal.reason || failure('CANCELLED', '下载已取消')); }, { once: true });
+    }, error => { output.destroy(); reject(error); });
+    options.signal?.addEventListener?.('abort', () => { output.destroy(); reject(options.signal.reason || failure('CANCELLED', '下载已取消')); }, { once: true });
   });
 }
 
@@ -113,6 +136,9 @@ function createUpdateService(options = {}) {
   const rootDir = path.resolve(text(options.rootDir, path.dirname(process.execPath)));
   const statePath = path.resolve(text(options.statePath, path.join(rootDir, 'version-state.json')));
   const downloadDir = path.resolve(text(options.downloadDir, path.join(process.env.LOCALAPPDATA || os.tmpdir(), 'AI绘画Tag工具箱', 'downloads')));
+  const userDataDir = path.resolve(text(options.userDataDir, path.join(process.env.APPDATA || path.dirname(process.execPath), 'ai-tag-toolbox-rewrite')));
+  const backupRoot = path.resolve(text(options.backupRoot, path.join(process.env.LOCALAPPDATA || os.tmpdir(), 'AI绘画Tag工具箱', 'data-backups')));
+  const dataSchema = Number(options.dataSchema) || 1;
   const fetchJson = options.fetchJson || defaultFetchJson;
   const downloadFile = options.downloadFile || defaultDownloadFile;
   const readText = options.readText || defaultReadText;
@@ -172,6 +198,8 @@ function createUpdateService(options = {}) {
       if (actual !== expected) throw failure('CHECKSUM_MISMATCH', '更新包 SHA-256 校验失败');
       const buildInfo = JSON.parse(await readText(release.assets.buildInfo.url));
       if (safeVersion(buildInfo.version) !== release.version || Number(buildInfo.updateProtocol || UPDATE_PROTOCOL) > UPDATE_PROTOCOL) throw failure('PACKAGE_INVALID', '更新包协议或版本不兼容');
+      const dataMin = Number(buildInfo.dataSchemaMin ?? 1), dataMax = Number(buildInfo.dataSchemaMax ?? dataMin);
+      if (!Number.isInteger(dataMin) || !Number.isInteger(dataMax) || dataMin < 1 || dataMax < dataMin || dataSchema < dataMin || dataSchema > dataMax) throw failure('DATA_SCHEMA_INCOMPATIBLE', '当前用户数据版本与目标版本不兼容');
       await extractZip(archive, staging, { signal });
       const validated = await validateStaged(staging);
       if (validated.version !== release.version) throw failure('PACKAGE_INVALID', '解压包版本不匹配');
@@ -186,6 +214,13 @@ function createUpdateService(options = {}) {
     const installed = state.installed.some(item => item.version === target);
     const staged = text(stagedDirectory);
     if (!installed && !/^\.staging[\\/]V\d+\.\d+\.\d+(?:-[a-z0-9]+)?$/i.test(staged)) throw failure('VERSION_NOT_READY', '目标版本尚未安装或准备完成');
+    const backupDirectory = path.join(backupRoot, `version-switch-${state.activeVersion || 'unknown'}-to-${target}-${new Date().toISOString().replace(/[:.]/g, '-')}-${random()}`);
+    if (fs.existsSync(userDataDir)) {
+      await mkdir(backupDirectory);
+      if (options.backupData) await options.backupData(userDataDir, backupDirectory);
+      else await fs.promises.cp(userDataDir, backupDirectory, { recursive: true, errorOnExist: true, force: false, filter: source => path.resolve(source) !== path.resolve(backupRoot) });
+      await fs.promises.writeFile(path.join(backupDirectory, 'version-backup.json'), JSON.stringify({ fromVersion: state.activeVersion, toVersion: target, createdAt: new Date().toISOString(), dataSchema }, null, 2) + '\n', 'utf8');
+    }
     const next = transitionState(state, { type: 'prepare', targetVersion: target, pendingDirectory: staged });
     return saveState(next);
   }

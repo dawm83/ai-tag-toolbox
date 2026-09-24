@@ -1,7 +1,27 @@
 'use strict';
 
-const { app, BrowserWindow, shell } = require('electron');
+const { app, BrowserWindow, shell, ipcMain } = require('electron');
 const path = require('node:path');
+const fs = require('node:fs');
+const { spawn } = require('node:child_process');
+const { createUpdateService, createUpdateHost, registerUpdateIpc } = require('./src/modules');
+
+function argumentValue(name, fallback = '') {
+  const prefix = `${name}=`;
+  return process.argv.find(value => value.startsWith(prefix))?.slice(prefix.length) || fallback;
+}
+
+function installRoot() { return path.resolve(argumentValue('--update-root', app.isPackaged ? path.dirname(process.execPath) : __dirname)); }
+
+async function runUpdateHost() {
+  const rootDir = installRoot();
+  const host = createUpdateHost({ rootDir });
+  await host.run({
+    parentPid: Number(argumentValue('--update-parent', '0')) || 0,
+    launcherPath: argumentValue('--update-launcher', path.join(rootDir, 'AI绘画Tag工具箱.exe'))
+  });
+  app.quit();
+}
 function openExternalUrl(url) {
   try {
     const parsed = new URL(String(url));
@@ -82,25 +102,56 @@ function createWindow() {
   return win;
 }
 
-const primaryInstance = app.requestSingleInstanceLock();
-if (!primaryInstance) app.quit();
-else {
-app.on('second-instance', () => {
-  const win = BrowserWindow.getAllWindows()[0];
-  if (!win) return;
-  if (win.isMinimized()) win.restore();
-  win.show(); win.focus();
-});
-app.whenReady().then(() => {
-  createWindow();
-  app.on('activate', () => {
-    if (!BrowserWindow.getAllWindows().length) createWindow();
-  });
-});
-
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
-});
+if (process.argv.includes('--run-update-host')) {
+  app.whenReady().then(runUpdateHost).catch(() => app.quit());
+} else {
+  let updateIpcDispose = null;
+  let updateHostRequested = false;
+  function registerUpdateBridge(win) {
+    const rootDir = installRoot();
+    const service = createUpdateService({ rootDir });
+    updateIpcDispose = registerUpdateIpc({
+      ipcMain,
+      service,
+      getWindow: () => win,
+      prepareClose: async () => {
+        if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return true;
+        return win.webContents.executeJavaScript('(()=>{if(window.AppModules?.assistant?.snapshot?.().busy)return false;return window.App?.flushBeforeClose?window.App.flushBeforeClose():window.AppModules?.prepareClose?.()})()').catch(() => false);
+      },
+      requestHost: async () => {
+        const launcher = path.join(rootDir, 'AI绘画Tag工具箱.exe');
+        const launcherPath = fs.existsSync(launcher) ? launcher : process.execPath;
+        const child = spawn(process.execPath, [
+          '--run-update-host', `--update-root=${rootDir}`, `--update-parent=${process.pid}`, `--update-launcher=${launcherPath}`
+        ], { detached: true, stdio: 'ignore', windowsHide: true });
+        child.unref();
+        updateHostRequested = true;
+        if (win && !win.isDestroyed()) win.destroy();
+        app.quit();
+      }
+    });
+  }
+  const primaryInstance = app.requestSingleInstanceLock();
+  if (!primaryInstance) app.quit();
+  else {
+    app.on('second-instance', () => {
+      const win = BrowserWindow.getAllWindows()[0];
+      if (!win) return;
+      if (win.isMinimized()) win.restore();
+      win.show(); win.focus();
+    });
+    app.whenReady().then(() => {
+      const win = createWindow();
+      registerUpdateBridge(win);
+      app.on('activate', () => {
+        if (!BrowserWindow.getAllWindows().length) createWindow();
+      });
+    });
+    app.on('will-quit', () => { if (!updateHostRequested) updateIpcDispose?.(); });
+    app.on('window-all-closed', () => {
+      if (process.platform !== 'darwin') app.quit();
+    });
+  }
 }
 
 

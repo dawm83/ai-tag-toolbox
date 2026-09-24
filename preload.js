@@ -2,7 +2,7 @@
 
 const path = require('node:path');
 const fs = require('node:fs');
-const { contextBridge } = require('electron');
+const { contextBridge, ipcRenderer } = require('electron');
 
 // 只在本地 preload 中构造业务模块；页面不接触 Node、文件系统或旧版全局脚本。
 // 这个桥很薄，后续模块成熟后可以直接替换成浏览器端 ESM 实现。
@@ -24,6 +24,20 @@ let runtime = null;
 let primaryTools = null;
 let translationProxyTarget = null;
 const localePacks = {};
+const updateBridge = ipcRenderer ? {
+  getState: () => ipcRenderer.invoke('updates:get-state'),
+  listReleases: () => ipcRenderer.invoke('updates:list'),
+  download: version => ipcRenderer.invoke('updates:download', version),
+  prepareSwitch: (version, stagedDirectory = '') => ipcRenderer.invoke('updates:prepare-switch', version, stagedDirectory),
+  applyStaged: (version, stagedDirectory = '') => ipcRenderer.invoke('updates:apply-staged', version, stagedDirectory),
+  switchInstalled: version => ipcRenderer.invoke('updates:switch-installed', version),
+  cancel: () => ipcRenderer.invoke('updates:cancel'),
+  onEvent: listener => {
+    const handler = (_event, value) => listener?.(value);
+    ipcRenderer.on('updates:event', handler);
+    return () => ipcRenderer.removeListener('updates:event', handler);
+  }
+} : null;
 
 try {
   const modules = require(path.join(__dirname, 'src', 'modules'));
@@ -394,6 +408,7 @@ contextBridge.exposeInMainWorld('AppModules', {
     profiles: comfy.profiles
   } : null,
   locales: localePacks,
+  updates: updateBridge,
   version: '1.4.353'
 });
 
