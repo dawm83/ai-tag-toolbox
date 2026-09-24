@@ -3767,9 +3767,12 @@
         const state = await updates.getState?.() || {};
         ui.versionManager.currentVersion = str(state.activeVersion, str(modules.version));
         ui.versionManager.rows = await updates.listReleases?.() || [];
-        ui.versionManager.status = "";
+        const newer = ui.versionManager.rows.some(row => row.installable && !row.current && updateCompare(row.version, ui.versionManager.currentVersion) > 0);
+        ui.versionManager.status = newer ? "" : updateFormat("upToDate", "当前没有可用更新版本，已是最新版本。");
       } catch (error) {
-        ui.versionManager.error = error?.code === "UPDATE_OFFLINE" || error?.code === "ECONNRESET"
+        const message = String(error?.message || error || "");
+        const offline = error?.code === "UPDATE_OFFLINE" || error?.code === "ECONNRESET" || /network socket|socket disconnected|secure TLS|ECONNRESET|ETIMEDOUT|ENETUNREACH|网络连接/i.test(message);
+        ui.versionManager.error = offline
           ? updateFormat("offline", "暂时无法连接 GitHub，请检查网络后重试。")
           : error?.message || updateFormat("offline", "无法连接 GitHub，仍可切换已安装版本。");
       }

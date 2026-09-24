@@ -2,7 +2,8 @@
 
 function failure(code, message) { return Object.assign(new Error(message), { code }); }
 function publicUpdateError(error) {
-  if (error?.code === 'NETWORK_TIMEOUT' || error?.code === 'ECONNRESET' || error?.code === 'ENETUNREACH') return failure('UPDATE_OFFLINE', '暂时无法连接 GitHub，请检查网络后重试。');
+  const message = String(error?.message || error || '');
+  if (error?.code === 'NETWORK_TIMEOUT' || error?.code === 'ECONNRESET' || error?.code === 'ENETUNREACH' || /network socket|socket disconnected|secure TLS|ECONNRESET|ENETUNREACH|ETIMEDOUT|网络连接/i.test(message)) return failure('UPDATE_OFFLINE', '暂时无法连接 GitHub，请检查网络后重试。');
   if (error?.code === 'HTTP_ERROR') return failure('UPDATE_SERVICE_ERROR', 'GitHub 版本服务暂时不可用，请稍后重试。');
   return error;
 }

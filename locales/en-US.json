@@ -36,6 +36,7 @@
       "current": "Current version: {version}",
       "checking": "Checking GitHub Releases…",
       "offline": "GitHub is unavailable; installed versions can still be switched.",
+      "upToDate": "No newer version is available. You are up to date.",
       "stable": "Stable",
       "prerelease": "Pre-release",
       "installed": "Installed",

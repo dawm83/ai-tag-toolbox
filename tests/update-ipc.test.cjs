@@ -38,6 +38,15 @@ test('maps network failures to a user-readable update message', async () => {
   await assert.rejects(handlers.get('updates:list')({}), error => error.code === 'UPDATE_OFFLINE' && /连接 GitHub/.test(error.message));
 });
 
+test('maps TLS disconnect text to the offline update message', async () => {
+  const handlers = new Map();
+  registerUpdateIpc({
+    ipcMain: { handle: (name, fn) => handlers.set(name, fn), removeHandler: () => {} },
+    service: { listReleases: async () => { throw new Error('Client network socket disconnected before secure TLS connection was established'); } }
+  });
+  await assert.rejects(handlers.get('updates:list')({}), error => error.code === 'UPDATE_OFFLINE' && /连接 GitHub/.test(error.message));
+});
+
 test('switch waits for close flush and starts the external host', async () => {
   const f = fixture();
   const result = await f.handlers.get('updates:switch-installed')({ sender: { send: () => {} } }, '1.4.354');

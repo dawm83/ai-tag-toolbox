@@ -117,6 +117,8 @@ function createWindow() {
       });
   });
   win.loadFile(path.join(__dirname, 'src', 'index.html'));
+  win.show();
+  win.focus();
   return win;
 }
 

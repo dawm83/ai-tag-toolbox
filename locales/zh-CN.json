@@ -36,6 +36,7 @@
       "current": "当前版本：{version}",
       "checking": "正在检查 GitHub Releases…",
       "offline": "无法连接 GitHub，仍可切换已安装版本。",
+      "upToDate": "当前没有可用更新版本，已是最新版本。",
       "stable": "稳定版",
       "prerelease": "测试版",
       "installed": "已安装",

@@ -102,6 +102,12 @@ test('secondary instance exits without a window and primary activates its existi
   primary.win.close(); await new Promise(resolve => setImmediate(resolve));
 });
 
+test('shows the business window immediately after starting navigation', async () => {
+  const host = await boot(async () => true);
+  assert.equal(host.win.shown, true);
+  host.win.close(); await new Promise(resolve => setImmediate(resolve));
+});
+
 test('maximized layout follows maximize, restore and renderer reload', async () => {
   const classes = new Set(); let resizes = 0;
   const renderer = vm.createContext({

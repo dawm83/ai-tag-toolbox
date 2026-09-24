@@ -6,8 +6,8 @@ const { launchActiveVersion } = require('../src/modules/version-launcher');
 
 function installRoot() { return path.dirname(process.execPath); }
 async function main() {
-  const result = await launchActiveVersion({ rootDir: installRoot() });
-  if (result?.legacy) app.quit();
+  await launchActiveVersion({ rootDir: installRoot() });
+  app.quit();
 }
 
 app.whenReady().then(main).catch(() => app.quit());

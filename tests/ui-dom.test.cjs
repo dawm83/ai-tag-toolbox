@@ -1316,3 +1316,17 @@ test('clicking the version opens the release switch panel and marks a newer rele
   await new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(calls, [['download', '1.4.354'], ['apply', '1.4.354', '.staging/V1.4.354-test']]);
 });
+
+test('version panel explains that the app is up to date when no newer release exists', async t => {
+  const updates = {
+    getState: async () => ({ activeVersion: '1.4.355', installed: [{ version: '1.4.355' }] }),
+    listReleases: async () => [{ version: '1.4.355', name: '当前', channel: 'installed', installable: false, installed: true, current: true, assets: {} }],
+    onEvent: () => () => {}
+  };
+  const app = boot({ updates });
+  t.after(() => app.dom.window.close());
+  app.window.document.querySelector('#brandSub').click();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.match(app.window.document.querySelector('#versionStatus').textContent, /已是最新版本/);
+  assert.doesNotMatch(app.window.document.querySelector('#versionStatus').textContent, /Error invoking|socket disconnected/);
+});
