@@ -11,7 +11,7 @@ function fixture() {
     'AI.Tag.V1.4.354.zip', 'AI.Tag.V1.4.354.7z', 'AI.Tag.V1.4.354.zip.sha256', 'AI.Tag.V1.4.354.7z.sha256', 'AI.Tag.V1.4.354.build-info.json'
   ].map(name => ({ name, size: 12, browser_download_url: `https://github.com/star-abyss/ai-tag-toolbox/releases/download/v1.4.354/${name}` })) };
   const options = {
-    rootDir: 'C:\\Install',
+    rootDir: 'C:\\Install', userDataDir: 'C:\\UpdateTestDataNotPresent', backupRoot: 'C:\\UpdateTestBackups',
     fetchJson: async url => { calls.push(['json', url]); return url.includes('/releases') ? [release] : { version: '1.4.354', archiveSha256: digest }; },
     downloadFile: async (url, destination, options) => { calls.push(['download', url, destination]); options?.onProgress?.({ received: 12, total: 12 }); return destination; },
     readText: async filename => filename.endsWith('.sha256') ? `${digest}  AI.Tag.V1.4.354.zip\n` : JSON.stringify({ version: '1.4.354', updateProtocol: 1 }),
