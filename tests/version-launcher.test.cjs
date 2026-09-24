@@ -25,3 +25,16 @@ test('falls back to the previous slot when the active version never reports read
   assert.equal(writes.at(-1).activeVersion, '1.4.353');
   assert.equal(writes.at(-1).lastError.code, 'LAUNCH_TIMEOUT');
 });
+
+test('launches a legacy versioned executable when the state file is missing', async () => {
+  const started = [];
+  const result = await require('../src/modules/version-launcher').launchActiveVersion({
+    rootDir: 'C:\\Install',
+    readState: async () => { throw new Error('missing state'); },
+    listLegacy: async () => ['AI绘画Tag工具箱V1.4.353.exe'],
+    exists: async () => true,
+    startProcess: async (executable, args) => started.push([executable, args])
+  });
+  assert.equal(result.legacy, true);
+  assert.deepEqual(started, [['C:\\Install\\AI绘画Tag工具箱V1.4.353.exe', ['--legacy-version-host']]]);
+});

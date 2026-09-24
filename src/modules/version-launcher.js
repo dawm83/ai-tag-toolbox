@@ -25,6 +25,13 @@ async function launchActiveVersion(options = {}) {
   });
   const exists = options.exists || (filename => fs.existsSync(filename));
   const startProcess = options.startProcess || ((executable, args) => { const child = spawn(executable, args, { cwd: path.dirname(executable), detached: true, stdio: 'ignore', windowsHide: true }); child.unref(); return child; });
+  const listLegacy = options.listLegacy || (async () => fs.promises.readdir(rootDir, { withFileTypes: true }));
+  const resolveLegacyExecutable = async () => {
+    const rows = await listLegacy().catch(() => []);
+    const candidates = rows.map(row => typeof row === 'string' ? row : row?.name).filter(name => /^AI绘画Tag工具箱V\d+\.\d+\.\d+\.exe$/i.test(String(name || '')));
+    candidates.sort((left, right) => String(right).localeCompare(String(left), undefined, { numeric: true }));
+    return candidates[0] ? path.join(rootDir, candidates[0]) : '';
+  };
   const waitForReady = options.waitForReady || (async (nonce, version) => {
     const until = Date.now() + 60_000;
     while (Date.now() < until) {
@@ -34,7 +41,16 @@ async function launchActiveVersion(options = {}) {
     }
     return false;
   });
-  const initial = normalizeState(await readState(), rootDir);
+  let initial;
+  try {
+    initial = normalizeState(await readState(), rootDir);
+  } catch (error) {
+    const legacyExecutable = await resolveLegacyExecutable();
+    if (!legacyExecutable) throw failure('VERSION_STATE_MISSING', `无法读取版本状态：${error?.message || 'version-state.json 不存在'}`);
+    if (!await exists(legacyExecutable)) throw failure('VERSION_MISSING', '找不到旧版业务程序');
+    await startProcess(legacyExecutable, ['--legacy-version-host']);
+    return { ok: true, legacy: true, executable: legacyExecutable };
+  }
   const launch = async (versionValue, fallbackUsed, baseState = initial) => {
     const executable = resolveActiveExecutable(rootDir, { activeVersion: versionValue });
     if (!await exists(executable)) throw failure('VERSION_MISSING', `版本槽位 V${versionValue} 不存在`);

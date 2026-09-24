@@ -2,6 +2,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const crypto = require('node:crypto');
 const { spawn } = require('node:child_process');
 const { normalizeState, transitionState } = require('./version-manager');
 
@@ -21,7 +22,12 @@ function createDefaultWaitForExit() {
 function createUpdateHost(options = {}) {
   const rootDir = path.resolve(text(options.rootDir, path.dirname(process.execPath)));
   const readState = options.readState || (async () => JSON.parse(await fs.promises.readFile(path.join(rootDir, 'version-state.json'), 'utf8')));
-  const writeState = options.writeState || (async value => fs.promises.writeFile(path.join(rootDir, 'version-state.json'), JSON.stringify(value, null, 2) + '\n', 'utf8'));
+  const writeState = options.writeState || (async value => {
+    const filename = path.join(rootDir, 'version-state.json');
+    const temporary = `${filename}.${crypto.randomUUID()}.tmp`;
+    await fs.promises.writeFile(temporary, JSON.stringify(value, null, 2) + '\n', 'utf8');
+    await fs.promises.rename(temporary, filename);
+  });
   const waitForExit = options.waitForExit || createDefaultWaitForExit();
   const exists = options.exists || (async value => fs.existsSync(value));
   const rename = options.rename || ((from, to) => fs.promises.rename(from, to));
