@@ -1,6 +1,11 @@
 'use strict';
 
 function failure(code, message) { return Object.assign(new Error(message), { code }); }
+function publicUpdateError(error) {
+  if (error?.code === 'NETWORK_TIMEOUT' || error?.code === 'ECONNRESET' || error?.code === 'ENETUNREACH') return failure('UPDATE_OFFLINE', '暂时无法连接 GitHub，请检查网络后重试。');
+  if (error?.code === 'HTTP_ERROR') return failure('UPDATE_SERVICE_ERROR', 'GitHub 版本服务暂时不可用，请稍后重试。');
+  return error;
+}
 
 function registerUpdateIpc(options = {}) {
   const ipcMain = options.ipcMain;
@@ -9,7 +14,7 @@ function registerUpdateIpc(options = {}) {
   const handlers = new Map();
   const register = (name, handler) => { handlers.set(name, handler); ipcMain.handle(name, handler); };
   register('updates:get-state', async () => service.getState());
-  register('updates:list', async () => service.listReleases());
+  register('updates:list', async () => { try { return await service.listReleases(); } catch (error) { throw publicUpdateError(error); } });
   register('updates:download', async (event, version) => service.downloadAndStage(version, {
     onProgress: value => { try { event?.sender?.send?.('updates:event', { type: 'progress', ...value }); } catch {} }
   }));

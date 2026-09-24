@@ -54,3 +54,12 @@ test('falls back when the active slot executable is missing', async () => {
   assert.deepEqual(started, ['C:\\Install\\versions\\V1.4.353\\AI绘画Tag工具箱V1.4.353.exe']);
   assert.equal(writes[0].lastError.code, 'VERSION_MISSING');
 });
+
+test('keeps the launcher alive after handing off to the business process', async () => {
+  const result = await require('../src/modules/version-launcher').launchActiveVersion({
+    rootDir: 'C:\\Install',
+    readState: async () => ({ activeVersion: '1.4.354', previousVersion: '1.4.354', installed: [{ version: '1.4.354' }] }),
+    writeState: async () => {}, exists: async () => true, startProcess: async () => {}, waitForReady: async () => true, random: () => 'nonce'
+  });
+  assert.equal(result.ok, true);
+});

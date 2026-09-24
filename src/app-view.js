@@ -3768,7 +3768,11 @@
         ui.versionManager.currentVersion = str(state.activeVersion, str(modules.version));
         ui.versionManager.rows = await updates.listReleases?.() || [];
         ui.versionManager.status = "";
-      } catch (error) { ui.versionManager.error = error?.message || updateFormat("offline", "无法连接 GitHub，仍可切换已安装版本。"); }
+      } catch (error) {
+        ui.versionManager.error = error?.code === "UPDATE_OFFLINE" || error?.code === "ECONNRESET"
+          ? updateFormat("offline", "暂时无法连接 GitHub，请检查网络后重试。")
+          : error?.message || updateFormat("offline", "无法连接 GitHub，仍可切换已安装版本。");
+      }
       finally { ui.versionManager.busy = false; renderVersionManager(); }
     }
     async function installVersion(version) {

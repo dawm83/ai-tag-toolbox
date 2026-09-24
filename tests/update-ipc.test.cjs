@@ -29,6 +29,15 @@ test('registers scoped update handlers and forwards only progress metadata', asy
   assert.deepEqual(f.calls, [['download', '1.4.354']]);
 });
 
+test('maps network failures to a user-readable update message', async () => {
+  const handlers = new Map();
+  registerUpdateIpc({
+    ipcMain: { handle: (name, fn) => handlers.set(name, fn), removeHandler: () => {} },
+    service: { listReleases: async () => { throw Object.assign(new Error('socket reset'), { code: 'ECONNRESET' }); } }
+  });
+  await assert.rejects(handlers.get('updates:list')({}), error => error.code === 'UPDATE_OFFLINE' && /连接 GitHub/.test(error.message));
+});
+
 test('switch waits for close flush and starts the external host', async () => {
   const f = fixture();
   const result = await f.handlers.get('updates:switch-installed')({ sender: { send: () => {} } }, '1.4.354');
