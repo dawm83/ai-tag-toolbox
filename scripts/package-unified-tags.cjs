@@ -66,6 +66,8 @@ async function main() {
   const seed = JSON.parse(asar.extractFile(archive, seedFile).toString());
   const evidence = {
     version, buildKind: 'local-unified-tags-test', sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: source, encoding: 'utf8' }).trim(),
+    updateProtocol: 1, dataSchemaMin: 1, dataSchemaMax: 1,
+    releaseAssets: [`AI.Tag.V${version}.zip`, `AI.Tag.V${version}.7z`, `AI.Tag.V${version}.zip.sha256`, `AI.Tag.V${version}.7z.sha256`, `AI.Tag.V${version}.build-info.json`],
     sourceFiles: files.length, createdAt: new Date().toISOString(), archiveSha256: fileHash(archive),
     sourceCopiesVerified: ['app', 'resources/app', 'resources/app.asar'], dependencyFilesVerified, unpackedNativeFiles,
     runtimeDependenciesReusedFrom: oldPackage.version, modelsPreserved: modelFiles.length, executableMatchesTemplate: true,
