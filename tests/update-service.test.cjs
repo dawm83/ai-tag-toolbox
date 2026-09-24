@@ -89,6 +89,14 @@ test('rejects checksum mismatch before extraction', async () => {
   assert.equal(f.calls.some(call => call[0] === 'extract'), false);
 });
 
+test('rejects archive traversal and absolute paths before extraction', () => {
+  const { assertSafeArchiveEntries } = require('../src/modules/update-service');
+  assert.equal(assertSafeArchiveEntries(['AI Tag Tool/versions/V1.4.354/app.asar', './models/tags.json']), true);
+  for (const entry of ['../outside.exe', 'AI Tag Tool/../../outside.exe', 'C:/outside.exe', '\\\\server\\share\\file']) {
+    assert.throws(() => assertSafeArchiveEntries([entry]), error => error.code === 'ARCHIVE_PATH_REJECTED');
+  }
+});
+
 test('update host commits a staged slot after the parent exits and launches the stable host', async () => {
   const calls = [], host = require('../src/modules/update-host').createUpdateHost({
     rootDir: 'C:\\Install',

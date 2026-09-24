@@ -134,8 +134,25 @@ async function defaultHashFile(filename) {
 
 async function defaultExtractZip(archive, destination) {
   await fs.promises.mkdir(destination, { recursive: true });
-  try { await execFileAsync('tar.exe', ['-xf', archive, '-C', destination], { windowsHide: true }); }
-  catch (error) { throw failure('EXTRACTOR_UNAVAILABLE', `无法解压更新包：${error.message}`); }
+  try {
+    const listing = await execFileAsync('tar.exe', ['-tf', archive], { windowsHide: true, maxBuffer: 16 * 1024 * 1024 });
+    assertSafeArchiveEntries(listing.stdout);
+    await execFileAsync('tar.exe', ['-xf', archive, '-C', destination], { windowsHide: true });
+  }
+  catch (error) { throw error?.code ? error : failure('EXTRACTOR_UNAVAILABLE', `无法解压更新包：${error.message}`); }
+}
+
+function assertSafeArchiveEntries(listing) {
+  const entries = Array.isArray(listing) ? listing : String(listing || '').split(/\r?\n/);
+  for (const row of entries) {
+    const original = String(row || '').trim();
+    if (!original) continue;
+    const entry = original.replace(/\\/g, '/').replace(/^(?:\.\/)+/, '');
+    if (entry.includes('\0') || entry.startsWith('/') || /^[a-z]:/i.test(entry) || entry.split('/').includes('..')) {
+      throw failure('ARCHIVE_PATH_REJECTED', `更新压缩包包含越界路径：${original}`);
+    }
+  }
+  return true;
 }
 
 async function defaultValidateStaged(directory) {
@@ -261,4 +278,4 @@ function createUpdateService(options = {}) {
   return Object.freeze({ getState, listReleases, downloadAndStage, prepareSwitch, switchInstalled, cancelDownload, rootDir, statePath });
 }
 
-module.exports = { createUpdateService };
+module.exports = { createUpdateService, assertSafeArchiveEntries };

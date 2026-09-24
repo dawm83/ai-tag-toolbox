@@ -49,7 +49,8 @@ async function packageStructured(templateArg, stagingArg, versionArg, asarModule
   if (currentPackage.version !== parsed) throw new Error('Requested slot version does not match the committed source version');
   const asar = require(path.resolve(asarModuleArg));
   fs.mkdirSync(stage, { recursive: true });
-  const root = path.join(stage, 'AI绘画Tag工具箱'), versionRoot = path.join(root, 'versions', `V${parsed}`);
+  const rootName = `AI绘画Tag工具箱V${parsed}`;
+  const root = path.join(stage, rootName), versionRoot = path.join(root, 'versions', `V${parsed}`);
   fs.mkdirSync(root, { recursive: true });
   fs.cpSync(template, versionRoot, { recursive: true });
   const rootFiles = ['.gitignore', 'chrome_100_percent.pak', 'chrome_200_percent.pak', 'd3dcompiler_47.dll', 'ffmpeg.dll', 'icudtl.dat', 'libEGL.dll', 'libGLESv2.dll', 'LICENSES.chromium.html', 'resources.pak', 'snapshot_blob.bin', 'v8_context_snapshot.bin', 'vk_swiftshader_icd.json', 'vk_swiftshader.dll', 'vulkan-1.dll', 'version'];
@@ -108,7 +109,7 @@ async function packageStructured(templateArg, stagingArg, versionArg, asarModule
   const state = createInitialState(parsed);
   writeAtomic(path.join(root, 'version-state.json'), state);
   const launcherExecutable = path.join(root, 'AI绘画Tag工具箱.exe');
-  const evidence = { version: parsed, buildKind: 'local-version-manager-test', sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: source, encoding: 'utf8' }).trim(), runtimeDependenciesReusedFrom: templateVersion, updateProtocol: UPDATE_PROTOCOL, dataSchemaMin: 1, dataSchemaMax: 1, releaseAssets: releaseAssetNames(parsed), structuredRoot: 'AI绘画Tag工具箱', activeVersion: parsed, sourceFiles: files.length, modelFiles: modelFiles.length, sourceCopiesVerified: ['versions/V' + parsed + '/app', 'versions/V' + parsed + '/resources/app', 'versions/V' + parsed + '/resources/app.asar'], launcherExecutable: 'AI绘画Tag工具箱.exe', launcherArchive: 'resources/app.asar', businessArchiveSha256: hash(businessArchive), launcherArchiveSha256: hash(archive), executableMatchesTemplate: hash(launcherExecutable) === hash(templateExe), published: false, pushed: false };
+  const evidence = { version: parsed, buildKind: 'local-version-manager-test', sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: source, encoding: 'utf8' }).trim(), runtimeDependenciesReusedFrom: templateVersion, updateProtocol: UPDATE_PROTOCOL, dataSchemaMin: 1, dataSchemaMax: 1, releaseAssets: releaseAssetNames(parsed), structuredRoot: rootName, activeVersion: parsed, sourceFiles: files.length, modelFiles: modelFiles.length, sourceCopiesVerified: ['versions/V' + parsed + '/app', 'versions/V' + parsed + '/resources/app', 'versions/V' + parsed + '/resources/app.asar'], launcherExecutable: 'AI绘画Tag工具箱.exe', launcherArchive: 'resources/app.asar', businessArchiveSha256: hash(businessArchive), launcherArchiveSha256: hash(archive), executableMatchesTemplate: hash(launcherExecutable) === hash(templateExe), published: false, pushed: false };
   if (!evidence.executableMatchesTemplate) throw new Error('Stable launcher executable differs from the verified Electron template');
   fs.writeFileSync(path.join(versionRoot, 'build-info.json'), JSON.stringify({ ...evidence, archiveSha256: evidence.businessArchiveSha256 }, null, 2) + '\n', 'utf8');
   fs.writeFileSync(path.join(root, 'build-info.json'), JSON.stringify(evidence, null, 2) + '\n', 'utf8');
