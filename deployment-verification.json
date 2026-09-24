@@ -5,20 +5,19 @@
   "desktopDirectory": "C:/Users/admin/Desktop/AI绘画Tag工具箱V1.4.355",
   "sourceBranch": "codex/drawing-feedback",
   "sourceCommitEvidence": "build-info.json.sourceCommit",
-  "scope": "GitHub Release version discovery, verified download, structured version slots, stable launcher, rollback, and shared user data",
+  "scope": "Visible business-window launch and localized release lookup states with offline installed-version choices",
   "checks": {
     "command": "npm run check",
-    "testsPassed": 755,
+    "testsPassed": 763,
     "testsFailed": 0,
     "realElectronWindow": "Pending user acceptance; slow launch tests skipped per AGENTS.md",
     "realAiOrComfyGeneration": false,
-    "desktopIntegrity": "Verified structured root, launcher and business ASAR entrypoints, 346 source files, 22 model files, three native modules, version state, source mirrors and executable hashes"
+    "desktopIntegrity": "Package builder verifies source mirrors, ASAR contents, models and executable hashes; final desktop verification recorded in work/v14355-desktop-integrity.json"
   },
   "knownLimits": [
-    "Real provider image support, image understanding and generation quality require user acceptance.",
-    "Legacy saved jobs retain their original resume behavior; new tasks use primary-controlled decisions and visible primary reviews.",
-    "Configured reference-image workflows may still bind source images; the delivered recreationMode records the actual render path.",
-    "Existing ComfyUI disconnect preference behavior is unchanged."
+    "Actual first-click visibility needs desktop user acceptance.",
+    "Network error handling does not repair GitHub reachability; a working network or proxy is required for online updates.",
+    "No compatible Release was published in this task; real online installation remains subject to user acceptance."
   ],
   "published": false,
   "pushed": false
