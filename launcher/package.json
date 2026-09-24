@@ -2,5 +2,5 @@
   "name": "ai-tag-toolbox-launcher",
   "version": "1.0.0",
   "private": true,
-  "main": "main.js"
+  "main": "launcher/main.js"
 }
